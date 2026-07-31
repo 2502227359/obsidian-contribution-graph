@@ -6,6 +6,8 @@ export interface DailyEditStats {
 	deletedChars: number;
 	changedChars: number;
 	documents: DocumentEditStats[];
+	unattributedAddedChars?: number;
+	unattributedDeletedChars?: number;
 }
 
 export interface DocumentEditStats {
@@ -26,6 +28,10 @@ export interface EditPosition {
 export interface TrackingPeriod {
 	startDate: string;
 	endDate?: string;
+}
+
+export interface CollectionScopePeriod extends TrackingPeriod {
+	folders: string[];
 }
 
 export interface GoalHeatLevel {
@@ -96,6 +102,12 @@ export class ContributionGraphConfig {
 	 * Coverage information for internally tracked data sources.
 	 */
 	trackingPeriods?: TrackingPeriod[];
+
+	/** Collection-scope history for distinguishing zero from uncollected data. */
+	collectionScopePeriods?: CollectionScopePeriod[];
+
+	/** Folder filter requested by this edit-activity graph. */
+	activityFolders?: string[];
 
 	/**
 	 * Display unit used by legends, tooltips, and activity summaries.
@@ -212,5 +224,6 @@ export class ContributionCellData {
 	items?: ContributionItem[];
 	editStats?: DailyEditStats;
 	tracked?: boolean;
+	trackingState?: "TRACKED" | "PARTIAL" | "UNTRACKED";
 	future?: boolean;
 }

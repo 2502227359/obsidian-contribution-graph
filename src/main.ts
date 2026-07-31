@@ -115,6 +115,7 @@ export default class ContributionGraph extends Plugin {
 			getDailyEditStats: (query?: {
 				fromDate?: string;
 				toDate?: string;
+				folders?: string[];
 			}) => this.activityService.getDailyEditStats(query),
 		};
 	}

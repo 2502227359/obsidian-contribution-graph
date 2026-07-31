@@ -2,13 +2,19 @@ import { diffCalendarDays } from "../util/dateUtils";
 import {
 	Contribution,
 	ContributionCellData,
+	CollectionScopePeriod,
 	TrackingPeriod,
 } from "../types";
 import { DateTime } from "luxon";
+import { areFoldersCoveredByScope } from "../activity/folderScope";
+
+export type TrackingState = "TRACKED" | "PARTIAL" | "UNTRACKED";
 
 export function generateByData(
 	data: Contribution[],
-	trackingPeriods?: TrackingPeriod[]
+	trackingPeriods?: TrackingPeriod[],
+	collectionScopePeriods?: CollectionScopePeriod[],
+	activityFolders: string[] = []
 ) {
 	if (!data || data.length === 0) {
 		return [];
@@ -36,7 +42,9 @@ export function generateByData(
 		new Date(min),
 		new Date(max),
 		data,
-		trackingPeriods
+		trackingPeriods,
+		collectionScopePeriods,
+		activityFolders
 	);
 }
 
@@ -44,7 +52,9 @@ export function generateByFixedDate(
 	from: Date,
 	to: Date,
 	data: Contribution[],
-	trackingPeriods?: TrackingPeriod[]
+	trackingPeriods?: TrackingPeriod[],
+	collectionScopePeriods?: CollectionScopePeriod[],
+	activityFolders: string[] = []
 ) {
 	const days = diffCalendarDays(from, to) + 1;
 	if (days <= 0) {
@@ -65,8 +75,18 @@ export function generateByFixedDate(
 		const future =
 			trackingPeriods !== undefined &&
 			currentDateAtIndex.startOf("day") > today;
-		const tracked = trackingPeriods
-			? !future && isDateTracked(isoDate, trackingPeriods)
+		const trackingState = trackingPeriods
+			? future
+				? undefined
+				: getDateTrackingState(
+						isoDate,
+						trackingPeriods,
+						collectionScopePeriods,
+						activityFolders
+				  )
+			: undefined;
+		const tracked = trackingState
+			? trackingState !== "UNTRACKED"
 			: undefined;
 
 		cellData.unshift({
@@ -80,6 +100,7 @@ export function generateByFixedDate(
 			items: contribution ? contribution.items || [] : [],
 			editStats: contribution?.editStats,
 			tracked,
+			trackingState,
 			future,
 		});
 	}
@@ -95,7 +116,9 @@ export function generateByFixedDate(
 export function generateByLatestDays(
 	days: number,
 	data: Contribution[] = [],
-	trackingPeriods?: TrackingPeriod[]
+	trackingPeriods?: TrackingPeriod[],
+	collectionScopePeriods?: CollectionScopePeriod[],
+	activityFolders: string[] = []
 ): ContributionCellData[] {
 	const toDate = new Date();
 	toDate.setHours(0, 0, 0, 0);
@@ -105,7 +128,9 @@ export function generateByLatestDays(
 		fromDate,
 		toDate,
 		data,
-		trackingPeriods
+		trackingPeriods,
+		collectionScopePeriods,
+		activityFolders
 	);
 }
 
@@ -118,6 +143,35 @@ export function isDateTracked(
 			date >= period.startDate &&
 			(!period.endDate || date <= period.endDate)
 	);
+}
+
+export function getDateTrackingState(
+	date: string,
+	trackingPeriods: TrackingPeriod[],
+	collectionScopePeriods?: CollectionScopePeriod[],
+	activityFolders: string[] = []
+): TrackingState {
+	if (!isDateTracked(date, trackingPeriods)) {
+		return "UNTRACKED";
+	}
+	if (!collectionScopePeriods) {
+		return "TRACKED";
+	}
+	const scopes = collectionScopePeriods.filter(
+		(period) =>
+			date >= period.startDate &&
+			(!period.endDate || date <= period.endDate)
+	);
+	if (scopes.length === 0) {
+		return "UNTRACKED";
+	}
+	const coveredCount = scopes.filter((period) =>
+		areFoldersCoveredByScope(activityFolders, period.folders)
+	).length;
+	if (coveredCount === scopes.length) {
+		return "TRACKED";
+	}
+	return coveredCount > 0 ? "PARTIAL" : "UNTRACKED";
 }
 
 function contributionToMap(data: Contribution[]) {

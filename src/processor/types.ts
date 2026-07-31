@@ -6,6 +6,7 @@ import {
 	ContributionGraphConfig,
 	GoalHeatScale,
 	TrackingPeriod,
+	CollectionScopePeriod,
 } from "src/types";
 import {
 	MISS_CONFIG,
@@ -57,6 +58,8 @@ export class YamlGraphConfig {
 	cellStyleRules?: CellStyleRule[];
 	heatScale?: GoalHeatScale;
 	trackingPeriods?: TrackingPeriod[];
+	collectionScopePeriods?: CollectionScopePeriod[];
+	activityFolders?: string[];
 	valueUnit?: string;
 
 	// deprecated
@@ -154,6 +157,23 @@ export class YamlGraphConfig {
 			if (!config.fromDate || !config.toDate) {
 				throw new GraphProcessError(MISS_DAYS_OR_RANGE_DATE());
 			}
+		}
+		if (
+			config.dataSource?.type === "EDIT_ACTIVITY" &&
+			config.dataSource.folders !== undefined &&
+			(!Array.isArray(config.dataSource.folders) ||
+				config.dataSource.folders.length > 100 ||
+				config.dataSource.folders.some(
+					(folder) =>
+						typeof folder !== "string" ||
+						folder.trim().length === 0 ||
+						folder.length > 1024 ||
+						folder.includes("\u0000")
+				))
+		) {
+			throw new GraphProcessError({
+				summary: "Invalid edit activity folder filter",
+			});
 		}
 
 		if (config.dateRangeValue !== undefined) {

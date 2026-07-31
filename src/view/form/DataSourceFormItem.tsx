@@ -18,13 +18,16 @@ import {
 	getDataSourceFilterOptions,
 	taskStatusOptions,
 } from "./options";
-import { App } from "obsidian";
+import { App, TFolder } from "obsidian";
 import { InputTags, TagOption } from "../suggest/SuggestTagInput";
+import { areFoldersCoveredByScope, normalizeTrackedFolders } from "src/activity/folderScope";
+import { getSelectableVaultFolders, VaultFolderSuggestModal } from "src/activity/VaultFolderSuggestModal";
 
 export function DataSourceFormItem(props: {
 	dataSource: DataSource;
 	onChange: (dataSource: DataSource) => void;
 	app: App;
+	collectionFolders: string[];
 }): JSX.Element {
 	const { dataSource } = props;
 	const [dateFormatType, setDateFormatType] = useState(
@@ -82,6 +85,7 @@ export function DataSourceFormItem(props: {
 			props.onChange({
 				type: "EDIT_ACTIVITY",
 				metric: "CHANGED_CHARS",
+				folders: [],
 			});
 			return;
 		}
@@ -166,6 +170,43 @@ export function DataSourceFormItem(props: {
 					)}
 				</div>
 			</div>
+
+			{dataSourceType === "EDIT_ACTIVITY" && (
+				<div className="form-item contribution-graph-activity-folders">
+					<span className="label">{local.form_edit_activity_folders}</span>
+					<div className="form-vertical-content">
+						<button
+							type="button"
+							onClick={() => {
+								const selected = normalizeTrackedFolders(dataSource.folders || []);
+								new VaultFolderSuggestModal(
+									props.app,
+									getSelectableVaultFolders(props.app, selected),
+									local.form_edit_activity_folders_choose,
+									(folder) => changeDataSource("folders", normalizeTrackedFolders([...selected, folder.path]))
+								).open();
+							}}
+						>
+							{local.form_edit_activity_folders_choose}
+						</button>
+						{(dataSource.folders || []).length === 0 && (
+							<div className="form-description">{local.form_edit_activity_folders_all}</div>
+						)}
+						{normalizeTrackedFolders(dataSource.folders || []).map((folder) => {
+							const missing = !(props.app.vault.getAbstractFileByPath(folder) instanceof TFolder);
+							const outside = !areFoldersCoveredByScope([folder], props.collectionFolders);
+							return (
+								<div className={`contribution-graph-folder-chip${missing || outside ? " is-warning" : ""}`} key={folder}>
+									<span>{folder}</span>
+									<button type="button" aria-label={local.form_edit_activity_folder_remove} onClick={() => changeDataSource("folders", (dataSource.folders || []).filter((path) => path !== folder))}>×</button>
+									{missing && <div className="form-description">{local.form_edit_activity_folder_missing}</div>}
+									{!missing && outside && <div className="form-description">{local.form_edit_activity_folder_outside_scope}</div>}
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			)}
 
 			{dataSourceType === "EDIT_ACTIVITY" && (
 				<div className="form-item contribution-graph-activity-source">

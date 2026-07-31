@@ -100,6 +100,12 @@ export class Zh implements Local {
 	form_edit_activity_metric_changed = "总编辑字符（新增 + 删除）";
 	form_edit_activity_metric_added = "新增字符";
 	form_edit_activity_metric_deleted = "删除字符";
+	form_edit_activity_folders = "监控文件夹";
+	form_edit_activity_folders_all = "未选择时显示全局采集范围内的全部文档";
+	form_edit_activity_folders_choose = "选择文件夹";
+	form_edit_activity_folder_remove = "移除此文件夹";
+	form_edit_activity_folder_missing = "文件夹不存在或已被重命名";
+	form_edit_activity_folder_outside_scope = "该范围不在插件的全局采集范围内，无法获得完整数据";
 	form_daily_goal = "每日目标";
 	form_daily_goal_description = "达到目标后显示最深色，实际字符数不会被截断";
 	form_activity_tracking_enabled = "编辑活动采集已开启";
@@ -133,6 +139,11 @@ export class Zh implements Local {
 	graph_less = "较少";
 	graph_more = "较多";
 	graph_untracked_on = "{date} 尚未启用编辑活动采集";
+	graph_partially_tracked_on = "{date} 的目录范围仅采集了部分时间，数值可能不完整";
+	graph_folder_missing = "监控文件夹不存在：{folder}";
+	graph_folder_outside_scope = "监控文件夹超出插件设置中的全局采集范围：{folder}";
+	graph_folder_legacy_excluded = "按文件夹查看时，升级前无法归属到文档的历史字符已排除。";
+	graph_close_details = "关闭贡献详情";
 	graph_edit_activity_summary = "{date}：新增 {added}，删除 {deleted}，总编辑 {changed} 字符，完成目标 {percent}%";
 	graph_edit_activity_document_summary = "新增 {added} · 删除 {deleted} · 总编辑 {changed} 字符";
 	graph_edit_activity_last_position = "最后编辑：第 {line} 行，第 {column} 列";
@@ -141,13 +152,19 @@ export class Zh implements Local {
 	graph_characters_unit = "字符";
 
 	settings_activity_heading = "编辑活动";
-	settings_activity_description = "仅统计当前设备上、Obsidian 编辑器内由用户产生的字符变化。为显示每日文档明细，会保存文件路径和字符数，但不会保存笔记内容，也不会统计同步或其他插件自动写入。";
+	settings_activity_description = "统计当前设备上 Obsidian 编辑器内带用户输入标记的字符变化。为显示每日文档明细，会保存文件路径和字符数，但不会保存笔记内容；没有用户输入标记的同步或自动写入不会统计。";
 	settings_tracking_enabled = "采集编辑活动";
 	settings_tracking_enabled_description = "开启后从今天开始记录新增和删除字符；关闭期间在热力图中显示为未采集。";
 	settings_tracking_started = "编辑活动采集已开启";
 	settings_tracking_paused = "编辑活动采集已暂停";
 	settings_exclude_whitespace = "忽略空白字符";
 	settings_exclude_whitespace_description = "不统计空格、制表符和换行；标点与 emoji 仍会统计。";
+	settings_tracked_folders = "统计文件夹";
+	settings_tracked_folders_description = "从当前仓库选择一个或多个文件夹。修改后只影响之后的编辑，模板插入到范围内文档仍可能被统计。";
+	settings_tracked_folders_choose = "选择文件夹";
+	settings_tracked_folders_remove = "移除此文件夹";
+	settings_tracked_folders_all = "当前统计整个仓库。";
+	settings_tracked_folder_missing = "该文件夹当前不存在，可以移除此路径。";
 	settings_data_heading = "数据管理";
 	settings_export = "导出统计";
 	settings_export_description = "复制 JSON 到剪贴板；剪贴板不可用时自动下载文件。";

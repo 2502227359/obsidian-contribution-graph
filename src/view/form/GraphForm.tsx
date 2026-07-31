@@ -364,6 +364,7 @@ export function GraphForm(props: {
 											}
 										}}
 										app={props.app}
+										collectionFolders={props.activityService.getSettings().trackedFolders}
 									/>
 									{formData.dataSource?.type ===
 										"EDIT_ACTIVITY" && (

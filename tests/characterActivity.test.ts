@@ -109,6 +109,8 @@ describe("toDailyEditStats", () => {
 			addedChars: 12,
 			deletedChars: 5,
 			changedChars: 17,
+			unattributedAddedChars: 3,
+			unattributedDeletedChars: 0,
 			documents: [
 				{
 					path: "Notes/Large.md",

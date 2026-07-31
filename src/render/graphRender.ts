@@ -154,8 +154,13 @@ export abstract class BaseGraphRender implements GraphRender {
 
 		const closeButton = createEl("button", {
 			cls: "close-button",
-			text: "x",
+			text: "×",
 			parent: contaienr,
+			attr: {
+				type: "button",
+				"aria-label": Locals.get().graph_close_details,
+				title: Locals.get().graph_close_details,
+			},
 		});
 
 		closeButton.onclick = () => {
@@ -164,11 +169,14 @@ export abstract class BaseGraphRender implements GraphRender {
 		};
 
 		let summary = cellData.summary;
-		if (cellData.tracked === false) {
+		if (cellData.trackingState === "UNTRACKED" || cellData.tracked === false) {
 			summary = Locals.get().graph_untracked_on.replace(
 				"{date}",
 				cellData.date
 			);
+		} else if (cellData.trackingState === "PARTIAL") {
+			const partial = Locals.get().graph_partially_tracked_on.replace("{date}", cellData.date);
+			summary = summary ? `${partial} ${summary}` : partial;
 		} else if (!summary && cellData.editStats) {
 			const goal = Math.max(1, graphConfig.heatScale?.goal || 1000);
 			summary = Locals.get()
@@ -292,7 +300,9 @@ export abstract class BaseGraphRender implements GraphRender {
 			return generateByLatestDays(
 				graphConfig.days,
 				graphConfig.data,
-				graphConfig.trackingPeriods
+				graphConfig.trackingPeriods,
+				graphConfig.collectionScopePeriods,
+				graphConfig.activityFolders
 			);
 		} else if (graphConfig.fromDate && graphConfig.toDate) {
 			const fromDate = parseDate(graphConfig.fromDate);
@@ -301,12 +311,16 @@ export abstract class BaseGraphRender implements GraphRender {
 				fromDate,
 				toDate,
 				graphConfig.data,
-				graphConfig.trackingPeriods
+				graphConfig.trackingPeriods,
+				graphConfig.collectionScopePeriods,
+				graphConfig.activityFolders
 			);
 		} else {
 			return generateByData(
 				graphConfig.data,
-				graphConfig.trackingPeriods
+				graphConfig.trackingPeriods,
+				graphConfig.collectionScopePeriods,
+				graphConfig.activityFolders
 			);
 		}
 	}
@@ -369,10 +383,13 @@ export abstract class BaseGraphRender implements GraphRender {
 			cellEl.addClass("future");
 			return;
 		}
-		if (contributionItem.tracked === false) {
+		if (contributionItem.trackingState === "UNTRACKED" || contributionItem.tracked === false) {
 			cellEl.style.backgroundColor = "";
 			cellEl.addClass("untracked");
 			return;
+		}
+		if (contributionItem.trackingState === "PARTIAL") {
+			cellEl.addClass("partial");
 		}
 
 		if (graphConfig.heatScale?.type === "GOAL") {
@@ -452,11 +469,16 @@ export abstract class BaseGraphRender implements GraphRender {
 			cellEl.ariaLabel = contributionItem.date;
 			return;
 		}
-		if (contributionItem.tracked === false) {
+		if (contributionItem.trackingState === "UNTRACKED" || contributionItem.tracked === false) {
 			cellEl.ariaLabel = Locals.get().graph_untracked_on.replace(
 				"{date}",
 				contributionItem.date
 			);
+			return;
+		}
+		if (contributionItem.trackingState === "PARTIAL") {
+			const partial = Locals.get().graph_partially_tracked_on.replace("{date}", contributionItem.date);
+			cellEl.ariaLabel = contributionItem.summary ? `${partial}. ${contributionItem.summary}` : partial;
 			return;
 		}
 		if (

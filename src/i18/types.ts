@@ -99,6 +99,12 @@ export interface Local {
 	form_edit_activity_metric_changed: string;
 	form_edit_activity_metric_added: string;
 	form_edit_activity_metric_deleted: string;
+	form_edit_activity_folders: string;
+	form_edit_activity_folders_all: string;
+	form_edit_activity_folders_choose: string;
+	form_edit_activity_folder_remove: string;
+	form_edit_activity_folder_missing: string;
+	form_edit_activity_folder_outside_scope: string;
 	form_daily_goal: string;
 	form_daily_goal_description: string;
 	form_activity_tracking_enabled: string;
@@ -132,6 +138,11 @@ export interface Local {
 	graph_less: string;
 	graph_more: string;
 	graph_untracked_on: string;
+	graph_partially_tracked_on: string;
+	graph_folder_missing: string;
+	graph_folder_outside_scope: string;
+	graph_folder_legacy_excluded: string;
+	graph_close_details: string;
 	graph_edit_activity_summary: string;
 	graph_edit_activity_document_summary: string;
 	graph_edit_activity_last_position: string;
@@ -150,6 +161,12 @@ export interface Local {
 	settings_tracking_paused: string;
 	settings_exclude_whitespace: string;
 	settings_exclude_whitespace_description: string;
+	settings_tracked_folders: string;
+	settings_tracked_folders_description: string;
+	settings_tracked_folders_choose: string;
+	settings_tracked_folders_remove: string;
+	settings_tracked_folders_all: string;
+	settings_tracked_folder_missing: string;
 	settings_data_heading: string;
 	settings_export: string;
 	settings_export_description: string;

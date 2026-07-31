@@ -4,12 +4,14 @@ import {
 	MarkdownRenderChild,
 	Platform,
 	TFile,
+	TFolder,
 	parseYaml,
 } from "obsidian";
 import { getAPI } from "obsidian-dataview";
 import { getActivityDateRange } from "src/activity/dateRange";
 import { clampEditPosition } from "src/activity/editPosition";
-import { EditActivityService } from "src/activity/EditActivityService";
+import { EditActivityChangeEvent, EditActivityService } from "src/activity/EditActivityService";
+import { areFoldersCoveredByScope, isFileInTrackedFolders, normalizeTrackedFolders } from "src/activity/folderScope";
 import {
 	getEditActivityMetricValue,
 	sortEditActivityStatsByMetric,
@@ -30,13 +32,17 @@ class ReactiveGraphRenderChild extends MarkdownRenderChild {
 	constructor(
 		container: HTMLElement,
 		private readonly activityService: EditActivityService,
-		private readonly refresh: () => void
+		private readonly refresh: () => void,
+		private readonly shouldRefresh: (event: EditActivityChangeEvent) => boolean
 	) {
 		super(container);
 	}
 
 	onload(): void {
-		this.unsubscribe = this.activityService.subscribe(() => {
+		this.unsubscribe = this.activityService.subscribe((event) => {
+			if (!this.shouldRefresh(event)) {
+				return;
+			}
 			if (this.refreshTimer !== null) {
 				window.clearTimeout(this.refreshTimer);
 			}
@@ -79,7 +85,8 @@ export class CodeBlockProcessor {
 						this.activityService,
 						() => {
 							void this.renderFromYaml(graphConfig, el, app);
-						}
+						},
+						(event) => this.shouldRefreshGraph(event, graphConfig)
 					)
 				);
 			}
@@ -110,6 +117,11 @@ export class CodeBlockProcessor {
 			if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
 				renderConfig.trackingPeriods =
 					this.activityService.getTrackingPeriods();
+				renderConfig.collectionScopePeriods =
+					this.activityService.getCollectionScopePeriods();
+				renderConfig.activityFolders = normalizeTrackedFolders(
+					graphConfig.dataSource.folders || []
+				);
 				renderConfig.valueUnit = Locals.get().graph_characters_unit;
 			}
 
@@ -159,11 +171,29 @@ export class CodeBlockProcessor {
 
 	private queryData(graphConfig: YamlGraphConfig, app: App): Contribution[] {
 		if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
+			const folders = normalizeTrackedFolders(
+				graphConfig.dataSource.folders || []
+			);
+			for (const folder of folders) {
+				if (!(app.vault.getAbstractFileByPath(folder) instanceof TFolder)) {
+					throw new GraphProcessError({
+						summary: Locals.get().graph_folder_missing.replace("{folder}", folder),
+					});
+				}
+				if (!areFoldersCoveredByScope([folder], this.activityService.getSettings().trackedFolders)) {
+					throw new GraphProcessError({
+						summary: Locals.get().graph_folder_outside_scope.replace("{folder}", folder),
+					});
+				}
+			}
 			const metric =
 				graphConfig.dataSource.metric || "CHANGED_CHARS";
 			const goal = Math.max(1, graphConfig.heatScale?.goal || 1000);
 			return this.activityService
-				.getDailyEditStats(getActivityDateRange(graphConfig))
+				.getDailyEditStats({
+					...getActivityDateRange(graphConfig),
+					folders,
+				})
 				.map((stats) => {
 				const value = getEditActivityMetricValue(metric, stats);
 				const documents = sortEditActivityStatsByMetric(
@@ -259,23 +289,9 @@ export class CodeBlockProcessor {
 						};
 					}
 				);
-				const attributedAdded = stats.documents.reduce(
-					(sum, document) => sum + document.addedChars,
-					0
-				);
-				const attributedDeleted = stats.documents.reduce(
-					(sum, document) => sum + document.deletedChars,
-					0
-				);
-				const unattributedAdded = Math.max(
-					0,
-					stats.addedChars - attributedAdded
-				);
-				const unattributedDeleted = Math.max(
-					0,
-					stats.deletedChars - attributedDeleted
-				);
-				if (unattributedAdded > 0 || unattributedDeleted > 0) {
+				const unattributedAdded = stats.unattributedAddedChars || 0;
+				const unattributedDeleted = stats.unattributedDeletedChars || 0;
+				if (folders.length === 0 && (unattributedAdded > 0 || unattributedDeleted > 0)) {
 					items.push({
 						label:
 							Locals.get()
@@ -298,34 +314,41 @@ export class CodeBlockProcessor {
 						),
 					});
 				}
+				const baseSummary = Locals.get()
+					.graph_edit_activity_summary.replace("{date}", stats.date)
+					.replace("{added}", stats.addedChars.toString())
+					.replace("{deleted}", stats.deletedChars.toString())
+					.replace("{changed}", stats.changedChars.toString())
+					.replace("{percent}", Math.round((value / goal) * 100).toString());
 				return {
 					date: stats.date,
 					value,
 					editStats: stats,
 					items,
-					summary: Locals.get()
-						.graph_edit_activity_summary.replace(
-							"{date}",
-							stats.date
-						)
-						.replace("{added}", stats.addedChars.toString())
-						.replace(
-							"{deleted}",
-							stats.deletedChars.toString()
-						)
-						.replace(
-							"{changed}",
-							stats.changedChars.toString()
-						)
-						.replace(
-							"{percent}",
-							Math.round((value / goal) * 100).toString()
-						),
+					summary:
+						folders.length > 0 && (unattributedAdded > 0 || unattributedDeleted > 0)
+							? `${baseSummary} ${Locals.get().graph_folder_legacy_excluded}`
+							: baseSummary,
 				};
 				});
 		}
 
 		return this.dataSourceQuery.query(graphConfig.dataSource, app);
+	}
+
+	private shouldRefreshGraph(
+		event: EditActivityChangeEvent,
+		graphConfig: YamlGraphConfig
+	): boolean {
+		if (event.type !== "STATS") {
+			return true;
+		}
+		const range = getActivityDateRange(graphConfig);
+		if (event.date && ((range.fromDate && event.date < range.fromDate) || (range.toDate && event.date > range.toDate))) {
+			return false;
+		}
+		const folders = normalizeTrackedFolders(graphConfig.dataSource?.folders || []);
+		return !event.filePath || folders.length === 0 || isFileInTrackedFolders(event.filePath, folders);
 	}
 
 	private async resolveCurrentPosition(

@@ -1,8 +1,14 @@
-import { DailyEditStats, EditPosition, TrackingPeriod } from "src/types";
+import {
+	CollectionScopePeriod,
+	DailyEditStats,
+	EditPosition,
+	TrackingPeriod,
+} from "src/types";
 
 export interface EditActivitySettings {
 	trackingEnabled: boolean;
 	excludeWhitespace: boolean;
+	trackedFolders: string[];
 }
 
 export interface StoredDailyEditStats {
@@ -18,21 +24,27 @@ export interface StoredDocumentEditStats {
 }
 
 export interface EditActivityStore {
-	schemaVersion: 3;
+	schemaVersion: 5;
 	settings: EditActivitySettings;
 	trackingPeriods: TrackingPeriod[];
+	collectionScopePeriods: CollectionScopePeriod[];
 	dailyStats: Record<string, StoredDailyEditStats>;
 }
 
 export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 	trackingEnabled: false,
 	excludeWhitespace: true,
+	trackedFolders: [],
 };
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
-	schemaVersion: 3,
-	settings: { ...DEFAULT_EDIT_ACTIVITY_SETTINGS },
+	schemaVersion: 5,
+	settings: {
+		...DEFAULT_EDIT_ACTIVITY_SETTINGS,
+		trackedFolders: [],
+	},
 	trackingPeriods: [],
+	collectionScopePeriods: [],
 	dailyStats: {},
 };
 
@@ -40,31 +52,48 @@ export function toDailyEditStats(
 	date: string,
 	value: StoredDailyEditStats
 ): DailyEditStats {
+	const documents = Object.entries(value.documents || {})
+		.map(([path, stats]) => ({
+			path,
+			addedChars: stats.addedChars,
+			deletedChars: stats.deletedChars,
+			changedChars: stats.addedChars + stats.deletedChars,
+			...(stats.lastEditPosition
+				? {
+						lastEditPosition: {
+							...stats.lastEditPosition,
+						},
+				  }
+				: {}),
+		}))
+		.sort((a, b) => {
+			const difference = b.changedChars - a.changedChars;
+			return difference !== 0
+				? difference
+				: a.path.localeCompare(b.path);
+		});
+	const attributedAdded = documents.reduce(
+		(sum, document) => sum + document.addedChars,
+		0
+	);
+	const attributedDeleted = documents.reduce(
+		(sum, document) => sum + document.deletedChars,
+		0
+	);
 	return {
 		date,
 		addedChars: value.addedChars,
 		deletedChars: value.deletedChars,
 		changedChars: value.addedChars + value.deletedChars,
-		documents: Object.entries(value.documents || {})
-			.map(([path, stats]) => ({
-				path,
-				addedChars: stats.addedChars,
-				deletedChars: stats.deletedChars,
-				changedChars: stats.addedChars + stats.deletedChars,
-				...(stats.lastEditPosition
-					? {
-							lastEditPosition: {
-								...stats.lastEditPosition,
-							},
-					  }
-					: {}),
-			}))
-			.sort((a, b) => {
-				const difference = b.changedChars - a.changedChars;
-				return difference !== 0
-					? difference
-					: a.path.localeCompare(b.path);
-			}),
+		documents,
+		unattributedAddedChars: Math.max(
+			0,
+			value.addedChars - attributedAdded
+		),
+		unattributedDeletedChars: Math.max(
+			0,
+			value.deletedChars - attributedDeleted
+		),
 	};
 }
 

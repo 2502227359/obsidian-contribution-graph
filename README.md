@@ -64,6 +64,8 @@ dateRangeValue: 180
 dataSource:
   type: EDIT_ACTIVITY
   metric: CHANGED_CHARS
+  folders:
+    - Projects/Writing
 heatScale:
   type: GOAL
   goal: 1000
@@ -73,6 +75,11 @@ heatScale:
 `ADDED_CHARS` or `DELETED_CHARS`. The tracker records user edits on the current
 device only, starts when enabled, ignores whitespace by default, and never
 stores note contents. Dates before tracking started are shown as untracked.
+The plugin setting defines the maximum scope collected from future edits. Each
+heatmap can then select its own `dataSource.folders` from the vault, so separate
+graphs can monitor different projects with different goals. Leaving a graph's
+folder selection empty shows all activity available inside the global
+collection scope. A per-graph folder must be inside that global scope.
 
 DataviewJS can read the recorded daily totals without becoming responsible for
 collecting them:
@@ -80,7 +87,8 @@ collecting them:
 ```js
 const stats = window.contributionGraphApi.getDailyEditStats({
   fromDate: "2026-01-01",
-  toDate: "2026-12-31"
+  toDate: "2026-12-31",
+  folders: ["Projects/Writing"]
 });
 ```
 

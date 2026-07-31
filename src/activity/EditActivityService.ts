@@ -2,11 +2,20 @@ import { ChangeSet, Extension, Text, Transaction } from "@codemirror/state";
 import { EditorView, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, Notice, Plugin } from "obsidian";
 import { Locals } from "src/i18/messages";
-import { DailyEditStats, TrackingPeriod } from "src/types";
+import {
+	CollectionScopePeriod,
+	DailyEditStats,
+	TrackingPeriod,
+} from "src/types";
 import {
 	countChangedCharacters,
 	isCountedUserEvent,
 } from "./changeCounter";
+import {
+	isFileInTrackedFolders,
+	migrateTrackedFolderPaths,
+	normalizeTrackedFolders,
+} from "./folderScope";
 import {
 	DEFAULT_EDIT_ACTIVITY_SETTINGS,
 	EditActivitySettings,
@@ -26,6 +35,13 @@ interface CompositionState {
 export interface DailyEditStatsQuery {
 	fromDate?: string;
 	toDate?: string;
+	folders?: string[];
+}
+
+export interface EditActivityChangeEvent {
+	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT";
+	date?: string;
+	filePath?: string;
 }
 
 const SAVE_DEBOUNCE_MS = 2000;
@@ -35,7 +51,7 @@ const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
 export class EditActivityService {
 	private store: EditActivityStore = this.createEmptyStore();
-	private listeners = new Set<() => void>();
+	private listeners = new Set<(event: EditActivityChangeEvent) => void>();
 	private saveTimer: number | null = null;
 	private midnightTimer: number | null = null;
 	private saveQueue: Promise<void> = Promise.resolve();
@@ -90,6 +106,7 @@ export class EditActivityService {
 				schemaVersion !== EMPTY_EDIT_ACTIVITY_STORE.schemaVersion);
 		if (this.store.settings.trackingEnabled) {
 			migrated = this.ensureOpenTrackingPeriod() || migrated;
+			migrated = this.ensureOpenCollectionScopePeriod() || migrated;
 		}
 		if (migrated) {
 			this.markDirty();
@@ -106,11 +123,21 @@ export class EditActivityService {
 	}
 
 	getSettings(): EditActivitySettings {
-		return { ...this.store.settings };
+		return {
+			...this.store.settings,
+			trackedFolders: [...this.store.settings.trackedFolders],
+		};
 	}
 
 	getTrackingPeriods(): TrackingPeriod[] {
 		return this.store.trackingPeriods.map((period) => ({ ...period }));
+	}
+
+	getCollectionScopePeriods(): CollectionScopePeriod[] {
+		return this.store.collectionScopePeriods.map((period) => ({
+			...period,
+			folders: [...period.folders],
+		}));
 	}
 
 	getDailyEditStats(query: DailyEditStatsQuery = {}): DailyEditStats[] {
@@ -125,10 +152,11 @@ export class EditActivityService {
 				return true;
 			})
 			.sort((a, b) => a.localeCompare(b))
-			.map((date) => this.getCachedDailyEditStats(date));
+			.map((date) => this.getCachedDailyEditStats(date))
+			.map((stats) => this.filterStatsByFolders(stats, query.folders));
 	}
 
-	subscribe(listener: () => void): () => void {
+	subscribe(listener: (event: EditActivityChangeEvent) => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
 	}
@@ -144,14 +172,47 @@ export class EditActivityService {
 			newPath,
 			isFolder
 		);
-		if (changedDates.length === 0) {
+		let trackedFoldersChanged = false;
+		let scopeFoldersChanged = false;
+		if (isFolder) {
+			const trackedFolders = migrateTrackedFolderPaths(
+				this.store.settings.trackedFolders,
+				oldPath,
+				newPath
+			);
+			trackedFoldersChanged =
+				trackedFolders.join("\n") !==
+				this.store.settings.trackedFolders.join("\n");
+			if (trackedFoldersChanged) {
+				this.store.settings.trackedFolders = trackedFolders;
+			}
+			for (const period of this.store.collectionScopePeriods) {
+				const migratedFolders = migrateTrackedFolderPaths(
+					period.folders,
+					oldPath,
+					newPath
+				);
+				if (
+					migratedFolders.join("\n") !==
+					period.folders.join("\n")
+				) {
+					period.folders = migratedFolders;
+					scopeFoldersChanged = true;
+				}
+			}
+		}
+		if (
+			changedDates.length === 0 &&
+			!trackedFoldersChanged &&
+			!scopeFoldersChanged
+		) {
 			return;
 		}
 		for (const date of changedDates) {
 			this.invalidateStatsCache(date);
 		}
 		this.markDirty();
-		this.emitChange();
+		this.emitChange({ type: "IMPORT" });
 		this.scheduleSave();
 	}
 
@@ -163,12 +224,14 @@ export class EditActivityService {
 		this.store.settings.trackingEnabled = enabled;
 		if (enabled) {
 			this.ensureOpenTrackingPeriod();
+			this.ensureOpenCollectionScopePeriod();
 		} else {
 			this.closeOpenTrackingPeriod();
+			this.closeOpenCollectionScopePeriod();
 			this.compositions = new WeakMap<EditorView, CompositionState>();
 		}
 		this.markDirty();
-		this.emitChange();
+		this.emitChange({ type: "COVERAGE" });
 		await this.flush();
 	}
 
@@ -178,7 +241,29 @@ export class EditActivityService {
 		}
 		this.store.settings.excludeWhitespace = excludeWhitespace;
 		this.markDirty();
-		this.emitChange();
+		this.emitChange({ type: "SETTINGS" });
+		await this.flush();
+	}
+
+	async setTrackedFolders(trackedFolders: string[]): Promise<void> {
+		const normalized = normalizeTrackedFolders(trackedFolders);
+		if (
+			normalized.length === this.store.settings.trackedFolders.length &&
+			normalized.every(
+				(folder, index) =>
+					folder === this.store.settings.trackedFolders[index]
+			)
+		) {
+			return;
+		}
+		this.store.settings.trackedFolders = normalized;
+		this.compositions = new WeakMap<EditorView, CompositionState>();
+		if (this.store.settings.trackingEnabled) {
+			this.closeOpenCollectionScopePeriod();
+			this.ensureOpenCollectionScopePeriod();
+		}
+		this.markDirty();
+		this.emitChange({ type: "COVERAGE" });
 		await this.flush();
 	}
 
@@ -195,10 +280,11 @@ export class EditActivityService {
 		this.compositions = new WeakMap<EditorView, CompositionState>();
 		if (this.store.settings.trackingEnabled) {
 			this.ensureOpenTrackingPeriod();
+			this.ensureOpenCollectionScopePeriod();
 		}
 		this.invalidateStatsCache();
 		this.markDirty();
-		this.emitChange();
+		this.emitChange({ type: "IMPORT" });
 		await this.flush();
 	}
 
@@ -208,16 +294,26 @@ export class EditActivityService {
 		this.store.trackingPeriods = trackingEnabled
 			? [{ startDate: this.today() }]
 			: [];
+		this.store.collectionScopePeriods = trackingEnabled
+			? [
+					{
+						startDate: this.today(),
+						folders: [
+							...this.store.settings.trackedFolders,
+						],
+					},
+			  ]
+			: [];
 		this.invalidateStatsCache();
 		this.markDirty();
-		this.emitChange();
+		this.emitChange({ type: "IMPORT" });
 		await this.flush();
 	}
 
 	handleAppResume(): void {
 		this.scheduleMidnightRefresh();
 		if (this.captureTemporalState()) {
-			this.emitChange();
+			this.emitChange({ type: "TEMPORAL" });
 		}
 		void this.flush();
 	}
@@ -294,7 +390,14 @@ export class EditActivityService {
 
 			const event = transaction.annotation(Transaction.userEvent) || "";
 			const filePath = this.getMarkdownFilePath(transaction);
-			if (!filePath) {
+			if (
+				!filePath ||
+				!isFileInTrackedFolders(
+					filePath,
+					this.store.settings.trackedFolders
+				)
+			) {
+				this.compositions.delete(update.view);
 				continue;
 			}
 			if (event.startsWith("input.type.compose")) {
@@ -399,7 +502,7 @@ export class EditActivityService {
 		this.store.dailyStats[date] = current;
 		this.invalidateStatsCache(date);
 		this.markDirty();
-		this.emitChange();
+		this.emitChange({ type: "STATS", date, filePath });
 		this.scheduleSave();
 	}
 
@@ -428,15 +531,15 @@ export class EditActivityService {
 		this.midnightTimer = window.setTimeout(() => {
 			this.midnightTimer = null;
 			this.captureTemporalState();
-			this.emitChange();
+			this.emitChange({ type: "TEMPORAL" });
 			this.scheduleMidnightRefresh();
 		}, delay);
 	}
 
-	private emitChange(): void {
+	private emitChange(event: EditActivityChangeEvent): void {
 		for (const listener of this.listeners) {
 			try {
-				listener();
+				listener(event);
 			} catch (error) {
 				console.error("Failed to refresh contribution graph", error);
 			}
@@ -456,6 +559,43 @@ export class EditActivityService {
 	private closeOpenTrackingPeriod(): void {
 		const last =
 			this.store.trackingPeriods[this.store.trackingPeriods.length - 1];
+		if (last && !last.endDate) {
+			last.endDate = this.today();
+		}
+	}
+
+	private ensureOpenCollectionScopePeriod(): boolean {
+		const last =
+			this.store.collectionScopePeriods[
+				this.store.collectionScopePeriods.length - 1
+			];
+		const folders = this.store.settings.trackedFolders;
+		if (
+			!last ||
+			last.endDate ||
+			last.folders.join("\n") !== folders.join("\n")
+		) {
+			if (
+				last &&
+				!last.endDate &&
+				last.folders.join("\n") !== folders.join("\n")
+			) {
+				last.endDate = this.today();
+			}
+			this.store.collectionScopePeriods.push({
+				startDate: this.today(),
+				folders: [...folders],
+			});
+			return true;
+		}
+		return false;
+	}
+
+	private closeOpenCollectionScopePeriod(): void {
+		const last =
+			this.store.collectionScopePeriods[
+				this.store.collectionScopePeriods.length - 1
+			];
 		if (last && !last.endDate) {
 			last.endDate = this.today();
 		}
@@ -500,6 +640,36 @@ export class EditActivityService {
 		return stats;
 	}
 
+	private filterStatsByFolders(
+		stats: DailyEditStats,
+		folders?: string[]
+	): DailyEditStats {
+		const normalizedFolders = normalizeTrackedFolders(folders || []);
+		if (normalizedFolders.length === 0) {
+			return stats;
+		}
+		const documents = stats.documents.filter((document) =>
+			isFileInTrackedFolders(document.path, normalizedFolders)
+		);
+		const addedChars = documents.reduce(
+			(sum, document) => sum + document.addedChars,
+			0
+		);
+		const deletedChars = documents.reduce(
+			(sum, document) => sum + document.deletedChars,
+			0
+		);
+		return this.freezeDailyEditStats({
+			date: stats.date,
+			addedChars,
+			deletedChars,
+			changedChars: addedChars + deletedChars,
+			documents: [...documents],
+			unattributedAddedChars: stats.unattributedAddedChars,
+			unattributedDeletedChars: stats.unattributedDeletedChars,
+		});
+	}
+
 	private freezeDailyEditStats(stats: DailyEditStats): DailyEditStats {
 		for (const document of stats.documents) {
 			if (document.lastEditPosition) {
@@ -535,8 +705,12 @@ export class EditActivityService {
 	private createEmptyStore(): EditActivityStore {
 		return {
 			schemaVersion: EMPTY_EDIT_ACTIVITY_STORE.schemaVersion,
-			settings: { ...DEFAULT_EDIT_ACTIVITY_SETTINGS },
+			settings: {
+				...DEFAULT_EDIT_ACTIVITY_SETTINGS,
+				trackedFolders: [],
+			},
 			trackingPeriods: [],
+			collectionScopePeriods: [],
 			dailyStats: Object.create(null),
 		};
 	}
@@ -556,7 +730,9 @@ export class EditActivityService {
 			strict &&
 			schemaVersion !== 1 &&
 			schemaVersion !== 2 &&
-			schemaVersion !== 3
+			schemaVersion !== 3 &&
+			schemaVersion !== 4 &&
+			schemaVersion !== 5
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -640,7 +816,10 @@ export class EditActivityService {
 					}
 				} else if (
 					strict &&
-					(schemaVersion === 2 || schemaVersion === 3)
+					(schemaVersion === 2 ||
+						schemaVersion === 3 ||
+						schemaVersion === 4 ||
+						schemaVersion === 5)
 				) {
 					throw new Error(
 						`Invalid document edit statistics for ${date}`
@@ -697,16 +876,82 @@ export class EditActivityService {
 		) {
 			throw new Error("Invalid edit activity settings");
 		}
+		const rawTrackedFolders = candidate.settings?.trackedFolders;
+		if (
+			strict &&
+			(schemaVersion === 4 || schemaVersion === 5) &&
+			(!Array.isArray(rawTrackedFolders) ||
+				rawTrackedFolders.some(
+					(folder) => typeof folder !== "string"
+				))
+		) {
+			throw new Error("Invalid tracked folders");
+		}
+		const trackedFolders = normalizeTrackedFolders(
+			Array.isArray(rawTrackedFolders)
+				? rawTrackedFolders.filter(
+						(folder): folder is string =>
+							typeof folder === "string"
+				  )
+				: []
+		);
+		if (
+			strict &&
+			schemaVersion === 5 &&
+			!Array.isArray(candidate.collectionScopePeriods)
+		) {
+			throw new Error("Invalid collection scope periods");
+		}
+		const collectionScopePeriods: CollectionScopePeriod[] = [];
+		if (
+			schemaVersion === 5 &&
+			Array.isArray(candidate.collectionScopePeriods)
+		) {
+			for (const period of candidate.collectionScopePeriods) {
+				if (
+					period &&
+					this.isValidDate(period.startDate) &&
+					(!period.endDate ||
+						(this.isValidDate(period.endDate) &&
+							period.startDate <= period.endDate)) &&
+					Array.isArray(period.folders) &&
+					period.folders.every(
+						(folder) => typeof folder === "string"
+					)
+				) {
+					collectionScopePeriods.push({
+						startDate: period.startDate,
+						...(period.endDate
+							? { endDate: period.endDate }
+							: {}),
+						folders: normalizeTrackedFolders(period.folders),
+					});
+				} else if (strict) {
+					throw new Error("Invalid collection scope period");
+				}
+			}
+		} else {
+			const migratedFolders =
+				schemaVersion === 4 ? trackedFolders : [];
+			for (const period of trackingPeriods) {
+				collectionScopePeriods.push({
+					...period,
+					folders: [...migratedFolders],
+				});
+			}
+		}
 
 		return {
-			schemaVersion: 3,
+			schemaVersion: 5,
 			settings: {
 				trackingEnabled:
 					candidate.settings?.trackingEnabled === true,
 				excludeWhitespace:
 					candidate.settings?.excludeWhitespace !== false,
+				trackedFolders,
 			},
 			trackingPeriods,
+			collectionScopePeriods,
 			dailyStats,
 		};
 	}

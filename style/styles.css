@@ -298,6 +298,36 @@
 	opacity: 0.72;
 }
 
+.contribution-graph .cell.partial {
+	background-image: repeating-linear-gradient(
+		135deg,
+		transparent 0,
+		transparent 4px,
+		rgba(255, 184, 77, 0.55) 4px,
+		rgba(255, 184, 77, 0.55) 6px
+	);
+}
+
+.contribution-graph-folder-chip {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+}
+
+.contribution-graph-folder-chip.is-warning {
+	border-color: var(--text-warning);
+}
+
+.contribution-graph-folder-chip .form-description {
+	flex-basis: 100%;
+	color: var(--text-warning);
+}
+
 .contribution-graph .cell.future {
 	background: transparent;
 	border: 1px solid var(--background-modifier-border);
@@ -889,7 +919,7 @@
 
 .contribution-graph .activity-container .activity-summary {
 	flex-grow: 1;
-	padding-right: 0.4rem;
+	padding: 0.35rem 2.5rem 0.35rem 0.4rem;
 	/* border-right: 1px solid var(--background-modifier-border); */
 	font-size: 0.8rem;
 }
@@ -1004,17 +1034,37 @@
 
 .contribution-graph .activity-container .close-button {
 	position: absolute;
-	right: 0;
-	top: 0;
-	color: var(--text-faint);
+	right: 0.4rem;
+	top: 0.4rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	min-width: 32px;
+	min-height: 32px;
+	padding: 0;
+	font-size: 22px;
+	font-weight: 400;
+	line-height: 1;
+	color: var(--text-muted);
 	box-shadow: none;
-	border-width: 0px;
+	border: 1px solid transparent;
+	border-radius: 6px;
 	background-color: transparent;
 	cursor: pointer;
 }
 
 .contribution-graph .activity-container .close-button:hover {
-	color: var(--text-accent);
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border);
+}
+
+.contribution-graph .activity-container .close-button:focus-visible {
+	color: var(--text-normal);
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
 
 @media (max-width: 720px) {
@@ -1030,6 +1080,14 @@
 
 	.contribution-graph .activity-container .activity-content .activity-list {
 		max-height: min(42vh, 320px);
+	}
+
+	.contribution-graph .activity-container .close-button {
+		width: 36px;
+		height: 36px;
+		min-width: 36px;
+		min-height: 36px;
+		font-size: 24px;
 	}
 }
 
@@ -1091,6 +1149,20 @@
 
 .contribution-graph-hidden-input {
 	display: none;
+}
+
+.contribution-graph-tracked-folder-item {
+	margin-left: var(--size-4-5);
+	padding-left: var(--size-4-3);
+	border-left: 2px solid var(--background-modifier-border);
+}
+
+.contribution-graph-tracked-folder-item.is-missing {
+	border-left-color: var(--text-warning);
+}
+
+.contribution-graph-tracked-folder-item.is-missing .setting-item-name {
+	color: var(--text-warning);
 }
 
 .contribution-graph-activity-source .form-content,

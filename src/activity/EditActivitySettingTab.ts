@@ -1,6 +1,17 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import {
+	App,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	TFolder,
+} from "obsidian";
 import { Locals } from "src/i18/messages";
 import { EditActivityService } from "./EditActivityService";
+import {
+	getSelectableVaultFolders,
+	VaultFolderSuggestModal,
+} from "./VaultFolderSuggestModal";
 
 export class EditActivitySettingTab extends PluginSettingTab {
 	constructor(
@@ -55,6 +66,64 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						);
 					})
 			);
+
+		const selectableFolders = getSelectableVaultFolders(
+			this.app,
+			settings.trackedFolders
+		);
+		new Setting(containerEl)
+			.setName(local.settings_tracked_folders)
+			.setDesc(
+				settings.trackedFolders.length === 0
+					? `${local.settings_tracked_folders_description} ${local.settings_tracked_folders_all}`
+					: local.settings_tracked_folders_description
+			)
+			.addButton((button) =>
+				button
+					.setButtonText(local.settings_tracked_folders_choose)
+					.setDisabled(selectableFolders.length === 0)
+					.onClick(() => {
+						new VaultFolderSuggestModal(
+							this.app,
+							selectableFolders,
+							local.settings_tracked_folders_choose,
+							async (folder) => {
+								await this.activityService.setTrackedFolders([
+									...settings.trackedFolders,
+									folder.path,
+								]);
+								this.display();
+							}
+						).open();
+					})
+			);
+
+		for (const folderPath of settings.trackedFolders) {
+			const exists =
+				this.app.vault.getAbstractFileByPath(folderPath) instanceof
+				TFolder;
+			const folderSetting = new Setting(containerEl)
+				.setName(folderPath)
+				.setClass("contribution-graph-tracked-folder-item")
+				.addExtraButton((button) =>
+					button
+						.setIcon("trash")
+						.setTooltip(local.settings_tracked_folders_remove)
+						.onClick(async () => {
+							await this.activityService.setTrackedFolders(
+								settings.trackedFolders.filter(
+									(path) => path !== folderPath
+								)
+							);
+							this.display();
+						})
+				);
+			if (!exists) {
+				folderSetting
+					.setDesc(local.settings_tracked_folder_missing)
+					.setClass("is-missing");
+			}
+		}
 
 		const dataHeading = containerEl.createEl("h3", {
 			text: local.settings_data_heading,
@@ -137,4 +206,5 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		link.click();
 		window.setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
+
 }

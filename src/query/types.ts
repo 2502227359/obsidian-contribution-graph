@@ -24,6 +24,7 @@ export class DataSource {
 	dateField?: DateField;
 	countField?: CountField;
 	metric?: EditActivityMetric;
+	folders?: string[];
 }
 
 export class DataFilter {

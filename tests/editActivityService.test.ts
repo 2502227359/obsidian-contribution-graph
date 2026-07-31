@@ -1,4 +1,9 @@
-import { ChangeSet, Text } from "@codemirror/state";
+import {
+	ChangeSet,
+	EditorState,
+	Text,
+	Transaction,
+} from "@codemirror/state";
 import {
 	afterEach,
 	beforeEach,
@@ -113,7 +118,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 		expect(plugin.saveData).toHaveBeenCalledTimes(1);
 		expect(plugin.saveData.mock.calls[0][0]).toMatchObject({
-			schemaVersion: 3,
+			schemaVersion: 5,
 			dailyStats: {
 				"2026-07-31": {
 					addedChars: 1,
@@ -172,6 +177,140 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 	});
 
+	it("normalizes, saves, and migrates tracked folder settings", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+
+		await service.setTrackedFolders([
+			"Projects/Writing/",
+			"Projects",
+			"Daily Notes",
+		]);
+		expect(service.getSettings().trackedFolders).toEqual([
+			"Daily Notes",
+			"Projects",
+		]);
+
+		service.handlePathRename("Projects", "Archive", true);
+		expect(service.getSettings().trackedFolders).toEqual([
+			"Archive",
+			"Daily Notes",
+		]);
+
+		await service.unload();
+		expect(plugin.saveData.mock.lastCall?.[0]).toMatchObject({
+			schemaVersion: 5,
+			settings: {
+				trackedFolders: ["Archive", "Daily Notes"],
+			},
+		});
+	});
+
+	it("records editor transactions only inside configured folders", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		await service.setTrackedFolders(["Projects"]);
+
+		let currentPath = "Archive/Excluded.md";
+		(
+			service as unknown as {
+				getMarkdownFilePath: () => string;
+			}
+		).getMarkdownFilePath = () => currentPath;
+		const view = { hasFocus: true, composing: false };
+		const dispatchInput = (text: string) => {
+			const state = EditorState.create({ doc: "" });
+			const transaction = state.update({
+				changes: { from: 0, insert: text },
+				annotations: Transaction.userEvent.of("input.type"),
+			});
+			(
+				service as unknown as {
+					handleEditorUpdate: (update: unknown) => void;
+				}
+			).handleEditorUpdate({
+				docChanged: true,
+				view,
+				transactions: [transaction],
+			});
+		};
+
+		dispatchInput("excluded");
+		expect(service.getDailyEditStats()).toEqual([]);
+
+		currentPath = "Projects/Included.md";
+		dispatchInput("included");
+		expect(service.getDailyEditStats()).toEqual([
+			expect.objectContaining({
+				addedChars: 8,
+				documents: [
+					expect.objectContaining({
+						path: "Projects/Included.md",
+					}),
+				],
+			}),
+		]);
+
+		await service.unload();
+	});
+
+	it("filters daily totals and documents independently for each graph folder", async () => {
+		const plugin = createPlugin({
+			schemaVersion: 5,
+			settings: { trackingEnabled: false, excludeWhitespace: true, trackedFolders: [] },
+			trackingPeriods: [{ startDate: "2026-07-31" }],
+			collectionScopePeriods: [{ startDate: "2026-07-31", folders: [] }],
+			dailyStats: {
+				"2026-07-31": {
+					addedChars: 15,
+					deletedChars: 5,
+					documents: {
+						"Projects/A.md": { addedChars: 8, deletedChars: 2 },
+						"Journal/B.md": { addedChars: 4, deletedChars: 3 },
+					},
+				},
+			},
+		});
+		const service = new EditActivityService(plugin as never);
+		await service.initialize();
+
+		expect(service.getDailyEditStats({ folders: ["Projects"] })[0]).toMatchObject({
+			addedChars: 8,
+			deletedChars: 2,
+			changedChars: 10,
+			documents: [{ path: "Projects/A.md" }],
+			unattributedAddedChars: 3,
+			unattributedDeletedChars: 0,
+		});
+
+		await service.unload();
+	});
+
+	it("records collection scope changes as separate coverage periods", async () => {
+		let now = new Date(2026, 6, 31, 10, 0, 0);
+		const plugin = createPlugin();
+		const service = new EditActivityService(plugin as never, () => now);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		now = new Date(2026, 7, 1, 10, 0, 0);
+		await service.setTrackedFolders(["Projects"]);
+
+		expect(service.getCollectionScopePeriods()).toEqual([
+			{ startDate: "2026-07-31", endDate: "2026-08-01", folders: [] },
+			{ startDate: "2026-08-01", folders: ["Projects"] },
+		]);
+		await service.unload();
+	});
+
 	it("rejects malformed imports without replacing current data", async () => {
 		const initialData = {
 			schemaVersion: 3,
@@ -194,6 +333,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 			() => new Date(2026, 6, 31, 16, 0, 0)
 		);
 		await service.initialize();
+		expect(service.getSettings().trackedFolders).toEqual([]);
 		const before = service.exportData();
 
 		await expect(

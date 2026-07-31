@@ -102,6 +102,12 @@ export class En implements Local {
 	form_edit_activity_metric_changed = "Changed characters (added + deleted)";
 	form_edit_activity_metric_added = "Added characters";
 	form_edit_activity_metric_deleted = "Deleted characters";
+	form_edit_activity_folders = "Folders";
+	form_edit_activity_folders_all = "With no selection, show every document inside the global collection scope";
+	form_edit_activity_folders_choose = "Choose folder";
+	form_edit_activity_folder_remove = "Remove this folder";
+	form_edit_activity_folder_missing = "This folder is missing or was renamed";
+	form_edit_activity_folder_outside_scope = "This folder is outside the plugin's global collection scope, so data cannot be complete";
 	form_daily_goal = "Daily goal";
 	form_daily_goal_description = "The darkest level means the goal is reached; raw character counts are never capped";
 	form_activity_tracking_enabled = "Edit activity tracking is enabled";
@@ -135,6 +141,11 @@ export class En implements Local {
 	graph_less = "Less";
 	graph_more = "More";
 	graph_untracked_on = "Edit activity was not being tracked on {date}";
+	graph_partially_tracked_on = "Only part of the requested folder scope was tracked on {date}; this value may be incomplete";
+	graph_folder_missing = "Tracked folder does not exist: {folder}";
+	graph_folder_outside_scope = "Tracked folder is outside the global collection scope: {folder}";
+	graph_folder_legacy_excluded = "Historical characters that cannot be attributed to a document are excluded from folder views.";
+	graph_close_details = "Close contribution details";
 	graph_edit_activity_summary = "{date}: {added} added, {deleted} deleted, {changed} characters changed, {percent}% of goal";
 	graph_edit_activity_document_summary = "{added} added · {deleted} deleted · {changed} changed";
 	graph_edit_activity_last_position = "Last edit: line {line}, column {column}";
@@ -143,13 +154,19 @@ export class En implements Local {
 	graph_characters_unit = "characters";
 
 	settings_activity_heading = "Edit activity";
-	settings_activity_description = "Tracks user-originated character changes in the Obsidian editor on this device. File paths and character counts are saved for daily document details, but note contents are never stored. Sync and automated plugin writes are ignored.";
+	settings_activity_description = "Tracks character changes marked as user input in the Obsidian editor on this device. File paths and character counts are saved for daily document details, but note contents are never stored. Sync and automated writes without a user-input marker are ignored.";
 	settings_tracking_enabled = "Track edit activity";
 	settings_tracking_enabled_description = "Start recording added and deleted characters from today. Paused periods appear as untracked in heatmaps.";
 	settings_tracking_started = "Edit activity tracking started";
 	settings_tracking_paused = "Edit activity tracking paused";
 	settings_exclude_whitespace = "Ignore whitespace";
 	settings_exclude_whitespace_description = "Do not count spaces, tabs, or line breaks. Punctuation and emoji are still counted.";
+	settings_tracked_folders = "Tracked folders";
+	settings_tracked_folders_description = "Choose one or more folders from the current vault. Changes apply only to future edits. Template text inserted into an included document may still be counted.";
+	settings_tracked_folders_choose = "Choose folder";
+	settings_tracked_folders_remove = "Remove this folder";
+	settings_tracked_folders_all = "The whole vault is currently tracked.";
+	settings_tracked_folder_missing = "This folder no longer exists. You can remove this path.";
 	settings_data_heading = "Data management";
 	settings_export = "Export statistics";
 	settings_export_description = "Copy JSON to the clipboard, or download it when clipboard access is unavailable.";
