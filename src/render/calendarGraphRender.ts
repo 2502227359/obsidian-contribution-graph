@@ -45,6 +45,11 @@ export class CalendarGraphRender extends BaseGraphRender {
 		const contributionData = this.generateContributionData(
 			graphConfig
 		).filter((item) => item.date != "$HOLE$");
+		this.restoreSelectedActivity(
+			graphConfig,
+			contributionData,
+			activityContainer
+		);
 
 		// fill first month distance
 		if (contributionData.length > 0) {
@@ -119,7 +124,8 @@ export class CalendarGraphRender extends BaseGraphRender {
 				this.bindMonthTips(
 					monthIndicator,
 					item,
-					contributionMapByYearMonth
+					contributionMapByYearMonth,
+					graphConfig
 				);
 
 				const weekDateIndicators = createDiv({
@@ -175,12 +181,30 @@ export class CalendarGraphRender extends BaseGraphRender {
 			} else if (item.value == 0) {
 				cellEl.className = "cell empty";
 				this.applyCellGlobalStyle(cellEl, graphConfig);
-				this.applyCellStyleRule(cellEl, item, cellRules);
+				this.applyCellStyleRule(
+					cellEl,
+					item,
+					cellRules,
+					graphConfig
+				);
 				this.bindCellAttribute(cellEl, item);
+				this.bindCellClickEvent(
+					cellEl,
+					item,
+					graphConfig,
+					activityContainer
+				);
+				this.bindCellTips(cellEl, item);
 			} else {
 				cellEl.className = "cell";
 				this.applyCellGlobalStyle(cellEl, graphConfig);
-				this.applyCellStyleRule(cellEl, item, cellRules, () => cellRules[0]);
+				this.applyCellStyleRule(
+					cellEl,
+					item,
+					cellRules,
+					graphConfig,
+					() => cellRules[0]
+				);
 				this.bindCellAttribute(cellEl, item);
 				this.bindCellClickEvent(cellEl, item, graphConfig, activityContainer);
 				this.bindCellTips(cellEl, item);

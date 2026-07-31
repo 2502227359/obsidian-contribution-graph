@@ -18,7 +18,7 @@ export class DataviewTaskDataSourceQuery extends BaseDataviewDataSourceQuery {
 		if (source.type === "ALL_TASK") {
 			pageData = dv.pages('""');
 		} else {
-			pageData = dv.pages(source.value);
+			pageData = dv.pages(source.value || '""');
 		}
 
 		const taskData = pageData

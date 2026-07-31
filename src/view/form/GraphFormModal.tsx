@@ -4,6 +4,7 @@ import { Root, createRoot } from "react-dom/client";
 import { GraphForm } from "./GraphForm";
 import { YamlGraphConfig } from "src/processor/types";
 import { YamlConfigReconciler } from "src/processor/yamlConfigReconciler";
+import { EditActivityService } from "src/activity/EditActivityService";
 
 export class ContributionGraphCreateModal extends Modal {
 	root: Root | null = null;
@@ -14,6 +15,7 @@ export class ContributionGraphCreateModal extends Modal {
 
 	constructor(
 		app: App,
+		private readonly activityService: EditActivityService,
 		originalConfigContent?: string,
 		onSave?: (content: string) => void
 	) {
@@ -80,6 +82,7 @@ export class ContributionGraphCreateModal extends Modal {
 					yamlConfig={yamlConfig}
 					onSubmit={onSubmit}
 					app={this.app}
+					activityService={this.activityService}
 				/>
 			</StrictMode>
 		);

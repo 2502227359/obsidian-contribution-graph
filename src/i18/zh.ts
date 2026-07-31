@@ -14,9 +14,8 @@ export class Zh implements Local {
     form_basic_settings = "基础设置";
     form_style_settings = "样式设置";
     form_about = "关于";
-    form_contact_me = "联系我";
-	form_project_url = "项目地址";
-	form_sponsor = "赞助";
+    form_local_edition = "本地版本";
+	form_local_edition_description = "使用独立的本地插件 ID，Obsidian 社区更新不会覆盖此版本。";
     form_title = "标题";
     form_title_placeholder = "输入标题";
     form_graph_type = "图表类型";
@@ -96,10 +95,20 @@ export class Zh implements Local {
     form_datasource_type_page = "文档";
     form_datasource_type_all_task = "所有任务";
     form_datasource_type_task_in_specific_page = "指定文档中的任务";
+	form_datasource_type_edit_activity = "编辑活动";
+	form_edit_activity_metric = "统计指标";
+	form_edit_activity_metric_changed = "总编辑字符（新增 + 删除）";
+	form_edit_activity_metric_added = "新增字符";
+	form_edit_activity_metric_deleted = "删除字符";
+	form_daily_goal = "每日目标";
+	form_daily_goal_description = "达到目标后显示最深色，实际字符数不会被截断";
+	form_activity_tracking_enabled = "编辑活动采集已开启";
+	form_activity_tracking_disabled = "编辑活动采集尚未开启，请前往插件设置启用";
 
     form_theme = "主题";
     form_theme_placeholder = "选择主题或自定义样式";
     form_cell_style_rules = "单元格样式规则";
+	form_goal_heat_levels = "目标比例颜色";
 
     form_button_preview = "预览";
     form_button_save = "保存";
@@ -121,4 +130,40 @@ export class Zh implements Local {
     you_have_no_contributions_on = "你在 {date} 没有任何贡献";
     you_have_contributed_to = "你在 {date} 有 {value} 次贡献";
     click_to_load_more = "点击加载更多......";
+	graph_less = "较少";
+	graph_more = "较多";
+	graph_untracked_on = "{date} 尚未启用编辑活动采集";
+	graph_edit_activity_summary = "{date}：新增 {added}，删除 {deleted}，总编辑 {changed} 字符，完成目标 {percent}%";
+	graph_edit_activity_document_summary = "新增 {added} · 删除 {deleted} · 总编辑 {changed} 字符";
+	graph_edit_activity_last_position = "最后编辑：第 {line} 行，第 {column} 列";
+	graph_edit_activity_document_history = "文档编辑历史，共 {count} 项";
+	graph_edit_activity_unattributed_document = "未归属文档（升级前采集的数据）";
+	graph_characters_unit = "字符";
+
+	settings_activity_heading = "编辑活动";
+	settings_activity_description = "仅统计当前设备上、Obsidian 编辑器内由用户产生的字符变化。为显示每日文档明细，会保存文件路径和字符数，但不会保存笔记内容，也不会统计同步或其他插件自动写入。";
+	settings_tracking_enabled = "采集编辑活动";
+	settings_tracking_enabled_description = "开启后从今天开始记录新增和删除字符；关闭期间在热力图中显示为未采集。";
+	settings_tracking_started = "编辑活动采集已开启";
+	settings_tracking_paused = "编辑活动采集已暂停";
+	settings_exclude_whitespace = "忽略空白字符";
+	settings_exclude_whitespace_description = "不统计空格、制表符和换行；标点与 emoji 仍会统计。";
+	settings_data_heading = "数据管理";
+	settings_export = "导出统计";
+	settings_export_description = "复制 JSON 到剪贴板；剪贴板不可用时自动下载文件。";
+	settings_export_button = "导出";
+	settings_export_success = "编辑活动数据已复制";
+	settings_export_downloaded = "编辑活动数据已下载";
+	settings_import = "导入统计";
+	settings_import_description = "从本插件导出的 JSON 文件恢复统计和采集设置。";
+	settings_import_button = "选择文件";
+	settings_import_success = "编辑活动数据已导入";
+	settings_import_failed = "导入失败：文件格式不正确";
+	settings_corrupt_data_recovered = "编辑活动数据存在异常，已恢复可用数据并备份到 {path}";
+	settings_save_failed = "编辑活动数据保存失败，将自动重试";
+	settings_clear = "清除统计";
+	settings_clear_description = "永久清除所有已记录的每日字符数据。";
+	settings_clear_button = "清除";
+	settings_clear_confirm = "确定清除全部编辑活动统计吗？此操作无法撤销。";
+	settings_clear_success = "编辑活动统计已清除";
 }

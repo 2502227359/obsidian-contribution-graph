@@ -15,12 +15,3 @@
 .about-container .about-item .label {
 	min-width: 88px;
 }
-
-.about-container .about-item.center {
-	justify-content: center;
-}
-
-.about-container .about-item img {
-	max-width: 200px;
-  width: 200px;
-}

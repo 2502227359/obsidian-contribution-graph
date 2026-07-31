@@ -1,18 +1,15 @@
 
 ![](attachment/d20ba90e31c16a3c4d79cba9298577de.png)
 
+# Contribution Graph Local
 
-**English**  |  [中文文档](https://mp.weixin.qq.com/s/wI8M_C87oZAtCBjFWC8CmA)
+This is an independently identified local build. Its plugin ID is not linked
+to the Obsidian community-store entry, so community updates cannot overwrite
+the local modifications.
 
 ## What
 
 Contribution Graph is a plugin for [obsidian.md](https://obsidian.md/) which can generate interactive heatmap graphs like GitHub to track your notes, habits, activity, history, and so on.
-
-
-<a href="https://www.buymeacoffee.com/vran">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="buy me a coffee" width="200px"/>
-</a>
-
 
 ## Use Cases
 
@@ -50,8 +47,42 @@ Contribution Graph is a plugin for [obsidian.md](https://obsidian.md/) which can
 - **Customizable dates**,use fixed date range or latest date to generate graph
 - **Interactive charts**, you can customize cell click event, hover to show statistic data
 - **Integrate with DataviewJS**, use contribution graph's api to dynamically render charts 
+- **Local edit activity**, track characters added and deleted in the Obsidian editor without storing note contents
 
 ![](attachment/74103317de5336b5283338c56171f268.png)
+
+## Character Edit Activity
+
+Enable **Settings → Contribution Graph → Track edit activity**, then create a
+graph with the internal edit activity data source:
+
+```contributionGraph
+title: Writing activity
+graphType: default
+dateRangeType: LATEST_DAYS
+dateRangeValue: 180
+dataSource:
+  type: EDIT_ACTIVITY
+  metric: CHANGED_CHARS
+heatScale:
+  type: GOAL
+  goal: 1000
+```
+
+`CHANGED_CHARS` counts added plus deleted characters. You can also use
+`ADDED_CHARS` or `DELETED_CHARS`. The tracker records user edits on the current
+device only, starts when enabled, ignores whitespace by default, and never
+stores note contents. Dates before tracking started are shown as untracked.
+
+DataviewJS can read the recorded daily totals without becoming responsible for
+collecting them:
+
+```js
+const stats = window.contributionGraphApi.getDailyEditStats({
+  fromDate: "2026-01-01",
+  toDate: "2026-12-31"
+});
+```
 
 
 ### How to Modify Graph?
@@ -79,3 +110,4 @@ Just click the edit button at top right corner
 
 - [API Usage, Integrate with DataviewJS ](README_ADVANCED.md)
 - [Basic Codeblock Usage](README_BASIC.md)
+- [Development log](CHANGELOG.md)

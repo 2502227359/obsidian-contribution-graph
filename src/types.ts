@@ -1,5 +1,45 @@
 import { DEFAULT_RULES } from "./constants";
 
+export interface DailyEditStats {
+	date: string;
+	addedChars: number;
+	deletedChars: number;
+	changedChars: number;
+	documents: DocumentEditStats[];
+}
+
+export interface DocumentEditStats {
+	path: string;
+	addedChars: number;
+	deletedChars: number;
+	changedChars: number;
+	lastEditPosition?: EditPosition;
+}
+
+export interface EditPosition {
+	/** Zero-based line number. */
+	line: number;
+	/** Zero-based column number. */
+	column: number;
+}
+
+export interface TrackingPeriod {
+	startDate: string;
+	endDate?: string;
+}
+
+export interface GoalHeatLevel {
+	minRatio: number;
+	color: string;
+	text?: string;
+}
+
+export interface GoalHeatScale {
+	type: "GOAL";
+	goal: number;
+	levels: GoalHeatLevel[];
+}
+
 export class ContributionGraphConfig {
 	/**
 	 * the title of the graph
@@ -47,6 +87,22 @@ export class ContributionGraphConfig {
 	cellStyleRules: CellStyleRule[] = DEFAULT_RULES;
 
 	/**
+	 * Optional goal-based heat scale. When present it takes precedence over
+	 * fixed cellStyleRules.
+	 */
+	heatScale?: GoalHeatScale;
+
+	/**
+	 * Coverage information for internally tracked data sources.
+	 */
+	trackingPeriods?: TrackingPeriod[];
+
+	/**
+	 * Display unit used by legends, tooltips, and activity summaries.
+	 */
+	valueUnit?: string;
+
+	/**
 	 * set true to fill the screen, default value is false
 	 *
 	 * notice: it's not work when `graphType` is `calendar`
@@ -87,6 +143,17 @@ export class ContributionGraphConfig {
 		cellData: ContributionCellData,
 		event: MouseEvent | undefined
 	) => void | undefined;
+
+	/**
+	 * Internal activity-detail state used to preserve the selected day across
+	 * reactive refreshes.
+	 */
+	selectedActivityDate?: string;
+
+	/**
+	 * Called when the activity-detail panel is closed.
+	 */
+	onActivityClose?: () => void;
 }
 
 export interface Contribution {
@@ -101,16 +168,18 @@ export interface Contribution {
 	/**
 	 * the summary of the contribution, will be shown when hover on the cell
 	 */
-	summary: string | undefined;
+	summary?: string | undefined;
 
 	items?: ContributionItem[];
+	editStats?: DailyEditStats;
 }
 
 export interface ContributionItem {
 	label: string;
 	value: number;
+	description?: string;
 	link?: ContributionItemLink;
-	open?: (e: MouseEvent) => void;
+	open?: (e: MouseEvent) => void | Promise<void>;
 }
 
 export interface ContributionItemLink {
@@ -141,4 +210,7 @@ export class ContributionCellData {
 	value: number;
 	summary?: string;
 	items?: ContributionItem[];
+	editStats?: DailyEditStats;
+	tracked?: boolean;
+	future?: boolean;
 }

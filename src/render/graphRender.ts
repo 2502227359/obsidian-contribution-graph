@@ -13,6 +13,7 @@ import {
 } from "./matrixDataGenerator";
 import { matchCellStyleRule } from "src/util/utils";
 import { Locals } from "src/i18/messages";
+import { resolveGoalHeatLevel } from "./heatScale";
 
 export interface GraphRender {
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void;
@@ -90,12 +91,28 @@ export abstract class BaseGraphRender implements GraphRender {
 		const cellRules = this.getCellRules(graphConfig);
 		createDiv({
 			cls: "cell text",
-			text: "less",
+			text: Locals.get().graph_less,
 			parent: cellRuleIndicatorContainer,
 		});
-		cellRules
-			.sort((a, b) => a.min - b.min)
-			.forEach((rule) => {
+
+		if (graphConfig.heatScale?.type === "GOAL") {
+			[...graphConfig.heatScale.levels]
+				.sort((a, b) => a.minRatio - b.minRatio)
+				.forEach((level) => {
+					const cellEl = createDiv({
+						cls: ["cell"],
+						parent: cellRuleIndicatorContainer,
+					});
+					cellEl.style.backgroundColor = level.color;
+					cellEl.innerText = level.text || "";
+					cellEl.ariaLabel = `${Math.round(
+						level.minRatio * 100
+					)}% ${graphConfig.valueUnit || ""}`.trim();
+				});
+		} else {
+			[...cellRules]
+				.sort((a, b) => a.min - b.min)
+				.forEach((rule) => {
 				const cellEl = createDiv({
 					cls: ["cell"],
 					parent: cellRuleIndicatorContainer,
@@ -105,12 +122,14 @@ export abstract class BaseGraphRender implements GraphRender {
 				cellEl.innerText = rule.text || "";
 
 				// bind tips event
-				const summary = `${rule.min} ≤ contributions ＜ ${rule.max}`;
+				const unit = graphConfig.valueUnit || "contributions";
+				const summary = `${rule.min} ≤ ${unit} ＜ ${rule.max}`;
 				cellEl.ariaLabel = summary;
 			});
+		}
 		createDiv({
 			cls: "cell text",
-			text: "more",
+			text: Locals.get().graph_more,
 			parent: cellRuleIndicatorContainer,
 		});
 	}
@@ -141,14 +160,46 @@ export abstract class BaseGraphRender implements GraphRender {
 
 		closeButton.onclick = () => {
 			contaienr.empty();
+			graphConfig.onActivityClose?.();
 		};
 
-		let summary;
-		if (cellData.value > 0) {
+		let summary = cellData.summary;
+		if (cellData.tracked === false) {
+			summary = Locals.get().graph_untracked_on.replace(
+				"{date}",
+				cellData.date
+			);
+		} else if (!summary && cellData.editStats) {
+			const goal = Math.max(1, graphConfig.heatScale?.goal || 1000);
+			summary = Locals.get()
+				.graph_edit_activity_summary.replace("{date}", cellData.date)
+				.replace("{added}", cellData.editStats.addedChars.toString())
+				.replace(
+					"{deleted}",
+					cellData.editStats.deletedChars.toString()
+				)
+				.replace(
+					"{changed}",
+					cellData.editStats.changedChars.toString()
+				)
+				.replace(
+					"{percent}",
+					Math.round(
+						(cellData.editStats.changedChars / goal) * 100
+					).toString()
+				);
+		} else if (!summary && graphConfig.trackingPeriods) {
+			summary = Locals.get()
+				.graph_edit_activity_summary.replace("{date}", cellData.date)
+				.replace("{added}", "0")
+				.replace("{deleted}", "0")
+				.replace("{changed}", "0")
+				.replace("{percent}", "0");
+		} else if (!summary && cellData.value > 0) {
 			summary = Locals.get()
 				.you_have_contributed_to.replace("{date}", cellData.date)
 				.replace("{value}", cellData.value.toString());
-		} else {
+		} else if (!summary) {
 			summary = Locals.get()
 				.you_have_no_contributions_on.replace("{date}", cellData.date)
 				.replace("{value}", "0");
@@ -177,6 +228,16 @@ export abstract class BaseGraphRender implements GraphRender {
 		// show top 10 items
 		const size = 10;
 		const items = cellData.items || [];
+		list.setAttribute("role", "list");
+		list.setAttribute("tabindex", "0");
+		list.setAttribute(
+			"aria-label",
+			Locals.get()
+				.graph_edit_activity_document_history.replace(
+					"{count}",
+					items.length.toString()
+				)
+		);
 		renderActivityItem(items.slice(0, size), list);
 
 		const navigation = createDiv({
@@ -193,11 +254,16 @@ export abstract class BaseGraphRender implements GraphRender {
 			});
 			loadMore.onclick = (event) => {
 				event.preventDefault();
+				const previousScrollHeight = list.scrollHeight;
 				page++;
 				renderActivityItem(
 					items.slice((page - 1) * size, page * size),
 					list
 				);
+				list.scrollTo({
+					top: Math.max(0, previousScrollHeight - 16),
+					behavior: "smooth",
+				});
 				if (page * size >= items.length) {
 					loadMore.remove();
 				}
@@ -205,15 +271,43 @@ export abstract class BaseGraphRender implements GraphRender {
 		}
 	}
 
+	restoreSelectedActivity(
+		graphConfig: ContributionGraphConfig,
+		contributionData: ContributionCellData[],
+		activityContainer: HTMLElement
+	): void {
+		if (!graphConfig.selectedActivityDate) {
+			return;
+		}
+		const selected = contributionData.find(
+			(item) => item.date === graphConfig.selectedActivityDate
+		);
+		if (selected) {
+			this.renderActivity(graphConfig, selected, activityContainer);
+		}
+	}
+
 	generateContributionData(graphConfig: ContributionGraphConfig) {
 		if (graphConfig.days) {
-			return generateByLatestDays(graphConfig.days, graphConfig.data);
+			return generateByLatestDays(
+				graphConfig.days,
+				graphConfig.data,
+				graphConfig.trackingPeriods
+			);
 		} else if (graphConfig.fromDate && graphConfig.toDate) {
 			const fromDate = parseDate(graphConfig.fromDate);
 			const toDate = parseDate(graphConfig.toDate);
-			return generateByFixedDate(fromDate, toDate, graphConfig.data);
+			return generateByFixedDate(
+				fromDate,
+				toDate,
+				graphConfig.data,
+				graphConfig.trackingPeriods
+			);
 		} else {
-			return generateByData(graphConfig.data);
+			return generateByData(
+				graphConfig.data,
+				graphConfig.trackingPeriods
+			);
 		}
 	}
 
@@ -227,13 +321,16 @@ export abstract class BaseGraphRender implements GraphRender {
 	bindMonthTips(
 		monthCell: HTMLElement,
 		contributionItem: ContributionCellData,
-		contributionMapByYearMonth: Map<string, number>
+		contributionMapByYearMonth: Map<string, number>,
+		graphConfig: ContributionGraphConfig
 	) {
 		const yearMonth = `${contributionItem.year}-${contributionItem.month + 1
 			}`;
 		const yearMonthValue = contributionMapByYearMonth.get(yearMonth) || 0;
 		// tips event
-		monthCell.ariaLabel = `${yearMonthValue} contributions on ${yearMonth}.`;
+		monthCell.ariaLabel = `${yearMonthValue} ${
+			graphConfig.valueUnit || "contributions"
+		} on ${yearMonth}.`;
 	}
 
 	applyCellGlobalStyle(
@@ -264,8 +361,35 @@ export abstract class BaseGraphRender implements GraphRender {
 		cellEl: HTMLElement,
 		contributionItem: ContributionCellData,
 		cellRules: CellStyleRule[],
+		graphConfig: ContributionGraphConfig,
 		defaultCellStyleRule?: () => CellStyleRule
 	) {
+		if (contributionItem.future) {
+			cellEl.style.backgroundColor = "";
+			cellEl.addClass("future");
+			return;
+		}
+		if (contributionItem.tracked === false) {
+			cellEl.style.backgroundColor = "";
+			cellEl.addClass("untracked");
+			return;
+		}
+
+		if (graphConfig.heatScale?.type === "GOAL") {
+			if (contributionItem.value <= 0) {
+				return;
+			}
+			const level = resolveGoalHeatLevel(
+				contributionItem.value,
+				graphConfig.heatScale
+			);
+			if (level) {
+				cellEl.style.backgroundColor = level.color;
+				cellEl.innerText = level.text || "";
+			}
+			return;
+		}
+
 		const cellStyleRule = matchCellStyleRule(
 			contributionItem.value,
 			cellRules
@@ -277,7 +401,14 @@ export abstract class BaseGraphRender implements GraphRender {
 		}
 
 		if (defaultCellStyleRule) {
-			const defaultRule = defaultCellStyleRule();
+			const sortedRules = [...cellRules].sort(
+				(a, b) => a.min - b.min
+			);
+			const defaultRule =
+				[...sortedRules]
+					.reverse()
+					.find((rule) => contributionItem.value >= rule.min) ||
+				defaultCellStyleRule();
 			cellEl.style.backgroundColor = defaultRule.color;
 			cellEl.innerText = defaultRule.text || "";
 		}
@@ -298,6 +429,9 @@ export abstract class BaseGraphRender implements GraphRender {
 		graphConfig: ContributionGraphConfig,
 		activityContainer?: HTMLElement
 	) {
+		if (contributionItem.future) {
+			return;
+		}
 		cellEl.onclick = (event: MouseEvent) => {
 			if (graphConfig.onCellClick) {
 				graphConfig.onCellClick(contributionItem, event);
@@ -314,6 +448,32 @@ export abstract class BaseGraphRender implements GraphRender {
 	}
 
 	bindCellTips(cellEl: HTMLElement, contributionItem: ContributionCellData) {
+		if (contributionItem.future) {
+			cellEl.ariaLabel = contributionItem.date;
+			return;
+		}
+		if (contributionItem.tracked === false) {
+			cellEl.ariaLabel = Locals.get().graph_untracked_on.replace(
+				"{date}",
+				contributionItem.date
+			);
+			return;
+		}
+		if (
+			contributionItem.tracked === true &&
+			!contributionItem.summary
+		) {
+			cellEl.ariaLabel = Locals.get()
+				.graph_edit_activity_summary.replace(
+					"{date}",
+					contributionItem.date
+				)
+				.replace("{added}", "0")
+				.replace("{deleted}", "0")
+				.replace("{changed}", "0")
+				.replace("{percent}", "0");
+			return;
+		}
 		const summary = contributionItem.summary
 			? contributionItem.summary
 			: `${contributionItem.value} contributions on ${contributionItem.date}.`;
@@ -327,25 +487,40 @@ function renderActivityItem(items: ContributionItem[], listMain: HTMLElement) {
 			cls: "activity-item",
 			parent: listMain,
 		});
+		listItem.setAttribute("role", "listitem");
 
-		const linkEl = createEl("a", {
-			text: item.label,
-			parent: listItem,
-			cls: `label ${item.link?.className || ""}`,
-		});
-		linkEl.ariaLabel = item.label;
+		const labelEl =
+			item.link || item.open
+				? createEl("a", {
+						text: item.label,
+						parent: listItem,
+						cls: `label ${item.link?.className || ""}`,
+				  })
+				: createSpan({
+						text: item.label,
+						parent: listItem,
+						cls: "label",
+				  });
+		labelEl.ariaLabel = item.label;
 		if (item.link) {
 			const link = item.link;
-			linkEl.setAttribute("data-href", link.href || "#");
-			linkEl.setAttribute("href", link.href || "#");
-			linkEl.setAttribute("target", link.target || "_blank");
-			linkEl.setAttribute("rel", link.rel || "noopener");
+			labelEl.setAttribute("data-href", link.href || "#");
+			labelEl.setAttribute("href", link.href || "#");
+			labelEl.setAttribute("target", link.target || "_blank");
+			labelEl.setAttribute("rel", link.rel || "noopener");
 		}
-		linkEl.onclick = (event) => {
+		labelEl.onclick = (event) => {
 			if (item.open) {
 				event.preventDefault();
 				item.open(event);
 			}
 		};
+		if (item.description) {
+			createSpan({
+				text: item.description,
+				parent: listItem,
+				cls: "description",
+			});
+		}
 	});
 }

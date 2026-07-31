@@ -54,6 +54,11 @@ export class MonthTrackGraphRender extends BaseGraphRender {
 		const contributionData = this.generateContributionData(
 			graphConfig
 		).filter((item) => item.date != "$HOLE$");
+		this.restoreSelectedActivity(
+			graphConfig,
+			contributionData,
+			activityContainer
+		);
 
 		const contributionMapByYearMonth = mapBy(
 			contributionData,
@@ -101,7 +106,8 @@ export class MonthTrackGraphRender extends BaseGraphRender {
 				this.bindMonthTips(
 					monthIndicator,
 					contributionItem,
-					contributionMapByYearMonth
+					contributionMapByYearMonth,
+					graphConfig
 				);
 				monthDataRowEl.appendChild(monthIndicator);
 			}
@@ -125,12 +131,30 @@ export class MonthTrackGraphRender extends BaseGraphRender {
 			monthDataRowEl?.appendChild(cellEl);
 			if (contributionItem.value == 0) {
 				cellEl.className = "cell empty";
-				this.applyCellStyleRule(cellEl, contributionItem, cellRules);
+				this.applyCellStyleRule(
+					cellEl,
+					contributionItem,
+					cellRules,
+					graphConfig
+				);
 				this.bindCellAttribute(cellEl, contributionItem);
+				this.bindCellClickEvent(
+					cellEl,
+					contributionItem,
+					graphConfig,
+					activityContainer
+				);
+				this.bindCellTips(cellEl, contributionItem);
 			} else {
 				cellEl.className = "cell";
 
-				this.applyCellStyleRule(cellEl, contributionItem, cellRules, () => cellRules[0]);
+				this.applyCellStyleRule(
+					cellEl,
+					contributionItem,
+					cellRules,
+					graphConfig,
+					() => cellRules[0]
+				);
 				this.bindCellAttribute(cellEl, contributionItem);
 				this.bindCellClickEvent(cellEl, contributionItem, graphConfig, activityContainer);
 				this.bindCellTips(cellEl, contributionItem);

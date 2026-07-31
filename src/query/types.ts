@@ -1,6 +1,15 @@
 import { DateTime } from "luxon";
 
-export type DataSourceType = "PAGE" | "ALL_TASK" | "TASK_IN_SPECIFIC_PAGE";
+export type DataSourceType =
+	| "PAGE"
+	| "ALL_TASK"
+	| "TASK_IN_SPECIFIC_PAGE"
+	| "EDIT_ACTIVITY";
+
+export type EditActivityMetric =
+	| "CHANGED_CHARS"
+	| "ADDED_CHARS"
+	| "DELETED_CHARS";
 
 export type DataSourceFilterType =
 	| "NONE"
@@ -10,10 +19,11 @@ export type DataSourceFilterType =
 
 export class DataSource {
 	type: DataSourceType;
-	value: string;
+	value?: string;
 	filters?: DataFilter[];
 	dateField?: DateField;
 	countField?: CountField;
+	metric?: EditActivityMetric;
 }
 
 export class DataFilter {

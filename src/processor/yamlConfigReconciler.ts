@@ -1,4 +1,5 @@
 import { DateRangeType, YamlGraphConfig } from "./types";
+import { createDefaultGoalHeatScale } from "src/constants";
 
 export class YamlConfigReconciler {
 	constructor() {}
@@ -34,6 +35,22 @@ export class YamlConfigReconciler {
 
 		if (!yamlConfig.dateRangeValue) {
 			yamlConfig.dateRangeValue = yamlConfig.days;
+		}
+
+		if (
+			yamlConfig.dataSource?.type === "EDIT_ACTIVITY" &&
+			!yamlConfig.heatScale
+		) {
+			yamlConfig.heatScale = createDefaultGoalHeatScale();
+		}
+		if (
+			yamlConfig.heatScale?.type === "GOAL" &&
+			(!yamlConfig.heatScale.levels ||
+				yamlConfig.heatScale.levels.length === 0)
+		) {
+			yamlConfig.heatScale = createDefaultGoalHeatScale(
+				yamlConfig.heatScale.goal || 1000
+			);
 		}
 
 		yamlConfig.query = undefined;

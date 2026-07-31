@@ -2,6 +2,14 @@ import { DateTime } from "luxon";
 
 export function parseDate(date: string | Date) {
 	if (typeof date === "string") {
+		const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+		if (match) {
+			return new Date(
+				Number(match[1]),
+				Number(match[2]) - 1,
+				Number(match[3])
+			);
+		}
 		return new Date(date);
 	} else {
 		return date;
@@ -12,6 +20,36 @@ export function diffDays(date1: Date, date2: Date) {
 	const from = DateTime.fromJSDate(date1);
 	const to = DateTime.fromJSDate(date2);
 	return to.diff(from, "days").days;
+}
+
+export function diffCalendarDays(date1: Date, date2: Date): number {
+	const from = Date.UTC(
+		date1.getFullYear(),
+		date1.getMonth(),
+		date1.getDate()
+	);
+	const to = Date.UTC(
+		date2.getFullYear(),
+		date2.getMonth(),
+		date2.getDate()
+	);
+	return Math.round((to - from) / 86400000);
+}
+
+export function isValidFormattedDate(value: string): boolean {
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+	if (!match) {
+		return false;
+	}
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	const date = new Date(year, month - 1, day);
+	return (
+		date.getFullYear() === year &&
+		date.getMonth() === month - 1 &&
+		date.getDate() === day
+	);
 }
 
 export function toFormattedDate(date: Date) {

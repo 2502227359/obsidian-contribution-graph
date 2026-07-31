@@ -7,6 +7,7 @@ import {
 	DataSourceFilterType,
 	DataSourceType,
 	DateFieldType,
+	EditActivityMetric,
 	TaskStatus,
 } from "src/query/types";
 import { DateRangeType } from "src/processor/types";
@@ -107,6 +108,26 @@ export const dataSourceTypes: SelectOption<DataSourceType>[] = [
 	{
 		label: Locals.get().form_datasource_type_task_in_specific_page,
 		value: "TASK_IN_SPECIFIC_PAGE",
+	},
+	{
+		label: Locals.get().form_datasource_type_edit_activity,
+		value: "EDIT_ACTIVITY",
+	},
+];
+
+export const editActivityMetricOptions: SelectOption<EditActivityMetric>[] = [
+	{
+		label: Locals.get().form_edit_activity_metric_changed,
+		value: "CHANGED_CHARS",
+		selected: true,
+	},
+	{
+		label: Locals.get().form_edit_activity_metric_added,
+		value: "ADDED_CHARS",
+	},
+	{
+		label: Locals.get().form_edit_activity_metric_deleted,
+		value: "DELETED_CHARS",
 	},
 ];
 

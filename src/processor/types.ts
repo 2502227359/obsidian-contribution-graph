@@ -4,6 +4,8 @@ import {
 	Contribution,
 	CellStyleRule,
 	ContributionGraphConfig,
+	GoalHeatScale,
+	TrackingPeriod,
 } from "src/types";
 import {
 	MISS_CONFIG,
@@ -11,14 +13,23 @@ import {
 	INVALID_GRAPH_TYPE,
 	MISS_DAYS_OR_RANGE_DATE,
 	INVALID_DATE_FORMAT,
+	INVALID_DATE_RANGE,
 	INVALID_START_OF_WEEK,
+	INVALID_HEAT_SCALE,
 } from "./bizErrors";
 import { GraphProcessError } from "./graphProcessError";
 import {
 	getLatestMonthAbsoluteFromAndEnd,
 	getLatestYearAbsoluteFromAndEnd,
+	diffCalendarDays,
+	isValidFormattedDate,
+	parseDate,
 	toFormattedDate,
 } from "src/util/dateUtils";
+
+const MAX_GRAPH_DAYS = 3650;
+const MAX_GRAPH_MONTHS = 120;
+const MAX_GRAPH_YEARS = 10;
 
 export class YamlGraphConfig {
 	/**
@@ -44,6 +55,9 @@ export class YamlGraphConfig {
 	mainContainerStyle?: Partial<CSSStyleDeclaration>;
 	cellStyle?: Partial<CSSStyleDeclaration>;
 	cellStyleRules?: CellStyleRule[];
+	heatScale?: GoalHeatScale;
+	trackingPeriods?: TrackingPeriod[];
+	valueUnit?: string;
 
 	// deprecated
 	days?: number;
@@ -142,17 +156,142 @@ export class YamlGraphConfig {
 			}
 		}
 
+		if (config.dateRangeValue !== undefined) {
+			if (
+				!Number.isSafeInteger(config.dateRangeValue) ||
+				config.dateRangeValue <= 0
+			) {
+				throw new GraphProcessError(
+					INVALID_DATE_RANGE("value must be a positive integer")
+				);
+			}
+			const limit =
+				config.dateRangeType === "LATEST_MONTH"
+					? MAX_GRAPH_MONTHS
+					: config.dateRangeType === "LATEST_YEAR"
+					? MAX_GRAPH_YEARS
+					: MAX_GRAPH_DAYS;
+			if (config.dateRangeValue > limit) {
+				throw new GraphProcessError(
+					INVALID_DATE_RANGE(`value cannot exceed ${limit}`)
+				);
+			}
+		}
+
 		if (config.fromDate || config.toDate) {
-			// yyyy-MM-dd
-			const dateReg = /^\d{4}-\d{2}-\d{2}$/;
-			if (config.fromDate && !dateReg.test(config.fromDate)) {
+			if (
+				config.fromDate &&
+				!isValidFormattedDate(config.fromDate)
+			) {
 				throw new GraphProcessError(
 					INVALID_DATE_FORMAT(config.fromDate)
 				);
 			}
 
-			if (config.toDate && !dateReg.test(config.toDate)) {
+			if (config.toDate && !isValidFormattedDate(config.toDate)) {
 				throw new GraphProcessError(INVALID_DATE_FORMAT(config.toDate));
+			}
+			if (config.fromDate && config.toDate) {
+				const rangeDays =
+					diffCalendarDays(
+						parseDate(config.fromDate),
+						parseDate(config.toDate)
+					) + 1;
+				if (rangeDays <= 0) {
+					throw new GraphProcessError(
+						INVALID_DATE_RANGE(
+							"fromDate must not be after toDate"
+						)
+					);
+				}
+				if (rangeDays > MAX_GRAPH_DAYS) {
+					throw new GraphProcessError(
+						INVALID_DATE_RANGE(
+							`fixed ranges cannot exceed ${MAX_GRAPH_DAYS} days`
+						)
+					);
+				}
+			}
+		}
+
+		if (config.heatScale !== undefined) {
+			const heatScale = config.heatScale as GoalHeatScale;
+			if (!heatScale || heatScale.type !== "GOAL") {
+				throw new GraphProcessError(
+					INVALID_HEAT_SCALE('type must be "GOAL"')
+				);
+			}
+			if (
+				!Number.isSafeInteger(heatScale.goal) ||
+				heatScale.goal <= 0
+			) {
+				throw new GraphProcessError(
+					INVALID_HEAT_SCALE(
+						"goal must be a positive integer"
+					)
+				);
+			}
+			if (
+				!Array.isArray(heatScale.levels) ||
+				heatScale.levels.length === 0 ||
+				heatScale.levels.length > 20
+			) {
+				throw new GraphProcessError(
+					INVALID_HEAT_SCALE(
+						"levels must contain between 1 and 20 entries"
+					)
+				);
+			}
+			const ratios = new Set<number>();
+			for (const level of heatScale.levels) {
+				if (
+					!level ||
+					typeof level.minRatio !== "number" ||
+					!Number.isFinite(level.minRatio) ||
+					level.minRatio < 0
+				) {
+					throw new GraphProcessError(
+						INVALID_HEAT_SCALE(
+							"each minRatio must be a finite non-negative number"
+						)
+					);
+				}
+				if (ratios.has(level.minRatio)) {
+					throw new GraphProcessError(
+						INVALID_HEAT_SCALE(
+							"minRatio values must be unique"
+						)
+					);
+				}
+				ratios.add(level.minRatio);
+				if (
+					typeof level.color !== "string" ||
+					level.color.trim().length === 0 ||
+					level.color.length > 100
+				) {
+					throw new GraphProcessError(
+						INVALID_HEAT_SCALE(
+							"each level must have a valid color"
+						)
+					);
+				}
+				if (
+					level.text !== undefined &&
+					typeof level.text !== "string"
+				) {
+					throw new GraphProcessError(
+						INVALID_HEAT_SCALE(
+							"level text must be a string"
+						)
+					);
+				}
+			}
+			if (!ratios.has(0)) {
+				throw new GraphProcessError(
+					INVALID_HEAT_SCALE(
+						"levels must include a minRatio of 0"
+					)
+				);
 			}
 		}
 

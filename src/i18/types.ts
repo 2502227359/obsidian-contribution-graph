@@ -14,9 +14,8 @@ export interface Local {
 	form_basic_settings: string;
 	form_style_settings: string;
 	form_about: string;
-	form_contact_me: string;
-	form_project_url: string;
-	form_sponsor: string;
+	form_local_edition: string;
+	form_local_edition_description: string;
 	form_title: string;
 	form_title_placeholder: string;
 	form_graph_type: string;
@@ -95,10 +94,20 @@ export interface Local {
 	form_datasource_type_page: string;
 	form_datasource_type_all_task: string;
 	form_datasource_type_task_in_specific_page: string;
+	form_datasource_type_edit_activity: string;
+	form_edit_activity_metric: string;
+	form_edit_activity_metric_changed: string;
+	form_edit_activity_metric_added: string;
+	form_edit_activity_metric_deleted: string;
+	form_daily_goal: string;
+	form_daily_goal_description: string;
+	form_activity_tracking_enabled: string;
+	form_activity_tracking_disabled: string;
 
 	form_theme: string;
 	form_theme_placeholder: string;
 	form_cell_style_rules: string;
+	form_goal_heat_levels: string;
 
 	form_button_preview: string;
 	form_button_save: string;
@@ -120,4 +129,43 @@ export interface Local {
 	you_have_no_contributions_on: string;
 	you_have_contributed_to: string;
 	click_to_load_more: string;
+	graph_less: string;
+	graph_more: string;
+	graph_untracked_on: string;
+	graph_edit_activity_summary: string;
+	graph_edit_activity_document_summary: string;
+	graph_edit_activity_last_position: string;
+	graph_edit_activity_document_history: string;
+	graph_edit_activity_unattributed_document: string;
+	graph_characters_unit: string;
+
+	/**
+	 * plugin settings
+	 */
+	settings_activity_heading: string;
+	settings_activity_description: string;
+	settings_tracking_enabled: string;
+	settings_tracking_enabled_description: string;
+	settings_tracking_started: string;
+	settings_tracking_paused: string;
+	settings_exclude_whitespace: string;
+	settings_exclude_whitespace_description: string;
+	settings_data_heading: string;
+	settings_export: string;
+	settings_export_description: string;
+	settings_export_button: string;
+	settings_export_success: string;
+	settings_export_downloaded: string;
+	settings_import: string;
+	settings_import_description: string;
+	settings_import_button: string;
+	settings_import_success: string;
+	settings_import_failed: string;
+	settings_corrupt_data_recovered: string;
+	settings_save_failed: string;
+	settings_clear: string;
+	settings_clear_description: string;
+	settings_clear_button: string;
+	settings_clear_confirm: string;
+	settings_clear_success: string;
 }

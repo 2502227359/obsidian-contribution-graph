@@ -74,6 +74,12 @@ data: []`,
 		]
 	);
 
+export const INVALID_DATE_RANGE = (message: string) =>
+	errorTipsHtmlTemplate(`Invalid date range: ${message}`, []);
+
+export const INVALID_HEAT_SCALE = (message: string) =>
+	errorTipsHtmlTemplate(`Invalid heat scale: ${message}`, []);
+
 export const INVALID_START_OF_WEEK = (
 	invalidValue?: string | number | boolean
 ) =>

@@ -14,6 +14,7 @@ export class Renders {
 		container: HTMLElement,
 		graphConfig: ContributionGraphConfig
 	): void {
+		container.empty();
 		if (graphConfig.graphType === undefined) {
 			graphConfig.graphType = "default";
 		}

@@ -20,11 +20,16 @@ import { Tab } from "../tab/Tab";
 import NumberInput from "../number-input";
 import { ColorPicker } from "./ColorPicker";
 import { About } from "../about";
+import { EditActivityService } from "src/activity/EditActivityService";
+import { createDefaultGoalHeatScale } from "src/constants";
+import { GoalHeatScaleFormItem } from "./GoalHeatScaleFormItem";
+import { applyThemeToGoalHeatScale } from "./goalHeatScaleForm";
 
 export function GraphForm(props: {
 	yamlConfig: YamlGraphConfig;
 	onSubmit: (yamlGraphConfig: YamlGraphConfig) => void;
 	app: App;
+	activityService: EditActivityService;
 }): JSX.Element {
 	const { yamlConfig } = props;
 	const local = Locals.get();
@@ -46,6 +51,19 @@ export function GraphForm(props: {
 		const { value } = e.target;
 		const theme = THEMES.find((t) => t.name == value);
 		if (theme) {
+			if (
+				formData.dataSource?.type === "EDIT_ACTIVITY" &&
+				theme.rules.length > 0
+			) {
+				changeFormData(
+					"heatScale",
+					applyThemeToGoalHeatScale(
+						formData.heatScale,
+						theme.rules
+					)
+				);
+				return;
+			}
 			changeFormData("cellStyleRules", theme.rules);
 			setCellRules(theme.rules);
 		}
@@ -93,7 +111,7 @@ export function GraphForm(props: {
 	const onPreview = () => {
 		if (previewContainerRef.current) {
 			previewContainerRef.current.empty();
-			const processor = new CodeBlockProcessor();
+			const processor = new CodeBlockProcessor(props.activityService);
 			// copy new instance
 			const copiedFormData = JSON.parse(JSON.stringify(formData));
 			copiedFormData.cellStyleRules = cellRules;
@@ -326,9 +344,80 @@ export function GraphForm(props: {
 												"dataSource",
 												newDataSource
 											);
+											if (
+												newDataSource.type ===
+												"EDIT_ACTIVITY"
+											) {
+												changeFormData(
+													"heatScale",
+													formData.heatScale ||
+														createDefaultGoalHeatScale()
+												);
+											} else if (
+												formData.heatScale?.type ===
+												"GOAL"
+											) {
+												changeFormData(
+													"heatScale",
+													undefined
+												);
+											}
 										}}
 										app={props.app}
 									/>
+									{formData.dataSource?.type ===
+										"EDIT_ACTIVITY" && (
+										<div className="form-item contribution-graph-goal-setting">
+											<span className="label">
+												{local.form_daily_goal}
+											</span>
+											<div className="form-vertical-content">
+												<input
+													type="number"
+													min={1}
+													defaultValue={
+														formData.heatScale
+															?.goal || 1000
+													}
+													onChange={(event) => {
+														const goal = Math.max(
+															1,
+															parseInt(
+																event.target
+																	.value
+															) || 1
+														);
+														changeFormData(
+															"heatScale",
+															{
+																...(formData.heatScale ||
+																	createDefaultGoalHeatScale()),
+																goal,
+															}
+														);
+													}}
+												/>
+												<span className="form-description">
+													{
+														local.form_daily_goal_description
+													}
+												</span>
+												<span
+													className={`activity-tracking-state ${
+														props.activityService.getSettings()
+															.trackingEnabled
+															? "is-enabled"
+															: "is-disabled"
+													}`}
+												>
+													{props.activityService.getSettings()
+														.trackingEnabled
+														? local.form_activity_tracking_enabled
+														: local.form_activity_tracking_disabled}
+												</span>
+											</div>
+										</div>
+									)}
 								</div>
 							</div>
 						),
@@ -641,54 +730,77 @@ export function GraphForm(props: {
 									</div>
 									<div className="form-item">
 										<span className="label">
-											{local.form_cell_style_rules}
+											{formData.dataSource?.type ===
+											"EDIT_ACTIVITY"
+												? local.form_goal_heat_levels
+												: local.form_cell_style_rules}
 										</span>
 										<div className="form-vertical-content">
-											{cellRules.map((rule) => {
-												return (
-													<CellRuleItem
-														rule={rule}
-														key={rule.id}
-														onChange={(newRule) => {
-															const newRules =
-																cellRules.map(
-																	(r) => {
-																		if (
-																			r.id ==
-																			newRule.id
-																		) {
-																			return newRule;
-																		} else {
-																			return r;
-																		}
-																	}
-																);
-															setCellRules(
-																newRules
-															);
-														}}
-														onRemove={(
-															id: string
-														) => {
-															const newRules =
-																cellRules.filter(
-																	(r) =>
-																		r.id !=
-																		id
-																);
-															setCellRules(
-																newRules
-															);
-														}}
-													/>
-												);
-											})}
-											<button
-												onClick={() => addCellRule()}
-												className="list-add-button"
-											>
-												+
-											</button>
+											{formData.dataSource?.type ===
+											"EDIT_ACTIVITY" ? (
+												<GoalHeatScaleFormItem
+													heatScale={
+														formData.heatScale
+													}
+													onChange={(heatScale) =>
+														changeFormData(
+															"heatScale",
+															heatScale
+														)
+													}
+												/>
+											) : (
+												<>
+													{cellRules.map((rule) => {
+														return (
+															<CellRuleItem
+																rule={rule}
+																key={rule.id}
+																onChange={(
+																	newRule
+																) => {
+																	const newRules =
+																		cellRules.map(
+																			(
+																				r
+																			) =>
+																				r.id ==
+																				newRule.id
+																					? newRule
+																					: r
+																		);
+																	setCellRules(
+																		newRules
+																	);
+																}}
+																onRemove={(
+																	id: string
+																) => {
+																	const newRules =
+																		cellRules.filter(
+																			(
+																				r
+																			) =>
+																				r.id !=
+																				id
+																		);
+																	setCellRules(
+																		newRules
+																	);
+																}}
+															/>
+														);
+													})}
+													<button
+														onClick={() =>
+															addCellRule()
+														}
+														className="list-add-button"
+													>
+														+
+													</button>
+												</>
+											)}
 										</div>
 									</div>
 								</div>

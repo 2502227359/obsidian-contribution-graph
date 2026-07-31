@@ -15,9 +15,8 @@ export class En implements Local {
     form_basic_settings = "Basic Settings";
     form_style_settings = "Style Settings";
     form_about = "About";
-    form_contact_me = "Contact me";
-    form_project_url = "Project";
-    form_sponsor = "Sponsor";
+    form_local_edition = "Local edition";
+    form_local_edition_description = "Independent local plugin ID; Obsidian community updates will not overwrite this build.";
     form_title = "Title";
     form_title_placeholder = "Input title";
     form_graph_type = "Graph Type";
@@ -98,10 +97,20 @@ export class En implements Local {
     form_datasource_type_page = "Page";
     form_datasource_type_all_task = "All Task";
     form_datasource_type_task_in_specific_page = "Task in Specific Page";
+	form_datasource_type_edit_activity = "Edit activity";
+	form_edit_activity_metric = "Metric";
+	form_edit_activity_metric_changed = "Changed characters (added + deleted)";
+	form_edit_activity_metric_added = "Added characters";
+	form_edit_activity_metric_deleted = "Deleted characters";
+	form_daily_goal = "Daily goal";
+	form_daily_goal_description = "The darkest level means the goal is reached; raw character counts are never capped";
+	form_activity_tracking_enabled = "Edit activity tracking is enabled";
+	form_activity_tracking_disabled = "Edit activity tracking is off. Enable it in the plugin settings";
 
     form_theme = "Theme";
     form_theme_placeholder = "Select theme or customize style";
     form_cell_style_rules = "Cell Style Rules";
+	form_goal_heat_levels = "Goal level colors";
 
     form_button_preview = "Preview";
     form_button_save = "Save";
@@ -123,4 +132,40 @@ export class En implements Local {
     you_have_no_contributions_on = "No contributions on {date}";
     you_have_contributed_to = "{value} contributions on {date}";
     click_to_load_more = "Click to load more...";
+	graph_less = "Less";
+	graph_more = "More";
+	graph_untracked_on = "Edit activity was not being tracked on {date}";
+	graph_edit_activity_summary = "{date}: {added} added, {deleted} deleted, {changed} characters changed, {percent}% of goal";
+	graph_edit_activity_document_summary = "{added} added · {deleted} deleted · {changed} changed";
+	graph_edit_activity_last_position = "Last edit: line {line}, column {column}";
+	graph_edit_activity_document_history = "Document edit history, {count} items";
+	graph_edit_activity_unattributed_document = "Unattributed document (collected before upgrade)";
+	graph_characters_unit = "characters";
+
+	settings_activity_heading = "Edit activity";
+	settings_activity_description = "Tracks user-originated character changes in the Obsidian editor on this device. File paths and character counts are saved for daily document details, but note contents are never stored. Sync and automated plugin writes are ignored.";
+	settings_tracking_enabled = "Track edit activity";
+	settings_tracking_enabled_description = "Start recording added and deleted characters from today. Paused periods appear as untracked in heatmaps.";
+	settings_tracking_started = "Edit activity tracking started";
+	settings_tracking_paused = "Edit activity tracking paused";
+	settings_exclude_whitespace = "Ignore whitespace";
+	settings_exclude_whitespace_description = "Do not count spaces, tabs, or line breaks. Punctuation and emoji are still counted.";
+	settings_data_heading = "Data management";
+	settings_export = "Export statistics";
+	settings_export_description = "Copy JSON to the clipboard, or download it when clipboard access is unavailable.";
+	settings_export_button = "Export";
+	settings_export_success = "Edit activity data copied";
+	settings_export_downloaded = "Edit activity data downloaded";
+	settings_import = "Import statistics";
+	settings_import_description = "Restore statistics and tracking settings from an exported JSON file.";
+	settings_import_button = "Choose file";
+	settings_import_success = "Edit activity data imported";
+	settings_import_failed = "Import failed: invalid data";
+	settings_corrupt_data_recovered = "Invalid edit activity data was recovered and backed up to {path}";
+	settings_save_failed = "Failed to save edit activity data; retrying automatically";
+	settings_clear = "Clear statistics";
+	settings_clear_description = "Permanently remove all recorded daily character statistics.";
+	settings_clear_button = "Clear";
+	settings_clear_confirm = "Clear all edit activity statistics? This cannot be undone.";
+	settings_clear_success = "Edit activity statistics cleared";
 }

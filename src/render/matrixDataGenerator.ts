@@ -1,8 +1,15 @@
-import { diffDays } from "../util/dateUtils";
-import { Contribution, ContributionCellData } from "../types";
+import { diffCalendarDays } from "../util/dateUtils";
+import {
+	Contribution,
+	ContributionCellData,
+	TrackingPeriod,
+} from "../types";
 import { DateTime } from "luxon";
 
-export function generateByData(data: Contribution[]) {
+export function generateByData(
+	data: Contribution[],
+	trackingPeriods?: TrackingPeriod[]
+) {
 	if (!data || data.length === 0) {
 		return [];
 	}
@@ -25,26 +32,42 @@ export function generateByData(data: Contribution[]) {
 	const sortedData = dateData.sort((a, b) => b.timestamp - a.timestamp);
 	const min = sortedData[sortedData.length - 1].timestamp;
 	const max = sortedData[0].timestamp;
-	return generateByFixedDate(new Date(min), new Date(max), data);
+	return generateByFixedDate(
+		new Date(min),
+		new Date(max),
+		data,
+		trackingPeriods
+	);
 }
 
 export function generateByFixedDate(
 	from: Date,
 	to: Date,
-	data: Contribution[]
+	data: Contribution[],
+	trackingPeriods?: TrackingPeriod[]
 ) {
-	const days = diffDays(from, to) + 1;
+	const days = diffCalendarDays(from, to) + 1;
+	if (days <= 0) {
+		return [];
+	}
 	// convert contributions to map: date(yyyy-MM-dd) -> value(sum)
 	const contributionMapByDate = contributionToMap(data);
 
 	const cellData: ContributionCellData[] = [];
 
 	const toDateTime = DateTime.fromJSDate(to);
+	const today = DateTime.local().startOf("day");
 	// fill data
 	for (let i = 0; i < days; i++) {
 		const currentDateAtIndex = toDateTime.minus({ days: i });
 		const isoDate = currentDateAtIndex.toFormat('yyyy-MM-dd');
 		const contribution = contributionMapByDate.get(isoDate);
+		const future =
+			trackingPeriods !== undefined &&
+			currentDateAtIndex.startOf("day") > today;
+		const tracked = trackingPeriods
+			? !future && isDateTracked(isoDate, trackingPeriods)
+			: undefined;
 
 		cellData.unshift({
 			date: isoDate,
@@ -55,6 +78,9 @@ export function generateByFixedDate(
 			value: contribution ? contribution.value : 0,
 			summary: contribution ? contribution.summary : undefined,
 			items: contribution ? contribution.items || [] : [],
+			editStats: contribution?.editStats,
+			tracked,
+			future,
 		});
 	}
 
@@ -68,11 +94,30 @@ export function generateByFixedDate(
  */
 export function generateByLatestDays(
 	days: number,
-	data: Contribution[] = []
+	data: Contribution[] = [],
+	trackingPeriods?: TrackingPeriod[]
 ): ContributionCellData[] {
-	const fromDate = new Date();
+	const toDate = new Date();
+	toDate.setHours(0, 0, 0, 0);
+	const fromDate = new Date(toDate);
 	fromDate.setDate(fromDate.getDate() - days + 1);
-	return generateByFixedDate(fromDate, new Date(), data);
+	return generateByFixedDate(
+		fromDate,
+		toDate,
+		data,
+		trackingPeriods
+	);
+}
+
+export function isDateTracked(
+	date: string,
+	trackingPeriods: TrackingPeriod[]
+): boolean {
+	return trackingPeriods.some(
+		(period) =>
+			date >= period.startDate &&
+			(!period.endDate || date <= period.endDate)
+	);
 }
 
 function contributionToMap(data: Contribution[]) {

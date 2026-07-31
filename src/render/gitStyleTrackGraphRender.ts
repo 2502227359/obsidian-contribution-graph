@@ -45,6 +45,11 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 
 		const contributionData: ContributionCellData[] =
 			this.generateContributionData(graphConfig);
+		this.restoreSelectedActivity(
+			graphConfig,
+			contributionData,
+			activityContainer
+		);
 
 		// fill HOLE cell at the left most column if start date is not ${startOfWeek}
 		if (contributionData.length > 0) {
@@ -99,7 +104,8 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 				this.bindMonthTips(
 					monthCell,
 					contributionItem,
-					contributionMapByYearMonth
+					contributionMapByYearMonth,
+					graphConfig
 				);
 			}
 
@@ -111,8 +117,20 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 				if (contributionItem.date != "$HOLE$") {
 					cellEl.className = "cell empty";
 					this.applyCellGlobalStyle(cellEl, graphConfig);
-					this.applyCellStyleRule(cellEl, contributionItem, cellRules);
+					this.applyCellStyleRule(
+						cellEl,
+						contributionItem,
+						cellRules,
+						graphConfig
+					);
 					this.bindCellAttribute(cellEl, contributionItem);
+					this.bindCellClickEvent(
+						cellEl,
+						contributionItem,
+						graphConfig,
+						activityContainer
+					);
+					this.bindCellTips(cellEl, contributionItem);
 				} else {
 					cellEl.className = "cell";
 					this.applyCellGlobalStylePartial(cellEl, graphConfig, ['minWidth', 'minHeight']);
@@ -120,7 +138,13 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 			} else {
 				cellEl.className = "cell";
 				this.applyCellGlobalStyle(cellEl, graphConfig);
-				this.applyCellStyleRule(cellEl, contributionItem, cellRules, () => cellRules[0]);
+				this.applyCellStyleRule(
+					cellEl,
+					contributionItem,
+					cellRules,
+					graphConfig,
+					() => cellRules[0]
+				);
 				this.bindCellAttribute(cellEl, contributionItem);
 				this.bindCellClickEvent(cellEl, contributionItem, graphConfig, activityContainer);
 				this.bindCellTips(cellEl, contributionItem);

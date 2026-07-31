@@ -11,7 +11,7 @@ export class DataviewPageDataSourceQuery extends BaseDataviewDataSourceQuery {
 		dv: DataviewApi,
 		source: DataSource
 	): DataArray<Record<string, Literal>> {
-		return dv.pages(source.value);
+		return dv.pages(source.value || '""');
 	}
 
 	getValueByCustomizeProperty(

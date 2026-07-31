@@ -1,8 +1,10 @@
 import { App, MarkdownView, Notice, getIcon } from "obsidian";
 import { ContributionGraphCreateModal } from "../form/GraphFormModal";
+import { EditActivityService } from "src/activity/EditActivityService";
 
 export function mountEditButtonToCodeblock(
 	app: App,
+	activityService: EditActivityService,
 	code: string,
 	codeblockDom: HTMLElement
 ) {
@@ -24,27 +26,32 @@ export function mountEditButtonToCodeblock(
 	});
 
 	formEditButton.onclick = () => {
-		new ContributionGraphCreateModal(this.app, code, (content) => {
-			const markdownView =
-				this.app.workspace.getActiveViewOfType(MarkdownView);
-			if (!markdownView) {
-				new Notice("No markdown view is active");
-				return;
+		new ContributionGraphCreateModal(
+			app,
+			activityService,
+			code,
+			(content) => {
+				const markdownView =
+					app.workspace.getActiveViewOfType(MarkdownView);
+				if (!markdownView) {
+					new Notice("No markdown view is active");
+					return;
+				}
+				const editor = markdownView.editor;
+				// @ts-ignore
+				const editorView = editor.cm as EditorView;
+				const pos = editorView.posAtDOM(codeblockDom);
+				const start = pos + "```contributionGraph\n".length;
+				// set selection
+				editorView.dispatch({
+					changes: {
+						from: start,
+						to: start + (code ? code.length : 0),
+						insert: content,
+					},
+				});
 			}
-			const editor = markdownView.editor;
-			// @ts-ignore
-			const editorView = editor.cm as EditorView;
-			const pos = editorView.posAtDOM(codeblockDom);
-			const start = pos + "```contributionGraph\n".length;
-			// set selection
-			editorView.dispatch({
-				changes: {
-					from: start,
-					to: start + (code ? code.length : 0),
-					insert: content,
-				},
-			});
-		}).open();
+		).open();
 	};
 	codeblockDom.appendChild(formEditButton);
 	return formEditButton;

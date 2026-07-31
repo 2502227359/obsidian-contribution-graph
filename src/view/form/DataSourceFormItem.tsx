@@ -1,7 +1,12 @@
 import { DateTime } from "luxon";
 import { Fragment, useState } from "react";
 import { Locals } from "src/i18/messages";
-import { DataFilter, DataSource, DataSourceType } from "src/query/types";
+import {
+	DataFilter,
+	DataSource,
+	DataSourceType,
+	EditActivityMetric,
+} from "src/query/types";
 import { getAllProperties, getTagOptions } from "src/util/page";
 import { Icons } from "../icon/Icons";
 import { SuggestInput } from "../suggest/SuggestInput";
@@ -9,6 +14,7 @@ import {
 	countFieldTypes,
 	dataSourceTypes,
 	dateFieldTypes,
+	editActivityMetricOptions,
 	getDataSourceFilterOptions,
 	taskStatusOptions,
 } from "./options";
@@ -72,6 +78,17 @@ export function DataSourceFormItem(props: {
 
 	const onDataSourceTypeChange = (newSource: DataSourceType) => {
 		const newDataSource = { ...dataSource, type: newSource };
+		if (newSource === "EDIT_ACTIVITY") {
+			props.onChange({
+				type: "EDIT_ACTIVITY",
+				metric: "CHANGED_CHARS",
+			});
+			return;
+		}
+
+		if (!newDataSource.value) {
+			newDataSource.value = "";
+		}
 		if (newSource === "PAGE") {
 			newDataSource.filters = [];
 
@@ -136,7 +153,8 @@ export function DataSourceFormItem(props: {
 							);
 						})}
 					</select>
-					{dataSourceType != "ALL_TASK" && (
+					{dataSourceType != "ALL_TASK" &&
+						dataSourceType != "EDIT_ACTIVITY" && (
 						<input
 							type="text"
 							defaultValue={dataSource.value}
@@ -148,6 +166,36 @@ export function DataSourceFormItem(props: {
 					)}
 				</div>
 			</div>
+
+			{dataSourceType === "EDIT_ACTIVITY" && (
+				<div className="form-item contribution-graph-activity-source">
+					<span className="label">
+						{local.form_edit_activity_metric}
+					</span>
+					<div className="form-content">
+						<select
+							value={
+								dataSource.metric || "CHANGED_CHARS"
+							}
+							onChange={(event) =>
+								changeDataSource(
+									"metric",
+									event.target.value as EditActivityMetric
+								)
+							}
+						>
+							{editActivityMetricOptions.map((option) => (
+								<option
+									value={option.value}
+									key={option.value}
+								>
+									{option.label}
+								</option>
+							))}
+						</select>
+					</div>
+				</div>
+			)}
 
 			{taskDataSource.includes(dataSource.type) && (
 				<div className="form-item">
@@ -345,7 +393,7 @@ export function DataSourceFormItem(props: {
 				</div>
 			)}
 
-			<div className="form-item">
+			{dataSourceType !== "EDIT_ACTIVITY" && <div className="form-item">
 				<span className="label">{local.form_date_field}</span>
 				<div className="form-content">
 					<select
@@ -401,9 +449,9 @@ export function DataSourceFormItem(props: {
 						/>
 					)}
 				</div>
-			</div>
+			</div>}
 
-			<div className="form-item">
+			{dataSourceType !== "EDIT_ACTIVITY" && <div className="form-item">
 				<span className="label">{local.form_date_field_format}</span>
 				<div className="form-vertical-content">
 					<select
@@ -454,9 +502,9 @@ export function DataSourceFormItem(props: {
 						</>
 					) : null}
 				</div>
-			</div>
+			</div>}
 
-			<div className="form-item">
+			{dataSourceType !== "EDIT_ACTIVITY" && <div className="form-item">
 				<span className="label">
 					{local.form_count_field_count_field_label}
 				</span>
@@ -506,7 +554,7 @@ export function DataSourceFormItem(props: {
 						/>
 					) : null}
 				</div>
-			</div>
+			</div>}
 		</Fragment>
 	);
 }

@@ -1,4 +1,4 @@
-import { CellStyleRule } from "./types";
+import { CellStyleRule, GoalHeatLevel, GoalHeatScale } from "./types";
 
 export const DEFAULT_RULES: CellStyleRule[] = [
 	{
@@ -26,3 +26,18 @@ export const DEFAULT_RULES: CellStyleRule[] = [
 		max: 999,
 	},
 ];
+
+export const DEFAULT_GOAL_HEAT_LEVELS: GoalHeatLevel[] = [
+	{ minRatio: 0, color: "#9be9a8" },
+	{ minRatio: 0.25, color: "#40c463" },
+	{ minRatio: 0.6, color: "#30a14e" },
+	{ minRatio: 1, color: "#216e39" },
+];
+
+export function createDefaultGoalHeatScale(goal = 1000): GoalHeatScale {
+	return {
+		type: "GOAL",
+		goal,
+		levels: DEFAULT_GOAL_HEAT_LEVELS.map((level) => ({ ...level })),
+	};
+}
