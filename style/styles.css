@@ -282,6 +282,15 @@
 	background-color: rgba(235, 237, 240, 0.85);
 }
 
+.contribution-graph .main .charts.default > .column:first-child {
+	position: sticky;
+	left: 0;
+	z-index: 3;
+	flex-shrink: 0;
+	background-color: var(--background-primary);
+	box-shadow: 6px 0 8px -8px var(--background-modifier-border-hover);
+}
+
 .theme-dark .contribution-graph .cell.empty {
 	background: rgba(71, 71, 71, 0.6);
 }

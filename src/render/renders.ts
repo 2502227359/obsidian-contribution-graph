@@ -2,6 +2,10 @@ import { ContributionGraphConfig } from "src/types";
 import { CalendarGraphRender } from "./calendarGraphRender";
 import { MonthTrackGraphRender } from "./monthTrackGraphRender";
 import { GitStyleTrackGraphRender } from "./gitStyleTrackGraphRender";
+import {
+	captureTimelineScroll,
+	restoreTimelineScroll,
+} from "./timelineScroll";
 
 export class Renders {
 	static renders = [
@@ -14,6 +18,9 @@ export class Renders {
 		container: HTMLElement,
 		graphConfig: ContributionGraphConfig
 	): void {
+		const previousTimelineScroll = captureTimelineScroll(
+			container.querySelector<HTMLElement>(".charts.default")
+		);
 		container.empty();
 		if (graphConfig.graphType === undefined) {
 			graphConfig.graphType = "default";
@@ -23,6 +30,12 @@ export class Renders {
 		);
 		if (render) {
 			render.render(container, graphConfig);
+			if (graphConfig.graphType === "default") {
+				restoreTimelineScroll(
+					container.querySelector<HTMLElement>(".charts.default"),
+					previousTimelineScroll
+				);
+			}
 		} else {
 			this.renderErrorTips(
 				container,

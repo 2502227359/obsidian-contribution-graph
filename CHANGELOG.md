@@ -47,6 +47,9 @@
 - Rendering now clears stale DOM before rebuilding, avoids accumulating queried
   data across refreshes, limits queried edit statistics to the visible date
   range, and cleans up graph subscriptions with the code-block lifecycle.
+- Default timeline graphs now open at the latest dates when horizontally
+  clipped. Reactive refreshes keep following the latest edge unless the user
+  has scrolled back to inspect history, and weekday labels remain pinned.
 - Theme presets and custom colors now update the four goal-ratio heat levels
   used by edit-activity graphs. Page and task graphs continue to use
   `cellStyleRules`.
@@ -64,7 +67,7 @@
 
 ### Verification
 
-- `npm test`: 59 tests passed across character counting, IME composition,
+- `npm test`: 63 tests passed across character counting, IME composition,
   metric mapping, heat levels, date boundaries, path migration, persistence,
   save retry, pause/resume coverage, invalid imports, theme mapping, and folder
   scope matching.
