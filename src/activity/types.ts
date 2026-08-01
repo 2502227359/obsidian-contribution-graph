@@ -9,6 +9,7 @@ export interface EditActivitySettings {
 	trackingEnabled: boolean;
 	excludeWhitespace: boolean;
 	trackedFolders: string[];
+	strictUserInputOnly: boolean;
 }
 
 export interface StoredDailyEditStats {
@@ -24,7 +25,7 @@ export interface StoredDocumentEditStats {
 }
 
 export interface EditActivityStore {
-	schemaVersion: 5;
+	schemaVersion: 6;
 	settings: EditActivitySettings;
 	trackingPeriods: TrackingPeriod[];
 	collectionScopePeriods: CollectionScopePeriod[];
@@ -35,10 +36,11 @@ export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 	trackingEnabled: false,
 	excludeWhitespace: true,
 	trackedFolders: [],
+	strictUserInputOnly: true,
 };
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
-	schemaVersion: 5,
+	schemaVersion: 6,
 	settings: {
 		...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 		trackedFolders: [],

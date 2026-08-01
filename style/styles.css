@@ -634,19 +634,55 @@
 
 /* edit button */
 .contribution-graph-codeblock-edit-button {
-	padding: var(--size-2-2) var(--size-2-3);
 	position: absolute;
 	top: var(--size-2-2);
-	right: calc(var(--size-2-2) + 40px);
-	display: flex;
+	right: calc(var(--size-2-2) + 38px);
+	z-index: 2;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	min-width: 32px;
+	min-height: 32px;
+	padding: 0;
 	opacity: 0;
+	pointer-events: none;
 	color: var(--text-muted);
+	background: transparent;
+	border: 1px solid transparent;
 	border-radius: var(--radius-s);
 	cursor: var(--cursor);
+	box-shadow: none;
+	transition: opacity 80ms ease, color 80ms ease, background-color 80ms ease;
 }
 
-.contribution-graph-codeblock-edit-button:hover {
+.markdown-source-view .contribution-graph-codeblock-host:hover > .contribution-graph-codeblock-edit-button,
+.markdown-source-view .contribution-graph-codeblock-host:focus-within > .contribution-graph-codeblock-edit-button {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.contribution-graph-codeblock-edit-button:hover,
+.contribution-graph-codeblock-edit-button:focus-visible {
+	color: var(--text-normal);
 	background-color: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border);
+}
+
+.contribution-graph-codeblock-edit-button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.contribution-graph-codeblock-edit-button svg {
+	width: 18px;
+	height: 18px;
+}
+
+.contribution-graph-codeblock-edit-button-fallback {
+	font-size: 18px;
+	line-height: 1;
 }
 
 /* contribution-graph-choose */

@@ -14,6 +14,9 @@
   are never stored.
 - Added tracking controls, whitespace preferences, import, export, corruption
   recovery, save retry, and confirmed data clearing.
+- Added strict trusted-input filtering, enabled by default, so template and
+  plugin edits without a matching keyboard, IME, clipboard, or drop event are
+  excluded. A compatibility toggle restores the previous `userEvent` policy.
 - Added a searchable vault-folder picker for limiting collection to one or more
   folders. Empty scope continues to track the whole vault, and configured paths
   follow folder renames.
@@ -27,6 +30,8 @@
 
 ### Improved
 
+- Rebuilt the Live Preview heatmap settings control as an accessible, stable
+  gear button with an icon fallback and non-flickering hover/focus behavior.
 - Added daily detail summaries with per-document character totals, a scrollable
   document list, and links that open the document near its last recorded edit
   position.
@@ -67,7 +72,8 @@
 
 ### Verification
 
-- `npm test`: 63 tests passed across character counting, IME composition,
+- `npm test`: 69 tests passed across character counting, trusted-input
+  classification, template exclusion, IME composition,
   metric mapping, heat levels, date boundaries, path migration, persistence,
   save retry, pause/resume coverage, invalid imports, theme mapping, and folder
   scope matching.

@@ -1,5 +1,5 @@
 import { ChangeSet, Extension, Text, Transaction } from "@codemirror/state";
-import { EditorView, ViewUpdate } from "@codemirror/view";
+import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, Notice, Plugin } from "obsidian";
 import { Locals } from "src/i18/messages";
 import {
@@ -24,12 +24,21 @@ import {
 	migrateDocumentPaths,
 	toDailyEditStats,
 } from "./types";
+import {
+	classifyTrustedInputEvent,
+	intentMatchesUserEvent,
+	TrustedInputIntent,
+} from "./trustedInput";
 
 interface CompositionState {
 	startDocument: Text;
 	changes: ChangeSet;
 	filePath: string;
 	cursorOffset: number;
+}
+
+interface PendingInputIntent {
+	intent: TrustedInputIntent;
 }
 
 export interface DailyEditStatsQuery {
@@ -65,6 +74,8 @@ export class EditActivityService {
 	private lastKnownTimezoneOffset = 0;
 	private compositions = new WeakMap<EditorView, CompositionState>();
 	private processedTransactions = new WeakSet<Transaction>();
+	private pendingInputIntents = new WeakMap<EditorView, PendingInputIntent>();
+	private trustedCompositions = new WeakSet<EditorView>();
 	private readonly now: () => Date;
 
 	constructor(
@@ -117,9 +128,42 @@ export class EditActivityService {
 	}
 
 	createEditorExtension(): Extension {
-		return EditorView.updateListener.of((update) =>
-			this.handleEditorUpdate(update)
-		);
+		const service = this;
+		const trustedInputObserver = ViewPlugin.define((view) => {
+			const eventTypes = [
+				"beforeinput",
+				"paste",
+				"cut",
+				"drop",
+				"keydown",
+				"compositionstart",
+				"compositionend",
+				"blur",
+			] as const;
+			const listener: EventListener = (event) =>
+				service.handleTrustedDomEvent(view, event);
+			for (const eventType of eventTypes) {
+				view.contentDOM.addEventListener(eventType, listener, true);
+			}
+			return {
+				destroy() {
+					for (const eventType of eventTypes) {
+						view.contentDOM.removeEventListener(
+							eventType,
+							listener,
+							true
+						);
+					}
+					service.clearTrustedInputState(view);
+				},
+			};
+		});
+		return [
+			trustedInputObserver,
+			EditorView.updateListener.of((update) =>
+				this.handleEditorUpdate(update)
+			),
+		];
 	}
 
 	getSettings(): EditActivitySettings {
@@ -222,13 +266,13 @@ export class EditActivityService {
 		}
 
 		this.store.settings.trackingEnabled = enabled;
+		this.resetTrustedInputState();
 		if (enabled) {
 			this.ensureOpenTrackingPeriod();
 			this.ensureOpenCollectionScopePeriod();
 		} else {
 			this.closeOpenTrackingPeriod();
 			this.closeOpenCollectionScopePeriod();
-			this.compositions = new WeakMap<EditorView, CompositionState>();
 		}
 		this.markDirty();
 		this.emitChange({ type: "COVERAGE" });
@@ -240,6 +284,19 @@ export class EditActivityService {
 			return;
 		}
 		this.store.settings.excludeWhitespace = excludeWhitespace;
+		this.markDirty();
+		this.emitChange({ type: "SETTINGS" });
+		await this.flush();
+	}
+
+	async setStrictUserInputOnly(strictUserInputOnly: boolean): Promise<void> {
+		if (
+			this.store.settings.strictUserInputOnly === strictUserInputOnly
+		) {
+			return;
+		}
+		this.store.settings.strictUserInputOnly = strictUserInputOnly;
+		this.resetTrustedInputState();
 		this.markDirty();
 		this.emitChange({ type: "SETTINGS" });
 		await this.flush();
@@ -257,7 +314,7 @@ export class EditActivityService {
 			return;
 		}
 		this.store.settings.trackedFolders = normalized;
-		this.compositions = new WeakMap<EditorView, CompositionState>();
+		this.resetTrustedInputState();
 		if (this.store.settings.trackingEnabled) {
 			this.closeOpenCollectionScopePeriod();
 			this.ensureOpenCollectionScopePeriod();
@@ -277,7 +334,7 @@ export class EditActivityService {
 		}
 		const parsed = JSON.parse(serialized);
 		this.store = this.normalizeStore(parsed, true);
-		this.compositions = new WeakMap<EditorView, CompositionState>();
+		this.resetTrustedInputState();
 		if (this.store.settings.trackingEnabled) {
 			this.ensureOpenTrackingPeriod();
 			this.ensureOpenCollectionScopePeriod();
@@ -365,7 +422,7 @@ export class EditActivityService {
 			window.clearTimeout(this.midnightTimer);
 			this.midnightTimer = null;
 		}
-		this.compositions = new WeakMap<EditorView, CompositionState>();
+		this.resetTrustedInputState();
 		await this.flush();
 		this.listeners.clear();
 	}
@@ -397,16 +454,29 @@ export class EditActivityService {
 					this.store.settings.trackedFolders
 				)
 			) {
-				this.compositions.delete(update.view);
+				this.clearTrustedInputState(update.view);
 				continue;
 			}
+			const shouldCount = this.shouldCountTransaction(
+				update.view,
+				transaction,
+				event
+			);
 			if (event.startsWith("input.type.compose")) {
-				this.accumulateComposition(update.view, transaction, filePath);
+				if (shouldCount) {
+					this.accumulateComposition(
+						update.view,
+						transaction,
+						filePath
+					);
+				} else {
+					this.compositions.delete(update.view);
+				}
 				continue;
 			}
 
 			this.flushComposition(update.view);
-			if (isCountedUserEvent(event)) {
+			if (shouldCount) {
 				this.recordChanges(
 					transaction.startState.doc,
 					transaction.changes,
@@ -419,6 +489,88 @@ export class EditActivityService {
 		if (!update.view.composing) {
 			this.flushComposition(update.view);
 		}
+	}
+
+	private handleTrustedDomEvent(view: EditorView, event: Event): void {
+		if (
+			!this.store.settings.trackingEnabled ||
+			!this.store.settings.strictUserInputOnly ||
+			!event.isTrusted
+		) {
+			return;
+		}
+		if (event.type === "blur") {
+			this.clearTrustedInputState(view);
+			return;
+		}
+		if (event.type === "compositionstart") {
+			this.trustedCompositions.add(view);
+			this.pendingInputIntents.delete(view);
+			return;
+		}
+		if (event.type === "compositionend") {
+			window.setTimeout(() => this.trustedCompositions.delete(view), 0);
+			return;
+		}
+		const intent = classifyTrustedInputEvent(
+			event as Event & {
+				inputType?: string;
+				key?: string;
+				ctrlKey?: boolean;
+				metaKey?: boolean;
+				altKey?: boolean;
+			}
+		);
+		if (!intent) {
+			return;
+		}
+		const pending = {
+			intent,
+		};
+		this.pendingInputIntents.set(view, pending);
+		window.setTimeout(() => {
+			if (this.pendingInputIntents.get(view) === pending) {
+				this.pendingInputIntents.delete(view);
+			}
+		}, 0);
+	}
+
+	private shouldCountTransaction(
+		view: EditorView,
+		transaction: Transaction,
+		userEvent: string
+	): boolean {
+		if (
+			transaction.annotation(Transaction.remote) === true ||
+			!isCountedUserEvent(userEvent)
+		) {
+			return false;
+		}
+		if (!this.store.settings.strictUserInputOnly) {
+			return true;
+		}
+
+		const pending = this.pendingInputIntents.get(view);
+		if (pending && intentMatchesUserEvent(pending.intent, userEvent)) {
+			this.pendingInputIntents.delete(view);
+			return true;
+		}
+		return (
+			userEvent.startsWith("input.type.compose") &&
+			this.trustedCompositions.has(view)
+		);
+	}
+
+	private clearTrustedInputState(view: EditorView): void {
+		this.pendingInputIntents.delete(view);
+		this.trustedCompositions.delete(view);
+		this.compositions.delete(view);
+	}
+
+	private resetTrustedInputState(): void {
+		this.pendingInputIntents = new WeakMap<EditorView, PendingInputIntent>();
+		this.trustedCompositions = new WeakSet<EditorView>();
+		this.compositions = new WeakMap<EditorView, CompositionState>();
 	}
 
 	private accumulateComposition(
@@ -732,7 +884,8 @@ export class EditActivityService {
 			schemaVersion !== 2 &&
 			schemaVersion !== 3 &&
 			schemaVersion !== 4 &&
-			schemaVersion !== 5
+			schemaVersion !== 5 &&
+			schemaVersion !== 6
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -819,7 +972,8 @@ export class EditActivityService {
 					(schemaVersion === 2 ||
 						schemaVersion === 3 ||
 						schemaVersion === 4 ||
-						schemaVersion === 5)
+						schemaVersion === 5 ||
+						schemaVersion === 6)
 				) {
 					throw new Error(
 						`Invalid document edit statistics for ${date}`
@@ -879,7 +1033,9 @@ export class EditActivityService {
 		const rawTrackedFolders = candidate.settings?.trackedFolders;
 		if (
 			strict &&
-			(schemaVersion === 4 || schemaVersion === 5) &&
+			(schemaVersion === 4 ||
+				schemaVersion === 5 ||
+				schemaVersion === 6) &&
 			(!Array.isArray(rawTrackedFolders) ||
 				rawTrackedFolders.some(
 					(folder) => typeof folder !== "string"
@@ -897,14 +1053,21 @@ export class EditActivityService {
 		);
 		if (
 			strict &&
-			schemaVersion === 5 &&
+			schemaVersion === 6 &&
+			typeof candidate.settings?.strictUserInputOnly !== "boolean"
+		) {
+			throw new Error("Invalid strict input setting");
+		}
+		if (
+			strict &&
+			(schemaVersion === 5 || schemaVersion === 6) &&
 			!Array.isArray(candidate.collectionScopePeriods)
 		) {
 			throw new Error("Invalid collection scope periods");
 		}
 		const collectionScopePeriods: CollectionScopePeriod[] = [];
 		if (
-			schemaVersion === 5 &&
+			(schemaVersion === 5 || schemaVersion === 6) &&
 			Array.isArray(candidate.collectionScopePeriods)
 		) {
 			for (const period of candidate.collectionScopePeriods) {
@@ -942,13 +1105,15 @@ export class EditActivityService {
 		}
 
 		return {
-			schemaVersion: 5,
+			schemaVersion: 6,
 			settings: {
 				trackingEnabled:
 					candidate.settings?.trackingEnabled === true,
 				excludeWhitespace:
 					candidate.settings?.excludeWhitespace !== false,
 				trackedFolders,
+				strictUserInputOnly:
+					candidate.settings?.strictUserInputOnly !== false,
 			},
 			trackingPeriods,
 			collectionScopePeriods,

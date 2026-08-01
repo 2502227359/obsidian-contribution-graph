@@ -67,6 +67,19 @@ export class EditActivitySettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName(local.settings_strict_user_input)
+			.setDesc(local.settings_strict_user_input_description)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(settings.strictUserInputOnly)
+					.onChange(async (strictUserInputOnly) => {
+						await this.activityService.setStrictUserInputOnly(
+							strictUserInputOnly
+						);
+					})
+			);
+
 		const selectableFolders = getSelectableVaultFolders(
 			this.app,
 			settings.trackedFolders

@@ -74,7 +74,9 @@ heatScale:
 `CHANGED_CHARS` counts added plus deleted characters. You can also use
 `ADDED_CHARS` or `DELETED_CHARS`. The tracker records user edits on the current
 device only, starts when enabled, ignores whitespace by default, and never
-stores note contents. Dates before tracking started are shown as untracked.
+stores note contents. Strict input filtering is enabled by default, so template
+insertions and other edits without a trusted keyboard, IME, clipboard, or drop
+event are excluded. Dates before tracking started are shown as untracked.
 The plugin setting defines the maximum scope collected from future edits. Each
 heatmap can then select its own `dataSource.folders` from the vault, so separate
 graphs can monitor different projects with different goals. Leaving a graph's

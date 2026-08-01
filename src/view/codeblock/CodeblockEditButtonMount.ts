@@ -1,6 +1,7 @@
 import { App, MarkdownView, Notice, getIcon } from "obsidian";
 import { ContributionGraphCreateModal } from "../form/GraphFormModal";
 import { EditActivityService } from "src/activity/EditActivityService";
+import { Locals } from "src/i18/messages";
 
 export function mountEditButtonToCodeblock(
 	app: App,
@@ -8,24 +9,35 @@ export function mountEditButtonToCodeblock(
 	code: string,
 	codeblockDom: HTMLElement
 ) {
-	const formEditButton = document.createElement("div");
+	const existingButton = codeblockDom.querySelector<HTMLElement>(
+		":scope > .contribution-graph-codeblock-edit-button"
+	);
+	if (existingButton) {
+		return existingButton;
+	}
+
+	codeblockDom.classList.add("contribution-graph-codeblock-host");
+	const formEditButton = document.createElement("button");
+	formEditButton.type = "button";
 	formEditButton.className = "contribution-graph-codeblock-edit-button";
-	const iconEl = getIcon("gantt-chart");
+	formEditButton.setAttribute("aria-label", Locals.get().codeblock_edit_graph);
+	formEditButton.title = Locals.get().codeblock_edit_graph;
+
+	const iconEl = getIcon("settings");
 	if (iconEl) {
 		formEditButton.appendChild(iconEl);
+	} else {
+		const fallback = document.createElement("span");
+		fallback.className = "contribution-graph-codeblock-edit-button-fallback";
+		fallback.textContent = "⚙";
+		fallback.setAttribute("aria-hidden", "true");
+		formEditButton.appendChild(fallback);
 	}
-	codeblockDom.addEventListener("mouseover", () => {
-		const markdownView = app.workspace.getActiveViewOfType(MarkdownView);
-		if (markdownView && markdownView.getMode() !== "preview") {
-			formEditButton.style.opacity = "1";
-			justifyTop(codeblockDom, formEditButton);
-		}
-	});
-	codeblockDom.addEventListener("mouseout", () => {
-		formEditButton.style.opacity = "0";
-	});
+	justifyTop(codeblockDom, formEditButton);
 
-	formEditButton.onclick = () => {
+	formEditButton.onclick = (event) => {
+		event.preventDefault();
+		event.stopPropagation();
 		new ContributionGraphCreateModal(
 			app,
 			activityService,
@@ -57,19 +69,13 @@ export function mountEditButtonToCodeblock(
 	return formEditButton;
 }
 
-function justifyTop(codeblockDom: HTMLElement, formEditButton: HTMLDivElement) {
+function justifyTop(codeblockDom: HTMLElement, formEditButton: HTMLButtonElement) {
 	const obCodeblocButtonEls =
 		codeblockDom.getElementsByClassName("edit-block-button");
-	let top: string | undefined;
 	if (obCodeblocButtonEls.length > 0) {
-		const obCodeblocButtonEl = obCodeblocButtonEls[0];
-		// @ts-ignore
-		top = obCodeblocButtonEl.computedStyleMap().get("top")?.toString();
-	}
-
-	if (top) {
-		formEditButton.style.top = top;
-	} else {
-		formEditButton.style.top = "0";
+		const top = window.getComputedStyle(obCodeblocButtonEls[0]).top;
+		if (top && top !== "auto") {
+			formEditButton.style.top = top;
+		}
 	}
 }

@@ -8,6 +8,7 @@ export class En implements Local {
      * context menu
      */
     context_menu_create = "Add Heatmap";
+	codeblock_edit_graph = "Edit heatmap settings";
 
     /**
      * form
@@ -154,15 +155,17 @@ export class En implements Local {
 	graph_characters_unit = "characters";
 
 	settings_activity_heading = "Edit activity";
-	settings_activity_description = "Tracks character changes marked as user input in the Obsidian editor on this device. File paths and character counts are saved for daily document details, but note contents are never stored. Sync and automated writes without a user-input marker are ignored.";
+	settings_activity_description = "Tracks character changes in the Obsidian editor on this device. File paths and character counts are saved for daily document details, but note contents are never stored. In strict mode, only changes matched to trusted input events are collected.";
 	settings_tracking_enabled = "Track edit activity";
 	settings_tracking_enabled_description = "Start recording added and deleted characters from today. Paused periods appear as untracked in heatmaps.";
 	settings_tracking_started = "Edit activity tracking started";
 	settings_tracking_paused = "Edit activity tracking paused";
 	settings_exclude_whitespace = "Ignore whitespace";
 	settings_exclude_whitespace_description = "Do not count spaces, tabs, or line breaks. Punctuation and emoji are still counted.";
+	settings_strict_user_input = "Strictly exclude automated edits";
+	settings_strict_user_input_description = "Only count edits directly triggered by typing, IME, paste, cut, or drop. Turning this off improves compatibility with editor plugins, but templates and other automated insertions may be counted.";
 	settings_tracked_folders = "Tracked folders";
-	settings_tracked_folders_description = "Choose one or more folders from the current vault. Changes apply only to future edits. Template text inserted into an included document may still be counted.";
+	settings_tracked_folders_description = "Choose one or more folders from the current vault. Changes apply only to future edits. In strict mode, automated template insertions inside included documents are excluded.";
 	settings_tracked_folders_choose = "Choose folder";
 	settings_tracked_folders_remove = "Remove this folder";
 	settings_tracked_folders_all = "The whole vault is currently tracked.";

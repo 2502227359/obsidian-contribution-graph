@@ -10,7 +10,11 @@ export function isCountedUserEvent(event: string): boolean {
 	if (!event || event.startsWith("undo") || event.startsWith("redo")) {
 		return false;
 	}
-	return event.startsWith("input") || event.startsWith("delete");
+	return (
+		event.startsWith("input") ||
+		event.startsWith("delete") ||
+		event === "move.drop"
+	);
 }
 
 export function countChangedCharacters(

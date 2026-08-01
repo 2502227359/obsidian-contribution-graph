@@ -7,6 +7,7 @@ export interface Local {
 	 * context menu
 	 */
 	context_menu_create: string;
+	codeblock_edit_graph: string;
 
 	/**
 	 * form
@@ -161,6 +162,8 @@ export interface Local {
 	settings_tracking_paused: string;
 	settings_exclude_whitespace: string;
 	settings_exclude_whitespace_description: string;
+	settings_strict_user_input: string;
+	settings_strict_user_input_description: string;
 	settings_tracked_folders: string;
 	settings_tracked_folders_description: string;
 	settings_tracked_folders_choose: string;

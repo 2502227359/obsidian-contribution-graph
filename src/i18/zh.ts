@@ -7,6 +7,7 @@ export class Zh implements Local {
      * context menu
      */
     context_menu_create = "新建热力图";
+	codeblock_edit_graph = "编辑热力图设置";
 
     /**
      * form
@@ -152,15 +153,17 @@ export class Zh implements Local {
 	graph_characters_unit = "字符";
 
 	settings_activity_heading = "编辑活动";
-	settings_activity_description = "统计当前设备上 Obsidian 编辑器内带用户输入标记的字符变化。为显示每日文档明细，会保存文件路径和字符数，但不会保存笔记内容；没有用户输入标记的同步或自动写入不会统计。";
+	settings_activity_description = "统计当前设备上 Obsidian 编辑器内的字符变化。为显示每日文档明细，会保存文件路径和字符数，但不会保存笔记内容；严格模式下仅采集能匹配到真实输入事件的修改。";
 	settings_tracking_enabled = "采集编辑活动";
 	settings_tracking_enabled_description = "开启后从今天开始记录新增和删除字符；关闭期间在热力图中显示为未采集。";
 	settings_tracking_started = "编辑活动采集已开启";
 	settings_tracking_paused = "编辑活动采集已暂停";
 	settings_exclude_whitespace = "忽略空白字符";
 	settings_exclude_whitespace_description = "不统计空格、制表符和换行；标点与 emoji 仍会统计。";
+	settings_strict_user_input = "严格排除自动修改";
+	settings_strict_user_input_description = "仅统计由键盘、输入法、粘贴、剪切或拖放直接触发的编辑。关闭后兼容更多编辑插件，但模板等自动插入可能被统计。";
 	settings_tracked_folders = "统计文件夹";
-	settings_tracked_folders_description = "从当前仓库选择一个或多个文件夹。修改后只影响之后的编辑，模板插入到范围内文档仍可能被统计。";
+	settings_tracked_folders_description = "从当前仓库选择一个或多个文件夹。修改后只影响之后的编辑；严格模式下会排除范围内文档的模板自动插入。";
 	settings_tracked_folders_choose = "选择文件夹";
 	settings_tracked_folders_remove = "移除此文件夹";
 	settings_tracked_folders_all = "当前统计整个仓库。";
