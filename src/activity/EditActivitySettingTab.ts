@@ -80,6 +80,19 @@ export class EditActivitySettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName(local.settings_count_pasted_text)
+			.setDesc(local.settings_count_pasted_text_description)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(settings.countPastedText)
+					.onChange(async (countPastedText) => {
+						await this.activityService.setCountPastedText(
+							countPastedText
+						);
+					})
+			);
+
 		const selectableFolders = getSelectableVaultFolders(
 			this.app,
 			settings.trackedFolders

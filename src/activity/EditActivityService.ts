@@ -302,6 +302,17 @@ export class EditActivityService {
 		await this.flush();
 	}
 
+	async setCountPastedText(countPastedText: boolean): Promise<void> {
+		if (this.store.settings.countPastedText === countPastedText) {
+			return;
+		}
+		this.store.settings.countPastedText = countPastedText;
+		this.resetTrustedInputState();
+		this.markDirty();
+		this.emitChange({ type: "SETTINGS" });
+		await this.flush();
+	}
+
 	async setTrackedFolders(trackedFolders: string[]): Promise<void> {
 		const normalized = normalizeTrackedFolders(trackedFolders);
 		if (
@@ -494,7 +505,6 @@ export class EditActivityService {
 	private handleTrustedDomEvent(view: EditorView, event: Event): void {
 		if (
 			!this.store.settings.trackingEnabled ||
-			!this.store.settings.strictUserInputOnly ||
 			!event.isTrusted
 		) {
 			return;
@@ -504,11 +514,17 @@ export class EditActivityService {
 			return;
 		}
 		if (event.type === "compositionstart") {
+			if (!this.store.settings.strictUserInputOnly) {
+				return;
+			}
 			this.trustedCompositions.add(view);
 			this.pendingInputIntents.delete(view);
 			return;
 		}
 		if (event.type === "compositionend") {
+			if (!this.store.settings.strictUserInputOnly) {
+				return;
+			}
 			window.setTimeout(() => this.trustedCompositions.delete(view), 0);
 			return;
 		}
@@ -522,6 +538,12 @@ export class EditActivityService {
 			}
 		);
 		if (!intent) {
+			return;
+		}
+		if (
+			!this.store.settings.strictUserInputOnly &&
+			(this.store.settings.countPastedText || intent !== "PASTE")
+		) {
 			return;
 		}
 		const pending = {
@@ -546,11 +568,23 @@ export class EditActivityService {
 		) {
 			return false;
 		}
+
+		const pending = this.pendingInputIntents.get(view);
+		if (
+			!this.store.settings.countPastedText &&
+			(userEvent === "input.paste" ||
+				userEvent.startsWith("input.paste.") ||
+				pending?.intent === "PASTE")
+		) {
+			if (pending?.intent === "PASTE") {
+				this.pendingInputIntents.delete(view);
+			}
+			return false;
+		}
 		if (!this.store.settings.strictUserInputOnly) {
 			return true;
 		}
 
-		const pending = this.pendingInputIntents.get(view);
 		if (pending && intentMatchesUserEvent(pending.intent, userEvent)) {
 			this.pendingInputIntents.delete(view);
 			return true;
@@ -885,7 +919,8 @@ export class EditActivityService {
 			schemaVersion !== 3 &&
 			schemaVersion !== 4 &&
 			schemaVersion !== 5 &&
-			schemaVersion !== 6
+			schemaVersion !== 6 &&
+			schemaVersion !== 7
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -973,7 +1008,8 @@ export class EditActivityService {
 						schemaVersion === 3 ||
 						schemaVersion === 4 ||
 						schemaVersion === 5 ||
-						schemaVersion === 6)
+						schemaVersion === 6 ||
+						schemaVersion === 7)
 				) {
 					throw new Error(
 						`Invalid document edit statistics for ${date}`
@@ -1035,7 +1071,8 @@ export class EditActivityService {
 			strict &&
 			(schemaVersion === 4 ||
 				schemaVersion === 5 ||
-				schemaVersion === 6) &&
+				schemaVersion === 6 ||
+				schemaVersion === 7) &&
 			(!Array.isArray(rawTrackedFolders) ||
 				rawTrackedFolders.some(
 					(folder) => typeof folder !== "string"
@@ -1053,21 +1090,32 @@ export class EditActivityService {
 		);
 		if (
 			strict &&
-			schemaVersion === 6 &&
+			(schemaVersion === 6 || schemaVersion === 7) &&
 			typeof candidate.settings?.strictUserInputOnly !== "boolean"
 		) {
 			throw new Error("Invalid strict input setting");
 		}
 		if (
 			strict &&
-			(schemaVersion === 5 || schemaVersion === 6) &&
+			schemaVersion === 7 &&
+			typeof candidate.settings?.countPastedText !== "boolean"
+		) {
+			throw new Error("Invalid paste input setting");
+		}
+		if (
+			strict &&
+			(schemaVersion === 5 ||
+				schemaVersion === 6 ||
+				schemaVersion === 7) &&
 			!Array.isArray(candidate.collectionScopePeriods)
 		) {
 			throw new Error("Invalid collection scope periods");
 		}
 		const collectionScopePeriods: CollectionScopePeriod[] = [];
 		if (
-			(schemaVersion === 5 || schemaVersion === 6) &&
+			(schemaVersion === 5 ||
+				schemaVersion === 6 ||
+				schemaVersion === 7) &&
 			Array.isArray(candidate.collectionScopePeriods)
 		) {
 			for (const period of candidate.collectionScopePeriods) {
@@ -1105,7 +1153,7 @@ export class EditActivityService {
 		}
 
 		return {
-			schemaVersion: 6,
+			schemaVersion: 7,
 			settings: {
 				trackingEnabled:
 					candidate.settings?.trackingEnabled === true,
@@ -1114,6 +1162,8 @@ export class EditActivityService {
 				trackedFolders,
 				strictUserInputOnly:
 					candidate.settings?.strictUserInputOnly !== false,
+				countPastedText:
+					candidate.settings?.countPastedText !== false,
 			},
 			trackingPeriods,
 			collectionScopePeriods,

@@ -17,6 +17,9 @@
 - Added strict trusted-input filtering, enabled by default, so template and
   plugin edits without a matching keyboard, IME, clipboard, or drop event are
   excluded. A compatibility toggle restores the previous `userEvent` policy.
+- Added an independent paste-counting toggle. When disabled, a paste and any
+  selection it replaces are excluded without affecting typing, IME, cut, or
+  drop statistics.
 - Added a searchable vault-folder picker for limiting collection to one or more
   folders. Empty scope continues to track the whole vault, and configured paths
   follow folder renames.
@@ -72,7 +75,7 @@
 
 ### Verification
 
-- `npm test`: 69 tests passed across character counting, trusted-input
+- `npm test`: 71 tests passed across character counting, trusted-input
   classification, template exclusion, IME composition,
   metric mapping, heat levels, date boundaries, path migration, persistence,
   save retry, pause/resume coverage, invalid imports, theme mapping, and folder

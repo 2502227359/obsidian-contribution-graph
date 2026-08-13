@@ -164,6 +164,8 @@ export interface Local {
 	settings_exclude_whitespace_description: string;
 	settings_strict_user_input: string;
 	settings_strict_user_input_description: string;
+	settings_count_pasted_text: string;
+	settings_count_pasted_text_description: string;
 	settings_tracked_folders: string;
 	settings_tracked_folders_description: string;
 	settings_tracked_folders_choose: string;

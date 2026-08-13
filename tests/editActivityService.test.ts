@@ -118,7 +118,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 		expect(plugin.saveData).toHaveBeenCalledTimes(1);
 		expect(plugin.saveData.mock.calls[0][0]).toMatchObject({
-			schemaVersion: 6,
+			schemaVersion: 7,
 			dailyStats: {
 				"2026-07-31": {
 					addedChars: 1,
@@ -203,7 +203,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		await service.unload();
 		expect(plugin.saveData.mock.lastCall?.[0]).toMatchObject({
-			schemaVersion: 6,
+			schemaVersion: 7,
 			settings: {
 				trackedFolders: ["Archive", "Daily Notes"],
 			},
@@ -349,6 +349,117 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 	});
 
+	it("excludes the whole paste replacement when paste counting is disabled", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		await service.setCountPastedText(false);
+		expect(service.getSettings().countPastedText).toBe(false);
+		(
+			service as unknown as { getMarkdownFilePath: () => string }
+		).getMarkdownFilePath = () => "Notes/Paste.md";
+
+		const view = { hasFocus: true, composing: false };
+		(
+			service as unknown as {
+				handleTrustedDomEvent: (view: unknown, event: unknown) => void;
+			}
+		).handleTrustedDomEvent(view, {
+			type: "paste",
+			isTrusted: true,
+		});
+		const pasteState = EditorState.create({ doc: "replace me" });
+		const pasteTransaction = pasteState.update({
+			changes: { from: 0, to: 10, insert: "pasted text" },
+			annotations: Transaction.userEvent.of("input.paste"),
+		});
+		(
+			service as unknown as {
+				handleEditorUpdate: (update: unknown) => void;
+			}
+		).handleEditorUpdate({
+			docChanged: true,
+			view,
+			transactions: [pasteTransaction],
+		});
+		expect(service.getDailyEditStats()).toEqual([]);
+
+		(
+			service as unknown as {
+				handleTrustedDomEvent: (view: unknown, event: unknown) => void;
+			}
+		).handleTrustedDomEvent(view, {
+			type: "beforeinput",
+			isTrusted: true,
+			inputType: "insertText",
+		});
+		const typingState = EditorState.create({ doc: "" });
+		const typingTransaction = typingState.update({
+			changes: { from: 0, insert: "typed" },
+			annotations: Transaction.userEvent.of("input.type"),
+		});
+		(
+			service as unknown as {
+				handleEditorUpdate: (update: unknown) => void;
+			}
+		).handleEditorUpdate({
+			docChanged: true,
+			view,
+			transactions: [typingTransaction],
+		});
+		expect(service.getDailyEditStats()[0]).toMatchObject({
+			addedChars: 5,
+			deletedChars: 0,
+		});
+		await service.unload();
+	});
+
+	it("uses a real paste event as a compatibility-mode fallback", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		await service.setStrictUserInputOnly(false);
+		await service.setCountPastedText(false);
+		(
+			service as unknown as { getMarkdownFilePath: () => string }
+		).getMarkdownFilePath = () => "Notes/CompatiblePaste.md";
+
+		const view = { hasFocus: true, composing: false };
+		(
+			service as unknown as {
+				handleTrustedDomEvent: (view: unknown, event: unknown) => void;
+			}
+		).handleTrustedDomEvent(view, {
+			type: "paste",
+			isTrusted: true,
+		});
+		const state = EditorState.create({ doc: "" });
+		const transaction = state.update({
+			changes: { from: 0, insert: "clipboard" },
+			// Some editor integrations downgrade paste to a generic input event.
+			annotations: Transaction.userEvent.of("input.type"),
+		});
+		(
+			service as unknown as {
+				handleEditorUpdate: (update: unknown) => void;
+			}
+		).handleEditorUpdate({
+			docChanged: true,
+			view,
+			transactions: [transaction],
+		});
+		expect(service.getDailyEditStats()).toEqual([]);
+		await service.unload();
+	});
+
 	it("restores the legacy userEvent policy in compatibility mode", async () => {
 		const plugin = createPlugin();
 		const service = new EditActivityService(
@@ -401,6 +512,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		const service = new EditActivityService(plugin as never);
 		await service.initialize();
 		expect(service.getSettings().strictUserInputOnly).toBe(true);
+		expect(service.getSettings().countPastedText).toBe(true);
 
 		expect(service.getDailyEditStats({ folders: ["Projects"] })[0]).toMatchObject({
 			addedChars: 8,

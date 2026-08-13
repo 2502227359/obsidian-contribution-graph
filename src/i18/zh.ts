@@ -161,7 +161,9 @@ export class Zh implements Local {
 	settings_exclude_whitespace = "忽略空白字符";
 	settings_exclude_whitespace_description = "不统计空格、制表符和换行；标点与 emoji 仍会统计。";
 	settings_strict_user_input = "严格排除自动修改";
-	settings_strict_user_input_description = "仅统计由键盘、输入法、粘贴、剪切或拖放直接触发的编辑。关闭后兼容更多编辑插件，但模板等自动插入可能被统计。";
+	settings_strict_user_input_description = "仅统计由键盘、输入法及已启用的剪贴板或拖放操作直接触发的编辑。关闭后兼容更多编辑插件，但模板等自动插入可能被统计。";
+	settings_count_pasted_text = "统计粘贴内容";
+	settings_count_pasted_text_description = "将用户手动粘贴的文本计入编辑活动。关闭后会排除整笔粘贴替换，包括粘贴时被替换的字符。";
 	settings_tracked_folders = "统计文件夹";
 	settings_tracked_folders_description = "从当前仓库选择一个或多个文件夹。修改后只影响之后的编辑；严格模式下会排除范围内文档的模板自动插入。";
 	settings_tracked_folders_choose = "选择文件夹";
