@@ -7,7 +7,10 @@ import {
 	TFolder,
 } from "obsidian";
 import { Locals } from "src/i18/messages";
-import { EditActivityService } from "./EditActivityService";
+import {
+	EditActivityBackupError,
+	EditActivityService,
+} from "./EditActivityService";
 import {
 	getSelectableVaultFolders,
 	VaultFolderSuggestModal,
@@ -193,7 +196,11 @@ export class EditActivitySettingTab extends PluginSettingTab {
 				this.display();
 			} catch (error) {
 				console.error(error);
-				new Notice(local.settings_import_failed);
+				new Notice(
+					error instanceof EditActivityBackupError
+						? local.settings_backup_failed
+						: local.settings_import_failed
+				);
 			}
 		};
 
@@ -207,6 +214,34 @@ export class EditActivitySettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName(local.settings_restore)
+			.setDesc(local.settings_restore_description)
+			.addButton((button) =>
+				button
+					.setButtonText(local.settings_restore_button)
+					.onClick(async () => {
+						if (!window.confirm(local.settings_restore_confirm)) {
+							return;
+						}
+						try {
+							const restored =
+								await this.activityService.restoreLatestBackup();
+							new Notice(
+								restored
+									? local.settings_restore_success
+									: local.settings_restore_none
+							);
+							if (restored) {
+								this.display();
+							}
+						} catch (error) {
+							console.error(error);
+							new Notice(local.settings_restore_failed);
+						}
+					})
+			);
+
+		new Setting(containerEl)
 			.setName(local.settings_clear)
 			.setDesc(local.settings_clear_description)
 			.addButton((button) =>
@@ -217,8 +252,13 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						if (!window.confirm(local.settings_clear_confirm)) {
 							return;
 						}
-						await this.activityService.clearData();
-						new Notice(local.settings_clear_success);
+						try {
+							await this.activityService.clearData();
+							new Notice(local.settings_clear_success);
+						} catch (error) {
+							console.error(error);
+							new Notice(local.settings_backup_failed);
+						}
 					})
 			);
 	}

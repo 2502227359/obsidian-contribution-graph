@@ -9,6 +9,7 @@ export class En implements Local {
      */
     context_menu_create = "Add Heatmap";
 	codeblock_edit_graph = "Edit heatmap settings";
+	codeblock_edit_unavailable = "The original heatmap block can no longer be located safely. Reopen the note and try again.";
 
     /**
      * form
@@ -153,6 +154,8 @@ export class En implements Local {
 	graph_edit_activity_document_history = "Document edit history, {count} items";
 	graph_edit_activity_unattributed_document = "Unattributed document (collected before upgrade)";
 	graph_characters_unit = "characters";
+	graph_dataview_timeout = "Dataview indexing did not finish in time";
+	graph_dataview_timeout_recommendation = "Check that Dataview is enabled, then reopen the note or reload the plugin.";
 
 	settings_activity_heading = "Edit activity";
 	settings_activity_description = "Tracks character changes in the Obsidian editor on this device. File paths and character counts are saved for daily document details, but note contents are never stored. In strict mode, only changes matched to trusted input events are collected.";
@@ -179,15 +182,23 @@ export class En implements Local {
 	settings_export_success = "Edit activity data copied";
 	settings_export_downloaded = "Edit activity data downloaded";
 	settings_import = "Import statistics";
-	settings_import_description = "Restore statistics and tracking settings from an exported JSON file.";
+	settings_import_description = "Restore statistics and tracking settings from an exported JSON file. Current data is backed up before replacement.";
 	settings_import_button = "Choose file";
-	settings_import_success = "Edit activity data imported";
+	settings_import_success = "Edit activity data imported; previous data was backed up";
 	settings_import_failed = "Import failed: invalid data";
+	settings_restore = "Restore latest automatic backup";
+	settings_restore_description = "Restore the most recent snapshot created before an import, clear, or earlier restore. The current data is backed up first.";
+	settings_restore_button = "Restore";
+	settings_restore_confirm = "Restore the latest automatic backup? The current statistics will be backed up first.";
+	settings_restore_success = "Latest edit activity backup restored";
+	settings_restore_none = "No automatic edit activity backup was found";
+	settings_restore_failed = "The backup could not be read or restored; current data was not replaced";
+	settings_backup_failed = "The operation was stopped because edit activity data could not be backed up";
 	settings_corrupt_data_recovered = "Invalid edit activity data was recovered and backed up to {path}";
 	settings_save_failed = "Failed to save edit activity data; retrying automatically";
 	settings_clear = "Clear statistics";
-	settings_clear_description = "Permanently remove all recorded daily character statistics.";
+	settings_clear_description = "Remove all recorded daily character statistics after creating an automatic backup.";
 	settings_clear_button = "Clear";
-	settings_clear_confirm = "Clear all edit activity statistics? This cannot be undone.";
-	settings_clear_success = "Edit activity statistics cleared";
+	settings_clear_confirm = "Clear all edit activity statistics? An automatic backup will be created first.";
+	settings_clear_success = "Edit activity statistics cleared; a backup was created";
 }

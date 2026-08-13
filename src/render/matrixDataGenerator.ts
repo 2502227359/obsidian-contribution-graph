@@ -1,4 +1,4 @@
-import { diffCalendarDays } from "../util/dateUtils";
+import { diffCalendarDays, parseDate } from "../util/dateUtils";
 import {
 	Contribution,
 	ContributionCellData,
@@ -27,10 +27,11 @@ export function generateByData(
 				timestamp: item.date.getTime(),
 			};
 		} else {
+			const localDate = parseDate(item.date);
 			return {
 				...item,
-				date: new Date(item.date),
-				timestamp: new Date(item.date).getTime(),
+				date: localDate,
+				timestamp: localDate.getTime(),
 			};
 		}
 	});

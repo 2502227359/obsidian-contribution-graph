@@ -57,6 +57,14 @@ const SAVE_DEBOUNCE_MS = 2000;
 const SAVE_RETRY_MS = 5000;
 const MAX_SAVE_RETRIES = 3;
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
+const AUTOMATIC_BACKUP_PREFIX = "data.backup-";
+
+export class EditActivityBackupError extends Error {
+	constructor(message: string, readonly cause?: unknown) {
+		super(message);
+		this.name = "EditActivityBackupError";
+	}
+}
 
 export class EditActivityService {
 	private store: EditActivityStore = this.createEmptyStore();
@@ -76,6 +84,7 @@ export class EditActivityService {
 	private processedTransactions = new WeakSet<Transaction>();
 	private pendingInputIntents = new WeakMap<EditorView, PendingInputIntent>();
 	private trustedCompositions = new WeakSet<EditorView>();
+	private backupSequence = 0;
 	private readonly now: () => Date;
 
 	constructor(
@@ -344,7 +353,9 @@ export class EditActivityService {
 			throw new Error("Edit activity import exceeds 10 MB");
 		}
 		const parsed = JSON.parse(serialized);
-		this.store = this.normalizeStore(parsed, true);
+		const importedStore = this.normalizeStore(parsed, true);
+		await this.createAutomaticBackup("import");
+		this.store = importedStore;
 		this.resetTrustedInputState();
 		if (this.store.settings.trackingEnabled) {
 			this.ensureOpenTrackingPeriod();
@@ -357,6 +368,7 @@ export class EditActivityService {
 	}
 
 	async clearData(): Promise<void> {
+		await this.createAutomaticBackup("clear");
 		const trackingEnabled = this.store.settings.trackingEnabled;
 		this.store.dailyStats = Object.create(null);
 		this.store.trackingPeriods = trackingEnabled
@@ -376,6 +388,66 @@ export class EditActivityService {
 		this.markDirty();
 		this.emitChange({ type: "IMPORT" });
 		await this.flush();
+	}
+
+	async getLatestBackupPath(): Promise<string | undefined> {
+		const pluginDir = this.plugin.manifest.dir;
+		if (!pluginDir) {
+			return undefined;
+		}
+		try {
+			const listing = await this.plugin.app.vault.adapter.list(pluginDir);
+			return listing.files
+				.filter((path) => {
+					const name = path.split("/").pop() || "";
+					return (
+						name.startsWith(AUTOMATIC_BACKUP_PREFIX) &&
+						name.endsWith(".json")
+					);
+				})
+				.sort((a, b) => b.localeCompare(a))[0];
+		} catch (error) {
+			throw new EditActivityBackupError(
+				"Failed to list edit activity backups",
+				error
+			);
+		}
+	}
+
+	async restoreLatestBackup(): Promise<string | undefined> {
+		const backupPath = await this.getLatestBackupPath();
+		if (!backupPath) {
+			return undefined;
+		}
+
+		let restoredStore: EditActivityStore;
+		try {
+			const serialized = await this.plugin.app.vault.adapter.read(
+				backupPath
+			);
+			restoredStore = this.normalizeStore(
+				JSON.parse(serialized),
+				true
+			);
+		} catch (error) {
+			throw new EditActivityBackupError(
+				"Failed to read edit activity backup",
+				error
+			);
+		}
+
+		await this.createAutomaticBackup("restore");
+		this.store = restoredStore;
+		this.resetTrustedInputState();
+		if (this.store.settings.trackingEnabled) {
+			this.ensureOpenTrackingPeriod();
+			this.ensureOpenCollectionScopePeriod();
+		}
+		this.invalidateStatsCache();
+		this.markDirty();
+		this.emitChange({ type: "IMPORT" });
+		await this.flush();
+		return backupPath;
 	}
 
 	handleAppResume(): void {
@@ -1250,6 +1322,35 @@ export class EditActivityService {
 		} catch (error) {
 			console.error("Failed to back up corrupt edit activity data", error);
 			return undefined;
+		}
+	}
+
+	private async createAutomaticBackup(
+		reason: "import" | "clear" | "restore"
+	): Promise<string> {
+		const pluginDir = this.plugin.manifest.dir;
+		if (!pluginDir) {
+			throw new EditActivityBackupError(
+				"Plugin directory is unavailable"
+			);
+		}
+		const timestamp = this.now()
+			.toISOString()
+			.replace(/[:.]/g, "-");
+		const sequence = String(this.backupSequence++).padStart(4, "0");
+		const backupPath = `${pluginDir}/${AUTOMATIC_BACKUP_PREFIX}${timestamp}-${sequence}-${reason}.json`;
+		try {
+			await this.plugin.app.vault.adapter.write(
+				backupPath,
+				JSON.stringify(this.store, null, 2)
+			);
+			return backupPath;
+		} catch (error) {
+			console.error("Failed to back up edit activity data", error);
+			throw new EditActivityBackupError(
+				"Failed to back up edit activity data",
+				error
+			);
 		}
 	}
 }

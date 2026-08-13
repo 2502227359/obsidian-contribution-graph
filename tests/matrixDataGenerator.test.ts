@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+	generateByData,
 	generateByFixedDate,
 	generateByLatestDays,
 	getDateTrackingState,
 } from "../src/render/matrixDataGenerator";
 
 describe("matrix date boundaries", () => {
+	it("keeps date-only contribution strings on their local calendar day", () => {
+		const result = generateByData([
+			{ date: "2026-01-01", value: 3 },
+			{ date: "2026-01-03", value: 5 },
+		]);
+		expect(result.map((item) => item.date)).toEqual([
+			"2026-01-01",
+			"2026-01-02",
+			"2026-01-03",
+		]);
+		expect(result.map((item) => item.value)).toEqual([3, 0, 5]);
+	});
+
 	it("generates exactly the requested latest days", () => {
 		expect(generateByLatestDays(180, [])).toHaveLength(180);
 	});

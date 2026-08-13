@@ -131,7 +131,9 @@ export default class ContributionGraph extends Plugin {
 						this.app,
 						this.activityService,
 						code,
-						el.parentElement
+						el.parentElement,
+						el,
+						ctx
 					);
 				}
 			}

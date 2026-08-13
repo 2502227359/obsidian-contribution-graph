@@ -85,6 +85,11 @@ graphs can monitor different projects with different goals. Leaving a graph's
 folder selection empty shows all activity available inside the global
 collection scope. A per-graph folder must be inside that global scope.
 
+Imports and data clearing create an automatic snapshot in the plugin directory
+before replacing any statistics. Use **Settings → Contribution Graph Local →
+Restore latest automatic backup** to recover the most recent snapshot. Restore
+also backs up the current state first.
+
 DataviewJS can read the recorded daily totals without becoming responsible for
 collecting them:
 
@@ -123,3 +128,15 @@ Just click the edit button at top right corner
 - [API Usage, Integrate with DataviewJS ](README_ADVANCED.md)
 - [Basic Codeblock Usage](README_BASIC.md)
 - [Development log](CHANGELOG.md)
+
+## Development and Packaging
+
+```bash
+npm test
+npm run build
+npm run package
+```
+
+`npm run package` validates that package and manifest versions match, then
+stages the installable files and SHA-256 checksums under
+`dist/contribution-graph-local/`.

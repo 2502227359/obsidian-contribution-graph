@@ -24,9 +24,11 @@ interface FakePlugin {
 			adapter: {
 				read: ReturnType<typeof vi.fn>;
 				write: ReturnType<typeof vi.fn>;
+				list: ReturnType<typeof vi.fn>;
 			};
 		};
 	};
+	files: Map<string, string>;
 }
 
 function clone<T>(value: T): T {
@@ -37,6 +39,7 @@ function createPlugin(
 	initialData: unknown = null,
 	saveData = vi.fn(async () => undefined)
 ): FakePlugin {
+	const files = new Map<string, string>();
 	return {
 		loadData: vi.fn(async () => clone(initialData)),
 		saveData,
@@ -44,8 +47,46 @@ function createPlugin(
 		app: {
 			vault: {
 				adapter: {
-					read: vi.fn(async () => JSON.stringify(initialData)),
-					write: vi.fn(async () => undefined),
+					read: vi.fn(async (path: string) =>
+						files.get(path) ?? JSON.stringify(initialData)
+					),
+					write: vi.fn(async (path: string, content: string) => {
+						files.set(path, content);
+					}),
+					list: vi.fn(async () => ({
+						files: [...files.keys()],
+						folders: [],
+					})),
+				},
+			},
+		},
+		files,
+	};
+}
+
+function createStoredData(addedChars: number) {
+	return {
+		schemaVersion: 7,
+		settings: {
+			trackingEnabled: true,
+			excludeWhitespace: true,
+			trackedFolders: [],
+			strictUserInputOnly: true,
+			countPastedText: true,
+		},
+		trackingPeriods: [{ startDate: "2026-07-31" }],
+		collectionScopePeriods: [
+			{ startDate: "2026-07-31", folders: [] },
+		],
+		dailyStats: {
+			"2026-07-31": {
+				addedChars,
+				deletedChars: 0,
+				documents: {
+					"Notes/Test.md": {
+						addedChars,
+						deletedChars: 0,
+					},
 				},
 			},
 		},
@@ -539,6 +580,60 @@ describe("EditActivityService persistence and lifecycle", () => {
 			{ startDate: "2026-07-31", endDate: "2026-08-01", folders: [] },
 			{ startDate: "2026-08-01", folders: ["Projects"] },
 		]);
+		await service.unload();
+	});
+
+	it("backs up existing data before import and restores the latest backup", async () => {
+		const plugin = createPlugin(createStoredData(4));
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.importData(JSON.stringify(createStoredData(9)));
+		expect(service.getDailyEditStats()[0].addedChars).toBe(9);
+		const importBackup = [...plugin.files.keys()].find((path) =>
+			path.endsWith("-import.json")
+		);
+		expect(importBackup).toBeDefined();
+
+		const restoredPath = await service.restoreLatestBackup();
+		expect(restoredPath).toBe(importBackup);
+		expect(service.getDailyEditStats()[0].addedChars).toBe(4);
+		expect(
+			[...plugin.files.keys()].some((path) =>
+				path.endsWith("-restore.json")
+			)
+		).toBe(true);
+		await service.unload();
+	});
+
+	it("backs up before clearing and stops if the backup cannot be written", async () => {
+		const plugin = createPlugin(createStoredData(6));
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.clearData();
+		expect(service.getDailyEditStats()).toEqual([]);
+		expect(
+			[...plugin.files.keys()].some((path) =>
+				path.endsWith("-clear.json")
+			)
+		).toBe(true);
+
+		await service.restoreLatestBackup();
+		expect(service.getDailyEditStats()[0].addedChars).toBe(6);
+		vi.spyOn(console, "error").mockImplementation(() => undefined);
+		plugin.app.vault.adapter.write.mockRejectedValueOnce(
+			new Error("disk unavailable")
+		);
+		const before = service.exportData();
+		await expect(service.clearData()).rejects.toMatchObject({
+			name: "EditActivityBackupError",
+		});
+		expect(service.exportData()).toBe(before);
 		await service.unload();
 	});
 

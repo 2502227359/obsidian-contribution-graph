@@ -8,6 +8,7 @@ export interface Local {
 	 */
 	context_menu_create: string;
 	codeblock_edit_graph: string;
+	codeblock_edit_unavailable: string;
 
 	/**
 	 * form
@@ -150,6 +151,8 @@ export interface Local {
 	graph_edit_activity_document_history: string;
 	graph_edit_activity_unattributed_document: string;
 	graph_characters_unit: string;
+	graph_dataview_timeout: string;
+	graph_dataview_timeout_recommendation: string;
 
 	/**
 	 * plugin settings
@@ -183,6 +186,14 @@ export interface Local {
 	settings_import_button: string;
 	settings_import_success: string;
 	settings_import_failed: string;
+	settings_restore: string;
+	settings_restore_description: string;
+	settings_restore_button: string;
+	settings_restore_confirm: string;
+	settings_restore_success: string;
+	settings_restore_none: string;
+	settings_restore_failed: string;
+	settings_backup_failed: string;
 	settings_corrupt_data_recovered: string;
 	settings_save_failed: string;
 	settings_clear: string;

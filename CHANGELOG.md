@@ -1,5 +1,36 @@
 # Development Log
 
+## 2026-08-13 — v0.11.0 reliability and recovery hardening
+
+### Fixed
+
+- Date-only contribution values are now parsed as local calendar dates instead
+  of UTC timestamps, preventing weekday and month shifts in negative timezones.
+- Live Preview settings edits now use Obsidian's source section range and
+  verify the original fence before replacing YAML. Backtick/tilde fences,
+  indentation, CRLF content, and source-view changes no longer rely on a fixed
+  character offset.
+- Dataview index waits are shared across rendered graphs, time out with an
+  actionable message, and remove their event listener when the last waiting
+  code block is destroyed.
+- Bumped the local release and aligned `package.json`, the lockfile, and
+  `manifest.json` on version `0.11.0`.
+
+### Added
+
+- Imports and data clearing now create an automatic JSON snapshot before any
+  in-memory data is replaced. A failed backup stops the destructive operation.
+- Added a native Obsidian setting to restore the latest automatic backup;
+  restoring first snapshots the current state so the operation can be undone.
+- Added `npm run package`, which performs a production build, validates version
+  consistency, stages the installable plugin files, and writes SHA-256 sums.
+
+### Verification
+
+- `npm test`: 80 tests passed, including local-date parsing, safe fenced-block
+  replacement, shared Dataview wait cleanup/timeout, and backup restoration.
+- `npm run package`: production build and release staging completed.
+
 ## 2026-07-31 — Local edit activity heatmap
 
 ### Added

@@ -8,6 +8,7 @@ export class Zh implements Local {
      */
     context_menu_create = "新建热力图";
 	codeblock_edit_graph = "编辑热力图设置";
+	codeblock_edit_unavailable = "无法安全定位原热力图代码块，请重新打开笔记后再试。";
 
     /**
      * form
@@ -151,6 +152,8 @@ export class Zh implements Local {
 	graph_edit_activity_document_history = "文档编辑历史，共 {count} 项";
 	graph_edit_activity_unattributed_document = "未归属文档（升级前采集的数据）";
 	graph_characters_unit = "字符";
+	graph_dataview_timeout = "Dataview 索引未能及时完成";
+	graph_dataview_timeout_recommendation = "请确认 Dataview 已启用，然后重新打开笔记或重新加载插件。";
 
 	settings_activity_heading = "编辑活动";
 	settings_activity_description = "统计当前设备上 Obsidian 编辑器内的字符变化。为显示每日文档明细，会保存文件路径和字符数，但不会保存笔记内容；严格模式下仅采集能匹配到真实输入事件的修改。";
@@ -177,15 +180,23 @@ export class Zh implements Local {
 	settings_export_success = "编辑活动数据已复制";
 	settings_export_downloaded = "编辑活动数据已下载";
 	settings_import = "导入统计";
-	settings_import_description = "从本插件导出的 JSON 文件恢复统计和采集设置。";
+	settings_import_description = "从本插件导出的 JSON 文件恢复统计和采集设置；覆盖前会自动备份当前数据。";
 	settings_import_button = "选择文件";
-	settings_import_success = "编辑活动数据已导入";
+	settings_import_success = "编辑活动数据已导入，原数据已自动备份";
 	settings_import_failed = "导入失败：文件格式不正确";
+	settings_restore = "恢复最近自动备份";
+	settings_restore_description = "恢复导入、清除或上次恢复前创建的最近快照；恢复前会先备份当前数据。";
+	settings_restore_button = "恢复";
+	settings_restore_confirm = "确定恢复最近自动备份吗？当前统计会先自动备份。";
+	settings_restore_success = "已恢复最近的编辑活动备份";
+	settings_restore_none = "没有找到编辑活动自动备份";
+	settings_restore_failed = "无法读取或恢复备份，当前数据未被替换";
+	settings_backup_failed = "无法备份编辑活动数据，操作已中止";
 	settings_corrupt_data_recovered = "编辑活动数据存在异常，已恢复可用数据并备份到 {path}";
 	settings_save_failed = "编辑活动数据保存失败，将自动重试";
 	settings_clear = "清除统计";
-	settings_clear_description = "永久清除所有已记录的每日字符数据。";
+	settings_clear_description = "创建自动备份后，清除所有已记录的每日字符数据。";
 	settings_clear_button = "清除";
-	settings_clear_confirm = "确定清除全部编辑活动统计吗？此操作无法撤销。";
-	settings_clear_success = "编辑活动统计已清除";
+	settings_clear_confirm = "确定清除全部编辑活动统计吗？清除前会自动创建备份。";
+	settings_clear_success = "编辑活动统计已清除，并已创建备份";
 }

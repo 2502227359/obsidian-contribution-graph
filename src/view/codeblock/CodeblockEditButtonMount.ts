@@ -1,13 +1,22 @@
-import { App, MarkdownView, Notice, getIcon } from "obsidian";
+import {
+	App,
+	MarkdownPostProcessorContext,
+	MarkdownView,
+	Notice,
+	getIcon,
+} from "obsidian";
 import { ContributionGraphCreateModal } from "../form/GraphFormModal";
 import { EditActivityService } from "src/activity/EditActivityService";
 import { Locals } from "src/i18/messages";
+import { createCodeblockYamlEdit } from "./codeblockSource";
 
 export function mountEditButtonToCodeblock(
 	app: App,
 	activityService: EditActivityService,
 	code: string,
-	codeblockDom: HTMLElement
+	codeblockDom: HTMLElement,
+	renderedEl: HTMLElement,
+	ctx: MarkdownPostProcessorContext
 ) {
 	const existingButton = codeblockDom.querySelector<HTMLElement>(
 		":scope > .contribution-graph-codeblock-edit-button"
@@ -38,30 +47,37 @@ export function mountEditButtonToCodeblock(
 	formEditButton.onclick = (event) => {
 		event.preventDefault();
 		event.stopPropagation();
+		const sourceView = app.workspace.getActiveViewOfType(MarkdownView);
+		if (!sourceView || sourceView.file?.path !== ctx.sourcePath) {
+			new Notice(Locals.get().codeblock_edit_unavailable);
+			return;
+		}
 		new ContributionGraphCreateModal(
 			app,
 			activityService,
 			code,
 			(content) => {
-				const markdownView =
-					app.workspace.getActiveViewOfType(MarkdownView);
-				if (!markdownView) {
-					new Notice("No markdown view is active");
+				if (sourceView.file?.path !== ctx.sourcePath) {
+					new Notice(Locals.get().codeblock_edit_unavailable);
 					return;
 				}
-				const editor = markdownView.editor;
-				// @ts-ignore
-				const editorView = editor.cm as EditorView;
-				const pos = editorView.posAtDOM(codeblockDom);
-				const start = pos + "```contributionGraph\n".length;
-				// set selection
-				editorView.dispatch({
-					changes: {
-						from: start,
-						to: start + (code ? code.length : 0),
-						insert: content,
-					},
-				});
+				const section = ctx.getSectionInfo(renderedEl);
+				const edit = section
+					? createCodeblockYamlEdit(
+							(line) => sourceView.editor.getLine(line),
+							section,
+							content
+					  )
+					: undefined;
+				if (!edit) {
+					new Notice(Locals.get().codeblock_edit_unavailable);
+					return;
+				}
+				sourceView.editor.replaceRange(
+					edit.insert,
+					edit.from,
+					edit.to
+				);
 			}
 		).open();
 	};

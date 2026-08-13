@@ -24,6 +24,21 @@ import { MISS_CONFIG } from "./bizErrors";
 import { GraphProcessError } from "./graphProcessError";
 import { YamlGraphConfig } from "./types";
 import { YamlConfigReconciler } from "./yamlConfigReconciler";
+import {
+	DataviewIndexTimeoutError,
+	isAbortError,
+	waitForDataviewIndex,
+} from "./dataviewReady";
+
+class ProcessorLifecycleRenderChild extends MarkdownRenderChild {
+	constructor(container: HTMLElement, private readonly dispose: () => void) {
+		super(container);
+	}
+
+	onunload(): void {
+		this.dispose();
+	}
+}
 
 class ReactiveGraphRenderChild extends MarkdownRenderChild {
 	private unsubscribe?: () => void;
@@ -65,6 +80,8 @@ class ReactiveGraphRenderChild extends MarkdownRenderChild {
 export class CodeBlockProcessor {
 	dataSourceQuery: CompositeDataSourceQuery = new CompositeDataSourceQuery();
 	private selectedActivityDate?: string;
+	private readonly abortController = new AbortController();
+	private disposed = false;
 
 	constructor(private readonly activityService: EditActivityService) {}
 
@@ -74,11 +91,17 @@ export class CodeBlockProcessor {
 		ctx: MarkdownPostProcessorContext,
 		app: App
 	) {
+		ctx.addChild(
+			new ProcessorLifecycleRenderChild(el, () => this.dispose())
+		);
 		try {
 			const graphConfig: YamlGraphConfig = this.loadYamlConfig(el, code);
 			await this.renderFromYaml(graphConfig, el, app);
 
-			if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
+			if (
+				!this.disposed &&
+				graphConfig.dataSource?.type === "EDIT_ACTIVITY"
+			) {
 				ctx.addChild(
 					new ReactiveGraphRenderChild(
 						el,
@@ -91,8 +114,19 @@ export class CodeBlockProcessor {
 				);
 			}
 		} catch (error) {
+			if (this.disposed || isAbortError(error)) {
+				return;
+			}
 			this.renderError(el, error);
 		}
+	}
+
+	dispose(): void {
+		if (this.disposed) {
+			return;
+		}
+		this.disposed = true;
+		this.abortController.abort();
 	}
 
 	async renderFromYaml(
@@ -384,22 +418,25 @@ export class CodeBlockProcessor {
 			return;
 		}
 
-		await new Promise<void>((resolve) => {
-			const metadataCache = app.metadataCache as unknown as {
-				on: (
-					name: string,
-					callback: () => void
-				) => unknown;
-				offref: (eventRef: unknown) => void;
-			};
-			const eventRef = metadataCache.on(
-				"dataview:index-ready",
-				() => {
-					metadataCache.offref(eventRef);
-					resolve();
-				}
+		try {
+			await waitForDataviewIndex(
+				app,
+				this.abortController.signal
 			);
-		});
+		} catch (error) {
+			if (isAbortError(error)) {
+				throw error;
+			}
+			if (error instanceof DataviewIndexTimeoutError) {
+				throw new GraphProcessError({
+					summary: Locals.get().graph_dataview_timeout,
+					recommends: [
+						Locals.get().graph_dataview_timeout_recommendation,
+					],
+				});
+			}
+			throw error;
+		}
 	}
 
 	private renderError(el: HTMLElement, error: unknown): void {
