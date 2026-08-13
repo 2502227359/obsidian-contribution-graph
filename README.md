@@ -48,6 +48,7 @@ Contribution Graph is a plugin for [obsidian.md](https://obsidian.md/) which can
 - **Interactive charts**, you can customize cell click event, hover to show statistic data
 - **Integrate with DataviewJS**, use contribution graph's api to dynamically render charts 
 - **Local edit activity**, track characters added and deleted in the Obsidian editor without storing note contents
+- **Responsive and accessible heatmaps**, keep recent dates visible, adapt month layouts to narrow panes, and open day details with the keyboard
 
 ![](attachment/74103317de5336b5283338c56171f268.png)
 
@@ -78,12 +79,33 @@ stores note contents. Strict input filtering is enabled by default, so template
 insertions and other edits without a trusted keyboard, IME, clipboard, or drop
 event are excluded. The separate **Count pasted text** setting can exclude the
 entire paste operation while continuing to count typing, IME, cut, and drop
-edits. Dates before tracking started are shown as untracked.
+edits. The optional **Ignore Markdown formatting marks** setting uses Obsidian's
+parsed Markdown structure to exclude recognized heading, list, quote, emphasis,
+link, code-fence, task-box, and table delimiters from future edits while keeping
+prose punctuation, link text, and code contents countable. Markdown-aware edits
+are settled from the final syntax of the current line when the cursor leaves it,
+the editor loses focus, or the app enters the background. The settings page
+groups character, input-source, and collection-scope policies and shows a compact
+summary of the active combination. Dates before tracking started are shown as
+untracked.
+
+Counting-policy changes are timestamped in local plugin data. If more than one
+policy contributes to the same day, the contribution detail explicitly warns
+that the total combines data from before and after the change. Existing totals
+are never recalculated.
 The plugin setting defines the maximum scope collected from future edits. Each
 heatmap can then select its own `dataSource.folders` from the vault, so separate
 graphs can monitor different projects with different goals. Leaving a graph's
 folder selection empty shows all activity available inside the global
 collection scope. A per-graph folder must be inside that global scope.
+
+Heatmaps use Obsidian theme colors for their surrounding UI while preserving
+configured heat-level colors. Git and month-track views remain horizontally
+scrollable in narrow panes; Git view opens at the latest dates, and month labels
+remain visible while scrolling. Clicking a date keeps it highlighted and edit
+activity details show added, deleted, changed, and goal-completion totals in a
+compact summary. Date cells can also be reached with Tab, traversed with the
+arrow keys, and opened with Enter or Space.
 
 Imports and data clearing create an automatic snapshot in the plugin directory
 before replacing any statistics. Use **Settings → Contribution Graph Local →

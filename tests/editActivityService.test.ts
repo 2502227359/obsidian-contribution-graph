@@ -66,10 +66,11 @@ function createPlugin(
 
 function createStoredData(addedChars: number) {
 	return {
-		schemaVersion: 7,
+		schemaVersion: 8,
 		settings: {
 			trackingEnabled: true,
 			excludeWhitespace: true,
+			excludeMarkdownFormatting: false,
 			trackedFolders: [],
 			strictUserInputOnly: true,
 			countPastedText: true,
@@ -159,7 +160,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 		expect(plugin.saveData).toHaveBeenCalledTimes(1);
 		expect(plugin.saveData.mock.calls[0][0]).toMatchObject({
-			schemaVersion: 7,
+			schemaVersion: 9,
 			dailyStats: {
 				"2026-07-31": {
 					addedChars: 1,
@@ -167,6 +168,147 @@ describe("EditActivityService persistence and lifecycle", () => {
 				},
 			},
 		});
+	});
+
+	it("records counting policy changes while tracking is enabled", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		const record = (text: string) => {
+			const document = Text.of([""]);
+			const changes = ChangeSet.of(
+				[{ from: 0, insert: text }],
+				document.length
+			);
+			(
+				service as unknown as {
+					recordChanges: (
+						document: Text,
+						changes: ChangeSet,
+						filePath: string,
+						cursorOffset: number
+					) => void;
+				}
+			).recordChanges(document, changes, "Notes/Policy.md", text.length);
+		};
+		record("a");
+		await service.setExcludeMarkdownFormatting(true);
+		record("b");
+
+		const exported = JSON.parse(service.exportData());
+		expect(exported).toMatchObject({
+			schemaVersion: 9,
+			countingPolicyPeriods: [
+				{
+					startedAt: "2026-07-31T08:00:00.000Z",
+					endedAt: "2026-07-31T08:00:00.000Z",
+					policy: { excludeMarkdownFormatting: false },
+				},
+				{
+					startedAt: "2026-07-31T08:00:00.000Z",
+					policy: { excludeMarkdownFormatting: true },
+				},
+			],
+		});
+		expect(service.getDailyEditStats()[0].countingPolicyChanged).toBe(true);
+		await service.unload();
+	});
+
+	it("settles Markdown-aware edits when the editor loses focus", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		await service.setStrictUserInputOnly(false);
+		await service.setExcludeMarkdownFormatting(true);
+		(
+			service as unknown as { getMarkdownFilePath: () => string }
+		).getMarkdownFilePath = () => "Notes/Markdown.md";
+
+		const view = { hasFocus: true, composing: false };
+		const firstState = EditorState.create({ doc: "" });
+		const first = firstState.update({
+			changes: { from: 0, insert: "**" },
+			annotations: Transaction.userEvent.of("input.type"),
+		});
+		const second = first.state.update({
+			changes: { from: 2, insert: "正文**" },
+			annotations: Transaction.userEvent.of("input.type"),
+		});
+		const handleUpdate = (transaction: Transaction) =>
+			(
+				service as unknown as {
+					handleEditorUpdate: (update: unknown) => void;
+				}
+			).handleEditorUpdate({
+				docChanged: true,
+				selectionSet: true,
+				state: transaction.state,
+				view,
+				transactions: [transaction],
+			});
+		handleUpdate(first);
+		handleUpdate(second);
+		expect(service.getDailyEditStats()).toEqual([]);
+
+		(
+			service as unknown as {
+				handleTrustedDomEvent: (view: unknown, event: unknown) => void;
+			}
+		).handleTrustedDomEvent(view, { type: "blur", isTrusted: true });
+		expect(service.getDailyEditStats()[0]).toMatchObject({
+			addedChars: 6,
+			deletedChars: 0,
+		});
+		await service.unload();
+	});
+
+	it("keeps a pending line edit on the date when it started", async () => {
+		let now = new Date(2026, 6, 31, 23, 59, 59);
+		const plugin = createPlugin();
+		const service = new EditActivityService(plugin as never, () => now);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		await service.setStrictUserInputOnly(false);
+		await service.setExcludeMarkdownFormatting(true);
+		(
+			service as unknown as { getMarkdownFilePath: () => string }
+		).getMarkdownFilePath = () => "Notes/Midnight.md";
+
+		const view = { hasFocus: true, composing: false };
+		const state = EditorState.create({ doc: "" });
+		const transaction = state.update({
+			changes: { from: 0, insert: "before midnight" },
+			annotations: Transaction.userEvent.of("input.type"),
+		});
+		(
+			service as unknown as {
+				handleEditorUpdate: (update: unknown) => void;
+			}
+		).handleEditorUpdate({
+			docChanged: true,
+			selectionSet: true,
+			state: transaction.state,
+			view,
+			transactions: [transaction],
+		});
+		now = new Date(2026, 7, 1, 0, 0, 1);
+		service.handleAppSuspend();
+
+		expect(service.getDailyEditStats()).toEqual([
+			expect.objectContaining({
+				date: "2026-07-31",
+				addedChars: 14,
+			}),
+		]);
+		await service.unload();
 	});
 
 	it("retries a failed save without losing the pending state", async () => {
@@ -244,7 +386,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		await service.unload();
 		expect(plugin.saveData.mock.lastCall?.[0]).toMatchObject({
-			schemaVersion: 7,
+			schemaVersion: 9,
 			settings: {
 				trackedFolders: ["Archive", "Daily Notes"],
 			},
@@ -554,6 +696,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.initialize();
 		expect(service.getSettings().strictUserInputOnly).toBe(true);
 		expect(service.getSettings().countPastedText).toBe(true);
+		expect(service.getSettings().excludeMarkdownFormatting).toBe(false);
 
 		expect(service.getDailyEditStats({ folders: ["Projects"] })[0]).toMatchObject({
 			addedChars: 8,

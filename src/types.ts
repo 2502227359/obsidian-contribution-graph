@@ -8,6 +8,7 @@ export interface DailyEditStats {
 	documents: DocumentEditStats[];
 	unattributedAddedChars?: number;
 	unattributedDeletedChars?: number;
+	countingPolicyChanged?: boolean;
 }
 
 export interface DocumentEditStats {

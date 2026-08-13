@@ -8,9 +8,24 @@ import {
 export interface EditActivitySettings {
 	trackingEnabled: boolean;
 	excludeWhitespace: boolean;
+	excludeMarkdownFormatting: boolean;
 	trackedFolders: string[];
 	strictUserInputOnly: boolean;
 	countPastedText: boolean;
+}
+
+export type CountingPolicy = Pick<
+	EditActivitySettings,
+	| "excludeWhitespace"
+	| "excludeMarkdownFormatting"
+	| "strictUserInputOnly"
+	| "countPastedText"
+>;
+
+export interface CountingPolicyPeriod {
+	startedAt: string;
+	endedAt?: string;
+	policy: CountingPolicy;
 }
 
 export interface StoredDailyEditStats {
@@ -26,31 +41,58 @@ export interface StoredDocumentEditStats {
 }
 
 export interface EditActivityStore {
-	schemaVersion: 7;
+	schemaVersion: 9;
 	settings: EditActivitySettings;
 	trackingPeriods: TrackingPeriod[];
 	collectionScopePeriods: CollectionScopePeriod[];
+	countingPolicyPeriods: CountingPolicyPeriod[];
 	dailyStats: Record<string, StoredDailyEditStats>;
 }
 
 export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 	trackingEnabled: false,
 	excludeWhitespace: true,
+	excludeMarkdownFormatting: false,
 	trackedFolders: [],
 	strictUserInputOnly: true,
 	countPastedText: true,
 };
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
-	schemaVersion: 7,
+	schemaVersion: 9,
 	settings: {
 		...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 		trackedFolders: [],
 	},
 	trackingPeriods: [],
 	collectionScopePeriods: [],
+	countingPolicyPeriods: [],
 	dailyStats: {},
 };
+
+export function getCountingPolicy(
+	settings: EditActivitySettings
+): CountingPolicy {
+	return {
+		excludeWhitespace: settings.excludeWhitespace,
+		excludeMarkdownFormatting: settings.excludeMarkdownFormatting,
+		strictUserInputOnly: settings.strictUserInputOnly,
+		countPastedText: settings.countPastedText,
+	};
+}
+
+export function countingPoliciesEqual(
+	left: CountingPolicy,
+	right: CountingPolicy
+): boolean {
+	return (
+		left.excludeWhitespace === right.excludeWhitespace &&
+		left.excludeMarkdownFormatting ===
+			right.excludeMarkdownFormatting &&
+		left.strictUserInputOnly === right.strictUserInputOnly &&
+		left.countPastedText === right.countPastedText
+	);
+}
 
 export function toDailyEditStats(
 	date: string,

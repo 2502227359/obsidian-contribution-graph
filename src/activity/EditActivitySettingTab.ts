@@ -57,6 +57,47 @@ export class EditActivitySettingTab extends PluginSettingTab {
 					})
 			);
 
+		const summary = containerEl.createDiv({
+			cls: `contribution-graph-counting-summary${
+				settings.trackingEnabled ? "" : " is-paused"
+			}`,
+		});
+		summary.createDiv({
+			cls: "contribution-graph-counting-summary-title",
+			text: local.settings_counting_summary,
+		});
+		const summaryItems = [
+			settings.strictUserInputOnly
+				? local.settings_summary_strict
+				: local.settings_summary_compatible,
+			settings.countPastedText
+				? local.settings_summary_include_paste
+				: local.settings_summary_exclude_paste,
+			settings.excludeWhitespace
+				? local.settings_summary_ignore_whitespace
+				: local.settings_summary_include_whitespace,
+			settings.excludeMarkdownFormatting
+				? local.settings_summary_ignore_markdown
+				: local.settings_summary_include_markdown,
+			settings.trackedFolders.length === 0
+				? local.settings_summary_all_folders
+				: local.settings_summary_folder_count.replace(
+						"{count}",
+						settings.trackedFolders.length.toString()
+				  ),
+		];
+		const summaryItemsEl = summary.createDiv({
+			cls: "contribution-graph-counting-summary-items",
+		});
+		for (const item of summaryItems) {
+			summaryItemsEl.createSpan({ text: item });
+		}
+
+		this.createSectionHeading(
+			containerEl,
+			local.settings_character_rules_heading
+		);
+
 		new Setting(containerEl)
 			.setName(local.settings_exclude_whitespace)
 			.setDesc(local.settings_exclude_whitespace_description)
@@ -67,8 +108,30 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						await this.activityService.setExcludeWhitespace(
 							excludeWhitespace
 						);
+						new Notice(local.settings_counting_policy_updated);
+						this.display();
 					})
 			);
+
+		new Setting(containerEl)
+			.setName(local.settings_exclude_markdown_formatting)
+			.setDesc(local.settings_exclude_markdown_formatting_description)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(settings.excludeMarkdownFormatting)
+					.onChange(async (excludeMarkdownFormatting) => {
+						await this.activityService.setExcludeMarkdownFormatting(
+							excludeMarkdownFormatting
+						);
+						new Notice(local.settings_counting_policy_updated);
+						this.display();
+					})
+			);
+
+		this.createSectionHeading(
+			containerEl,
+			local.settings_input_sources_heading
+		);
 
 		new Setting(containerEl)
 			.setName(local.settings_strict_user_input)
@@ -80,6 +143,8 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						await this.activityService.setStrictUserInputOnly(
 							strictUserInputOnly
 						);
+						new Notice(local.settings_counting_policy_updated);
+						this.display();
 					})
 			);
 
@@ -93,8 +158,15 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						await this.activityService.setCountPastedText(
 							countPastedText
 						);
+						new Notice(local.settings_counting_policy_updated);
+						this.display();
 					})
 			);
+
+		this.createSectionHeading(
+			containerEl,
+			local.settings_collection_scope_heading
+		);
 
 		const selectableFolders = getSelectableVaultFolders(
 			this.app,
@@ -271,6 +343,12 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		link.download = "contribution-graph-edit-activity.json";
 		link.click();
 		window.setTimeout(() => URL.revokeObjectURL(url), 0);
+	}
+
+	private createSectionHeading(containerEl: HTMLElement, text: string): void {
+		containerEl
+			.createEl("h3", { text })
+			.addClass("contribution-graph-settings-section");
 	}
 
 }

@@ -22,10 +22,9 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 		// main
 		const main = this.createMainEl(graphEl, graphConfig)
 
-		// title
-		if (graphConfig.title && graphConfig.title.trim() != "") {
-			this.renderTitle(graphConfig, main);
-		}
+		const contributionData: ContributionCellData[] =
+			this.generateContributionData(graphConfig);
+		this.renderHeader(graphConfig, main, contributionData);
 
 		// main -> charts
 		const chartsEl = createDiv({
@@ -33,7 +32,6 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 			parent: main,
 		});
 
-		this.renderCellRuleIndicator(graphConfig, main);
 		const activityContainer= this.renderActivityContainer(graphConfig, main);
 		
 		// main ->  week day indicator(text cell)
@@ -43,8 +41,6 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 		});
 		this.renderWeekIndicator(weekTextColumns, graphConfig);
 
-		const contributionData: ContributionCellData[] =
-			this.generateContributionData(graphConfig);
 		this.restoreSelectedActivity(
 			graphConfig,
 			contributionData,
@@ -109,7 +105,9 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 			}
 
 			// main -> charts -> column -> cell
-			const cellEl = document.createElement("div");
+			const cellEl = document.createElement(
+				contributionItem.date === "$HOLE$" ? "div" : "button"
+			);
 			columnEl?.appendChild(cellEl);
 
 			if (contributionItem.value == 0) {
@@ -149,6 +147,7 @@ export class GitStyleTrackGraphRender extends BaseGraphRender {
 				this.bindCellTips(cellEl, contributionItem);
 			}
 		}
+		this.setupCellKeyboardNavigation(chartsEl);
 	}
 
 	renderWeekIndicator(weekdayContainer: HTMLDivElement,graphConfig: ContributionGraphConfig) {

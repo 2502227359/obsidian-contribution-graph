@@ -22,18 +22,16 @@ export class MonthTrackGraphRender extends BaseGraphRender {
 		// main
 		const main = this.createMainEl(graphEl, graphConfig)
 
-		// title
-		if (graphConfig.title && graphConfig.title.trim() != "") {
-			this.renderTitle(graphConfig, main);
-		}
+		const contributionData = this.generateContributionData(
+			graphConfig
+		).filter((item) => item.date != "$HOLE$");
+		this.renderHeader(graphConfig, main, contributionData);
 
 		// main -> charts
 		const chartsEl = createDiv({
 			cls: ["charts", "month-track"],
 			parent: main,
 		});
-
-		this.renderCellRuleIndicator(graphConfig, main);
 
 		// main ->  month date indicator(text cell)
 		const dateIndicatorRow = createDiv({
@@ -51,9 +49,6 @@ export class MonthTrackGraphRender extends BaseGraphRender {
 
 		const activityContainer = this.renderActivityContainer(graphConfig, main);
 
-		const contributionData = this.generateContributionData(
-			graphConfig
-		).filter((item) => item.date != "$HOLE$");
 		this.restoreSelectedActivity(
 			graphConfig,
 			contributionData,
@@ -126,7 +121,7 @@ export class MonthTrackGraphRender extends BaseGraphRender {
 			}
 
 			// render cell
-			const cellEl = document.createElement("div");
+			const cellEl = document.createElement("button");
 			this.applyCellGlobalStyle(cellEl, graphConfig);
 			monthDataRowEl?.appendChild(cellEl);
 			if (contributionItem.value == 0) {
@@ -173,6 +168,7 @@ export class MonthTrackGraphRender extends BaseGraphRender {
 				monthDataRowEl?.appendChild(cellEl);
 			}
 		}
+		this.setupCellKeyboardNavigation(chartsEl);
 	}
 
 	renderMonthDateIndicator(dateIndicatorRow: HTMLDivElement, graphConfig: ContributionGraphConfig) {

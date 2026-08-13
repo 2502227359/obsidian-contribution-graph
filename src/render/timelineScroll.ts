@@ -3,6 +3,11 @@ export interface TimelineScrollSnapshot {
 	atLatest: boolean;
 }
 
+export interface TimelineOverflowState {
+	canScrollLeft: boolean;
+	canScrollRight: boolean;
+}
+
 const LATEST_EDGE_THRESHOLD = 24;
 
 export function captureTimelineScroll(
@@ -33,6 +38,52 @@ export function resolveTimelineScrollLeft(
 	return Math.min(Math.max(0, previous.left), safeMaximum);
 }
 
+export function resolveTimelineOverflowState(
+	scrollWidth: number,
+	clientWidth: number,
+	scrollLeft: number
+): TimelineOverflowState {
+	const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
+	const safeLeft = Math.min(Math.max(0, scrollLeft), maxScrollLeft);
+	return {
+		canScrollLeft: safeLeft > 1,
+		canScrollRight: maxScrollLeft - safeLeft > 1,
+	};
+}
+
+export function updateTimelineScrollAffordance(
+	element: HTMLElement | null
+): void {
+	if (!element) {
+		return;
+	}
+	const state = resolveTimelineOverflowState(
+		element.scrollWidth,
+		element.clientWidth,
+		element.scrollLeft
+	);
+	element.classList.toggle("can-scroll-left", state.canScrollLeft);
+	element.classList.toggle("can-scroll-right", state.canScrollRight);
+}
+
+export function bindTimelineScrollAffordance(
+	element: HTMLElement | null
+): void {
+	if (!element) {
+		return;
+	}
+	const update = () => updateTimelineScrollAffordance(element);
+	element.addEventListener("scroll", update, { passive: true });
+	if (
+		typeof window !== "undefined" &&
+		typeof window.requestAnimationFrame === "function"
+	) {
+		window.requestAnimationFrame(update);
+	} else {
+		update();
+	}
+}
+
 export function restoreTimelineScroll(
 	element: HTMLElement | null,
 	previous?: TimelineScrollSnapshot
@@ -52,6 +103,7 @@ export function restoreTimelineScroll(
 			maxScrollLeft,
 			previous
 		);
+		updateTimelineScrollAffordance(element);
 	};
 
 	if (

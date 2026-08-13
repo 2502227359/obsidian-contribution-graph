@@ -1,5 +1,9 @@
-import { ChangeSet, Text } from "@codemirror/state";
+import { ChangeSet, EditorState, Text } from "@codemirror/state";
 import { countCharacters, CharacterCountOptions } from "./characterCounter";
+import {
+	collectMarkdownFormattingRanges,
+	countDocumentRange,
+} from "./markdownSyntaxCounter";
 
 export interface CharacterChangeCount {
 	addedChars: number;
@@ -20,12 +24,39 @@ export function isCountedUserEvent(event: string): boolean {
 export function countChangedCharacters(
 	startDocument: Text,
 	changes: ChangeSet,
-	options: CharacterCountOptions
+	options: CharacterCountOptions,
+	states?: { startState: EditorState; endState: EditorState }
 ): CharacterChangeCount {
 	let addedChars = 0;
 	let deletedChars = 0;
 
-	changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+	changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+		if (options.excludeMarkdownFormatting && states) {
+			deletedChars += countDocumentRange(
+				startDocument,
+				fromA,
+				toA,
+				options,
+				collectMarkdownFormattingRanges(
+					states.startState,
+					fromA,
+					toA
+				)
+			);
+			addedChars += countDocumentRange(
+				states.endState.doc,
+				fromB,
+				toB,
+				options,
+				collectMarkdownFormattingRanges(
+					states.endState,
+					fromB,
+					toB
+				)
+			);
+			return;
+		}
+
 		deletedChars += countCharacters(
 			startDocument.sliceString(fromA, toA),
 			options

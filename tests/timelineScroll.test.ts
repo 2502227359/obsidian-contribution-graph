@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveTimelineScrollLeft } from "../src/render/timelineScroll";
+import {
+	resolveTimelineOverflowState,
+	resolveTimelineScrollLeft,
+} from "../src/render/timelineScroll";
 
 describe("timeline scroll positioning", () => {
 	it("shows the latest dates on first render", () => {
@@ -22,5 +25,29 @@ describe("timeline scroll positioning", () => {
 		expect(
 			resolveTimelineScrollLeft(120, { left: 180, atLatest: false })
 		).toBe(120);
+	});
+});
+
+describe("timeline overflow affordance", () => {
+	it("shows only the edge that contains hidden content", () => {
+		expect(resolveTimelineOverflowState(900, 300, 0)).toEqual({
+			canScrollLeft: false,
+			canScrollRight: true,
+		});
+		expect(resolveTimelineOverflowState(900, 300, 260)).toEqual({
+			canScrollLeft: true,
+			canScrollRight: true,
+		});
+		expect(resolveTimelineOverflowState(900, 300, 600)).toEqual({
+			canScrollLeft: true,
+			canScrollRight: false,
+		});
+	});
+
+	it("does not show an affordance when the chart fits", () => {
+		expect(resolveTimelineOverflowState(300, 420, 0)).toEqual({
+			canScrollLeft: false,
+			canScrollRight: false,
+		});
 	});
 });

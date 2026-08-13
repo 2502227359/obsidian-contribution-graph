@@ -6,6 +6,11 @@ import {
 	isCountedUserEvent,
 } from "../src/activity/changeCounter";
 import {
+	countDocumentRange,
+	isMarkdownFormattingNode,
+	mergeTextRanges,
+} from "../src/activity/markdownSyntaxCounter";
+import {
 	migrateDocumentPaths,
 	toDailyEditStats,
 } from "../src/activity/types";
@@ -84,6 +89,46 @@ describe("countChangedCharacters", () => {
 			addedChars: 1,
 			deletedChars: 0,
 		});
+	});
+});
+
+describe("Markdown formatting character filtering", () => {
+	it("recognizes parser formatting nodes without treating content as syntax", () => {
+		expect(isMarkdownFormattingNode("HeaderMark")).toBe(true);
+		expect(isMarkdownFormattingNode("StrikethroughMark")).toBe(true);
+		expect(isMarkdownFormattingNode("TaskMarker")).toBe(true);
+		expect(isMarkdownFormattingNode("TableDelimiter")).toBe(true);
+		expect(isMarkdownFormattingNode("CodeText")).toBe(false);
+		expect(isMarkdownFormattingNode("URL")).toBe(false);
+		expect(isMarkdownFormattingNode("Paragraph")).toBe(false);
+	});
+
+	it("counts only content outside formatting ranges", () => {
+		const document = Text.of(["**你好** and `x * y`"]);
+		expect(
+			countDocumentRange(
+				document,
+				0,
+				document.length,
+				{ excludeWhitespace: true },
+				[
+					{ from: 0, to: 2 },
+					{ from: 4, to: 6 },
+					{ from: 11, to: 12 },
+					{ from: 17, to: 18 },
+				]
+			)
+		).toBe(8);
+	});
+
+	it("merges overlapping parser ranges before counting", () => {
+		expect(
+			mergeTextRanges([
+				{ from: 5, to: 8 },
+				{ from: 1, to: 3 },
+				{ from: 2, to: 6 },
+			])
+		).toEqual([{ from: 1, to: 8 }]);
 	});
 });
 

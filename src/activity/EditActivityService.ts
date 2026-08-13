@@ -1,4 +1,10 @@
-import { ChangeSet, Extension, Text, Transaction } from "@codemirror/state";
+import {
+	ChangeSet,
+	EditorState,
+	Extension,
+	Text,
+	Transaction,
+} from "@codemirror/state";
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, Notice, Plugin } from "obsidian";
 import { Locals } from "src/i18/messages";
@@ -17,10 +23,13 @@ import {
 	normalizeTrackedFolders,
 } from "./folderScope";
 import {
+	CountingPolicy,
+	countingPoliciesEqual,
 	DEFAULT_EDIT_ACTIVITY_SETTINGS,
 	EditActivitySettings,
 	EditActivityStore,
 	EMPTY_EDIT_ACTIVITY_STORE,
+	getCountingPolicy,
 	migrateDocumentPaths,
 	toDailyEditStats,
 } from "./types";
@@ -32,9 +41,23 @@ import {
 
 interface CompositionState {
 	startDocument: Text;
+	startState: EditorState;
+	endState: EditorState;
 	changes: ChangeSet;
 	filePath: string;
 	cursorOffset: number;
+	date: string;
+}
+
+interface PendingLineEdit {
+	startDocument: Text;
+	startState: EditorState;
+	endState: EditorState;
+	changes: ChangeSet;
+	filePath: string;
+	cursorOffset: number;
+	lineNumber: number;
+	date: string;
 }
 
 interface PendingInputIntent {
@@ -81,6 +104,9 @@ export class EditActivityService {
 	private lastKnownDate = "";
 	private lastKnownTimezoneOffset = 0;
 	private compositions = new WeakMap<EditorView, CompositionState>();
+	private compositionViews = new Set<EditorView>();
+	private pendingLineEdits = new WeakMap<EditorView, PendingLineEdit>();
+	private pendingLineViews = new Set<EditorView>();
 	private processedTransactions = new WeakSet<Transaction>();
 	private pendingInputIntents = new WeakMap<EditorView, PendingInputIntent>();
 	private trustedCompositions = new WeakSet<EditorView>();
@@ -127,6 +153,7 @@ export class EditActivityService {
 		if (this.store.settings.trackingEnabled) {
 			migrated = this.ensureOpenTrackingPeriod() || migrated;
 			migrated = this.ensureOpenCollectionScopePeriod() || migrated;
+			migrated = this.ensureOpenCountingPolicyPeriod() || migrated;
 		}
 		if (migrated) {
 			this.markDirty();
@@ -163,6 +190,7 @@ export class EditActivityService {
 							true
 						);
 					}
+					service.flushPendingEdits(view);
 					service.clearTrustedInputState(view);
 				},
 			};
@@ -219,6 +247,7 @@ export class EditActivityService {
 		newPath: string,
 		isFolder: boolean
 	): void {
+		this.flushAllPendingEdits();
 		const changedDates = migrateDocumentPaths(
 			this.store.dailyStats,
 			oldPath,
@@ -274,14 +303,17 @@ export class EditActivityService {
 			return;
 		}
 
+		this.flushAllPendingEdits();
 		this.store.settings.trackingEnabled = enabled;
 		this.resetTrustedInputState();
 		if (enabled) {
 			this.ensureOpenTrackingPeriod();
 			this.ensureOpenCollectionScopePeriod();
+			this.ensureOpenCountingPolicyPeriod();
 		} else {
 			this.closeOpenTrackingPeriod();
 			this.closeOpenCollectionScopePeriod();
+			this.closeOpenCountingPolicyPeriod();
 		}
 		this.markDirty();
 		this.emitChange({ type: "COVERAGE" });
@@ -292,7 +324,29 @@ export class EditActivityService {
 		if (this.store.settings.excludeWhitespace === excludeWhitespace) {
 			return;
 		}
+		this.beginCountingPolicyChange();
 		this.store.settings.excludeWhitespace = excludeWhitespace;
+		this.finishCountingPolicyChange();
+		this.resetTrustedInputState();
+		this.markDirty();
+		this.emitChange({ type: "SETTINGS" });
+		await this.flush();
+	}
+
+	async setExcludeMarkdownFormatting(
+		excludeMarkdownFormatting: boolean
+	): Promise<void> {
+		if (
+			this.store.settings.excludeMarkdownFormatting ===
+			excludeMarkdownFormatting
+		) {
+			return;
+		}
+		this.beginCountingPolicyChange();
+		this.store.settings.excludeMarkdownFormatting =
+			excludeMarkdownFormatting;
+		this.finishCountingPolicyChange();
+		this.resetTrustedInputState();
 		this.markDirty();
 		this.emitChange({ type: "SETTINGS" });
 		await this.flush();
@@ -304,7 +358,9 @@ export class EditActivityService {
 		) {
 			return;
 		}
+		this.beginCountingPolicyChange();
 		this.store.settings.strictUserInputOnly = strictUserInputOnly;
+		this.finishCountingPolicyChange();
 		this.resetTrustedInputState();
 		this.markDirty();
 		this.emitChange({ type: "SETTINGS" });
@@ -315,7 +371,9 @@ export class EditActivityService {
 		if (this.store.settings.countPastedText === countPastedText) {
 			return;
 		}
+		this.beginCountingPolicyChange();
 		this.store.settings.countPastedText = countPastedText;
+		this.finishCountingPolicyChange();
 		this.resetTrustedInputState();
 		this.markDirty();
 		this.emitChange({ type: "SETTINGS" });
@@ -333,6 +391,7 @@ export class EditActivityService {
 		) {
 			return;
 		}
+		this.flushAllPendingEdits();
 		this.store.settings.trackedFolders = normalized;
 		this.resetTrustedInputState();
 		if (this.store.settings.trackingEnabled) {
@@ -352,6 +411,7 @@ export class EditActivityService {
 		if (new TextEncoder().encode(serialized).byteLength > MAX_IMPORT_BYTES) {
 			throw new Error("Edit activity import exceeds 10 MB");
 		}
+		this.flushAllPendingEdits();
 		const parsed = JSON.parse(serialized);
 		const importedStore = this.normalizeStore(parsed, true);
 		await this.createAutomaticBackup("import");
@@ -360,6 +420,7 @@ export class EditActivityService {
 		if (this.store.settings.trackingEnabled) {
 			this.ensureOpenTrackingPeriod();
 			this.ensureOpenCollectionScopePeriod();
+			this.ensureOpenCountingPolicyPeriod();
 		}
 		this.invalidateStatsCache();
 		this.markDirty();
@@ -368,6 +429,7 @@ export class EditActivityService {
 	}
 
 	async clearData(): Promise<void> {
+		this.flushAllPendingEdits();
 		await this.createAutomaticBackup("clear");
 		const trackingEnabled = this.store.settings.trackingEnabled;
 		this.store.dailyStats = Object.create(null);
@@ -381,6 +443,14 @@ export class EditActivityService {
 						folders: [
 							...this.store.settings.trackedFolders,
 						],
+					},
+			  ]
+			: [];
+		this.store.countingPolicyPeriods = trackingEnabled
+			? [
+					{
+						startedAt: this.now().toISOString(),
+						policy: getCountingPolicy(this.store.settings),
 					},
 			  ]
 			: [];
@@ -415,6 +485,7 @@ export class EditActivityService {
 	}
 
 	async restoreLatestBackup(): Promise<string | undefined> {
+		this.flushAllPendingEdits();
 		const backupPath = await this.getLatestBackupPath();
 		if (!backupPath) {
 			return undefined;
@@ -442,6 +513,7 @@ export class EditActivityService {
 		if (this.store.settings.trackingEnabled) {
 			this.ensureOpenTrackingPeriod();
 			this.ensureOpenCollectionScopePeriod();
+			this.ensureOpenCountingPolicyPeriod();
 		}
 		this.invalidateStatsCache();
 		this.markDirty();
@@ -455,6 +527,11 @@ export class EditActivityService {
 		if (this.captureTemporalState()) {
 			this.emitChange({ type: "TEMPORAL" });
 		}
+		void this.flush();
+	}
+
+	handleAppSuspend(): void {
+		this.flushAllPendingEdits();
 		void this.flush();
 	}
 
@@ -505,17 +582,24 @@ export class EditActivityService {
 			window.clearTimeout(this.midnightTimer);
 			this.midnightTimer = null;
 		}
+		this.flushAllPendingEdits();
 		this.resetTrustedInputState();
 		await this.flush();
 		this.listeners.clear();
 	}
 
 	private handleEditorUpdate(update: ViewUpdate): void {
-		if (
-			!this.store.settings.trackingEnabled ||
-			!update.docChanged ||
-			!update.view.hasFocus
-		) {
+		if (!this.store.settings.trackingEnabled) {
+			return;
+		}
+		if (!update.docChanged) {
+			if (update.selectionSet) {
+				this.flushLineEditIfCursorMoved(update.view, update.state);
+			}
+			return;
+		}
+		if (!update.view.hasFocus) {
+			this.flushPendingEdits(update.view);
 			return;
 		}
 
@@ -537,6 +621,7 @@ export class EditActivityService {
 					this.store.settings.trackedFolders
 				)
 			) {
+				this.flushPendingEdits(update.view);
 				this.clearTrustedInputState(update.view);
 				continue;
 			}
@@ -554,18 +639,24 @@ export class EditActivityService {
 					);
 				} else {
 					this.compositions.delete(update.view);
+					this.compositionViews.delete(update.view);
+					this.flushLineEdit(update.view);
 				}
 				continue;
 			}
 
 			this.flushComposition(update.view);
 			if (shouldCount) {
-				this.recordChanges(
-					transaction.startState.doc,
+				this.queueOrRecordChanges(
+					update.view,
+					transaction.startState,
+					transaction.state,
 					transaction.changes,
 					filePath,
 					transaction.newSelection.main.head
 				);
+			} else {
+				this.flushLineEdit(update.view);
 			}
 		}
 
@@ -582,6 +673,7 @@ export class EditActivityService {
 			return;
 		}
 		if (event.type === "blur") {
+			this.flushPendingEdits(view);
 			this.clearTrustedInputState(view);
 			return;
 		}
@@ -671,12 +763,14 @@ export class EditActivityService {
 		this.pendingInputIntents.delete(view);
 		this.trustedCompositions.delete(view);
 		this.compositions.delete(view);
+		this.compositionViews.delete(view);
 	}
 
 	private resetTrustedInputState(): void {
 		this.pendingInputIntents = new WeakMap<EditorView, PendingInputIntent>();
 		this.trustedCompositions = new WeakSet<EditorView>();
 		this.compositions = new WeakMap<EditorView, CompositionState>();
+		this.compositionViews.clear();
 	}
 
 	private accumulateComposition(
@@ -684,18 +778,31 @@ export class EditActivityService {
 		transaction: Transaction,
 		filePath: string
 	): void {
-		const existing = this.compositions.get(view);
+		let existing = this.compositions.get(view);
+		const date = this.today();
+		if (
+			existing &&
+			(existing.filePath !== filePath || existing.date !== date)
+		) {
+			this.flushComposition(view);
+			existing = undefined;
+		}
 		if (!existing) {
 			this.compositions.set(view, {
 				startDocument: transaction.startState.doc,
+				startState: transaction.startState,
+				endState: transaction.state,
 				changes: transaction.changes,
 				filePath,
 				cursorOffset: transaction.newSelection.main.head,
+				date,
 			});
+			this.compositionViews.add(view);
 			return;
 		}
 
 		existing.changes = existing.changes.compose(transaction.changes);
+		existing.endState = transaction.state;
 		existing.cursorOffset = transaction.newSelection.main.head;
 	}
 
@@ -705,34 +812,163 @@ export class EditActivityService {
 			return;
 		}
 		this.compositions.delete(view);
-		this.recordChanges(
-			composition.startDocument,
+		this.compositionViews.delete(view);
+		this.queueOrRecordChanges(
+			view,
+			composition.startState,
+			composition.endState,
 			composition.changes,
 			composition.filePath,
-			composition.cursorOffset
+			composition.cursorOffset,
+			composition.date
 		);
+	}
+
+	private queueOrRecordChanges(
+		view: EditorView,
+		startState: EditorState,
+		endState: EditorState,
+		changes: ChangeSet,
+		filePath: string,
+		cursorOffset: number,
+		date = this.today()
+	): void {
+		if (!this.store.settings.excludeMarkdownFormatting) {
+			this.recordChanges(
+				startState.doc,
+				changes,
+				filePath,
+				cursorOffset,
+				startState,
+				endState,
+				date
+			);
+			return;
+		}
+
+		let pending = this.pendingLineEdits.get(view);
+		const startLineNumber = startState.doc.lineAt(
+			startState.selection.main.head
+		).number;
+		if (
+			pending &&
+			(pending.filePath !== filePath ||
+				pending.endState !== startState ||
+				pending.date !== date ||
+				pending.lineNumber !== startLineNumber)
+		) {
+			this.flushLineEdit(view);
+			pending = undefined;
+		}
+
+		if (pending) {
+			pending.changes = pending.changes.compose(changes);
+			pending.endState = endState;
+			pending.cursorOffset = cursorOffset;
+			pending.lineNumber = endState.doc.lineAt(cursorOffset).number;
+		} else {
+			this.pendingLineEdits.set(view, {
+				startDocument: startState.doc,
+				startState,
+				endState,
+				changes,
+				filePath,
+				cursorOffset,
+				lineNumber: endState.doc.lineAt(cursorOffset).number,
+				date,
+			});
+			this.pendingLineViews.add(view);
+		}
+
+		if (this.changesLineStructure(startState.doc, changes)) {
+			this.flushLineEdit(view);
+		}
+	}
+
+	private changesLineStructure(document: Text, changes: ChangeSet): boolean {
+		let changesLines = false;
+		changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+			if (
+				document.sliceString(fromA, toA).includes("\n") ||
+				inserted.toString().includes("\n")
+			) {
+				changesLines = true;
+			}
+		});
+		return changesLines;
+	}
+
+	private flushLineEditIfCursorMoved(
+		view: EditorView,
+		state: EditorState
+	): void {
+		const pending = this.pendingLineEdits.get(view);
+		if (
+			pending &&
+			state.doc.lineAt(state.selection.main.head).number !==
+				pending.lineNumber
+		) {
+			this.flushLineEdit(view);
+		}
+	}
+
+	private flushLineEdit(view: EditorView): void {
+		const pending = this.pendingLineEdits.get(view);
+		if (!pending) {
+			return;
+		}
+		this.pendingLineEdits.delete(view);
+		this.pendingLineViews.delete(view);
+		this.recordChanges(
+			pending.startDocument,
+			pending.changes,
+			pending.filePath,
+			pending.cursorOffset,
+			pending.startState,
+			pending.endState,
+			pending.date
+		);
+	}
+
+	private flushPendingEdits(view: EditorView): void {
+		this.flushComposition(view);
+		this.flushLineEdit(view);
+	}
+
+	private flushAllPendingEdits(): void {
+		for (const view of [...this.compositionViews]) {
+			this.flushComposition(view);
+		}
+		for (const view of [...this.pendingLineViews]) {
+			this.flushLineEdit(view);
+		}
 	}
 
 	private recordChanges(
 		startDocument: Text,
 		changes: ChangeSet,
 		filePath: string,
-		cursorOffset: number
+		cursorOffset: number,
+		startState?: EditorState,
+		endState?: EditorState,
+		date = this.today()
 	): void {
 		const options = {
 			excludeWhitespace: this.store.settings.excludeWhitespace,
+			excludeMarkdownFormatting:
+				this.store.settings.excludeMarkdownFormatting,
 		};
 		const { addedChars, deletedChars } = countChangedCharacters(
 			startDocument,
 			changes,
-			options
+			options,
+			startState && endState ? { startState, endState } : undefined
 		);
 
 		if (addedChars === 0 && deletedChars === 0) {
 			return;
 		}
 
-		const date = this.today();
 		const current = this.store.dailyStats[date] || {
 			addedChars: 0,
 			deletedChars: 0,
@@ -859,6 +1095,49 @@ export class EditActivityService {
 		}
 	}
 
+	private beginCountingPolicyChange(): void {
+		this.flushAllPendingEdits();
+		if (this.store.settings.trackingEnabled) {
+			this.closeOpenCountingPolicyPeriod();
+		}
+	}
+
+	private finishCountingPolicyChange(): void {
+		if (this.store.settings.trackingEnabled) {
+			this.ensureOpenCountingPolicyPeriod();
+		}
+		this.invalidateStatsCache(this.today());
+	}
+
+	private ensureOpenCountingPolicyPeriod(): boolean {
+		const policy = getCountingPolicy(this.store.settings);
+		const last =
+			this.store.countingPolicyPeriods[
+				this.store.countingPolicyPeriods.length - 1
+			];
+		if (last && !last.endedAt && countingPoliciesEqual(last.policy, policy)) {
+			return false;
+		}
+		if (last && !last.endedAt) {
+			last.endedAt = this.now().toISOString();
+		}
+		this.store.countingPolicyPeriods.push({
+			startedAt: this.now().toISOString(),
+			policy,
+		});
+		return true;
+	}
+
+	private closeOpenCountingPolicyPeriod(): void {
+		const last =
+			this.store.countingPolicyPeriods[
+				this.store.countingPolicyPeriods.length - 1
+			];
+		if (last && !last.endedAt) {
+			last.endedAt = this.now().toISOString();
+		}
+	}
+
 	private today(): string {
 		const date = this.now();
 		const year = date.getFullYear();
@@ -890,8 +1169,14 @@ export class EditActivityService {
 	private getCachedDailyEditStats(date: string): DailyEditStats {
 		let stats = this.cachedDailyStats.get(date);
 		if (!stats) {
+			const converted = toDailyEditStats(
+				date,
+				this.store.dailyStats[date]
+			);
+			converted.countingPolicyChanged =
+				this.hasMultipleCountingPolicies(date);
 			stats = this.freezeDailyEditStats(
-				toDailyEditStats(date, this.store.dailyStats[date])
+				converted
 			);
 			this.cachedDailyStats.set(date, stats);
 		}
@@ -925,7 +1210,25 @@ export class EditActivityService {
 			documents: [...documents],
 			unattributedAddedChars: stats.unattributedAddedChars,
 			unattributedDeletedChars: stats.unattributedDeletedChars,
+			countingPolicyChanged: stats.countingPolicyChanged,
 		});
+	}
+
+	private hasMultipleCountingPolicies(date: string): boolean {
+		const [year, month, day] = date.split("-").map(Number);
+		const dayStart = new Date(year, month - 1, day).getTime();
+		const nextDay = new Date(year, month - 1, day + 1).getTime();
+		const policies = new Set<string>();
+		for (const period of this.store.countingPolicyPeriods) {
+			const startedAt = Date.parse(period.startedAt);
+			const endedAt = period.endedAt
+				? Date.parse(period.endedAt)
+				: Number.POSITIVE_INFINITY;
+			if (startedAt < nextDay && endedAt > dayStart) {
+				policies.add(JSON.stringify(period.policy));
+			}
+		}
+		return policies.size > 1;
 	}
 
 	private freezeDailyEditStats(stats: DailyEditStats): DailyEditStats {
@@ -969,6 +1272,7 @@ export class EditActivityService {
 			},
 			trackingPeriods: [],
 			collectionScopePeriods: [],
+			countingPolicyPeriods: [],
 			dailyStats: Object.create(null),
 		};
 	}
@@ -992,7 +1296,9 @@ export class EditActivityService {
 			schemaVersion !== 4 &&
 			schemaVersion !== 5 &&
 			schemaVersion !== 6 &&
-			schemaVersion !== 7
+			schemaVersion !== 7 &&
+			schemaVersion !== 8 &&
+			schemaVersion !== 9
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -1081,7 +1387,9 @@ export class EditActivityService {
 						schemaVersion === 4 ||
 						schemaVersion === 5 ||
 						schemaVersion === 6 ||
-						schemaVersion === 7)
+						schemaVersion === 7 ||
+						schemaVersion === 8 ||
+						schemaVersion === 9)
 				) {
 					throw new Error(
 						`Invalid document edit statistics for ${date}`
@@ -1144,7 +1452,9 @@ export class EditActivityService {
 			(schemaVersion === 4 ||
 				schemaVersion === 5 ||
 				schemaVersion === 6 ||
-				schemaVersion === 7) &&
+				schemaVersion === 7 ||
+				schemaVersion === 8 ||
+				schemaVersion === 9) &&
 			(!Array.isArray(rawTrackedFolders) ||
 				rawTrackedFolders.some(
 					(folder) => typeof folder !== "string"
@@ -1162,23 +1472,38 @@ export class EditActivityService {
 		);
 		if (
 			strict &&
-			(schemaVersion === 6 || schemaVersion === 7) &&
+			(schemaVersion === 6 ||
+				schemaVersion === 7 ||
+				schemaVersion === 8 ||
+				schemaVersion === 9) &&
 			typeof candidate.settings?.strictUserInputOnly !== "boolean"
 		) {
 			throw new Error("Invalid strict input setting");
 		}
 		if (
 			strict &&
-			schemaVersion === 7 &&
+			(schemaVersion === 7 ||
+				schemaVersion === 8 ||
+				schemaVersion === 9) &&
 			typeof candidate.settings?.countPastedText !== "boolean"
 		) {
 			throw new Error("Invalid paste input setting");
 		}
 		if (
 			strict &&
+			(schemaVersion === 8 || schemaVersion === 9) &&
+			typeof candidate.settings?.excludeMarkdownFormatting !==
+				"boolean"
+		) {
+			throw new Error("Invalid Markdown formatting setting");
+		}
+		if (
+			strict &&
 			(schemaVersion === 5 ||
 				schemaVersion === 6 ||
-				schemaVersion === 7) &&
+				schemaVersion === 7 ||
+				schemaVersion === 8 ||
+				schemaVersion === 9) &&
 			!Array.isArray(candidate.collectionScopePeriods)
 		) {
 			throw new Error("Invalid collection scope periods");
@@ -1187,7 +1512,9 @@ export class EditActivityService {
 		if (
 			(schemaVersion === 5 ||
 				schemaVersion === 6 ||
-				schemaVersion === 7) &&
+				schemaVersion === 7 ||
+				schemaVersion === 8 ||
+				schemaVersion === 9) &&
 			Array.isArray(candidate.collectionScopePeriods)
 		) {
 			for (const period of candidate.collectionScopePeriods) {
@@ -1224,13 +1551,48 @@ export class EditActivityService {
 			}
 		}
 
+		if (
+			strict &&
+			schemaVersion === 9 &&
+			!Array.isArray(candidate.countingPolicyPeriods)
+		) {
+			throw new Error("Invalid counting policy periods");
+		}
+		const countingPolicyPeriods: EditActivityStore["countingPolicyPeriods"] = [];
+		if (schemaVersion === 9 && Array.isArray(candidate.countingPolicyPeriods)) {
+			for (const period of candidate.countingPolicyPeriods) {
+				const policy = this.normalizeCountingPolicy(period?.policy);
+				if (
+					period &&
+					this.isValidTimestamp(period.startedAt) &&
+					(!period.endedAt ||
+						(this.isValidTimestamp(period.endedAt) &&
+							Date.parse(period.startedAt) <=
+								Date.parse(period.endedAt))) &&
+					policy
+				) {
+					countingPolicyPeriods.push({
+						startedAt: period.startedAt,
+						...(period.endedAt
+							? { endedAt: period.endedAt }
+							: {}),
+						policy,
+					});
+				} else if (strict) {
+					throw new Error("Invalid counting policy period");
+				}
+			}
+		}
+
 		return {
-			schemaVersion: 7,
+			schemaVersion: 9,
 			settings: {
 				trackingEnabled:
 					candidate.settings?.trackingEnabled === true,
 				excludeWhitespace:
 					candidate.settings?.excludeWhitespace !== false,
+				excludeMarkdownFormatting:
+					candidate.settings?.excludeMarkdownFormatting === true,
 				trackedFolders,
 				strictUserInputOnly:
 					candidate.settings?.strictUserInputOnly !== false,
@@ -1239,8 +1601,34 @@ export class EditActivityService {
 			},
 			trackingPeriods,
 			collectionScopePeriods,
+			countingPolicyPeriods,
 			dailyStats,
 		};
+	}
+
+	private normalizeCountingPolicy(value: unknown): CountingPolicy | undefined {
+		if (!value || typeof value !== "object") {
+			return undefined;
+		}
+		const policy = value as Partial<CountingPolicy>;
+		if (
+			typeof policy.excludeWhitespace !== "boolean" ||
+			typeof policy.excludeMarkdownFormatting !== "boolean" ||
+			typeof policy.strictUserInputOnly !== "boolean" ||
+			typeof policy.countPastedText !== "boolean"
+		) {
+			return undefined;
+		}
+		return {
+			excludeWhitespace: policy.excludeWhitespace,
+			excludeMarkdownFormatting: policy.excludeMarkdownFormatting,
+			strictUserInputOnly: policy.strictUserInputOnly,
+			countPastedText: policy.countPastedText,
+		};
+	}
+
+	private isValidTimestamp(value: unknown): value is string {
+		return typeof value === "string" && Number.isFinite(Date.parse(value));
 	}
 
 	private normalizeEditPosition(value: unknown):

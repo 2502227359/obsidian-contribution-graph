@@ -14,6 +14,7 @@ import {
 import { matchCellStyleRule } from "src/util/utils";
 import { Locals } from "src/i18/messages";
 import { resolveGoalHeatLevel } from "./heatScale";
+import { resolveCellNavigationIndex } from "./cellKeyboardNavigation";
 
 export interface GraphRender {
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void;
@@ -76,9 +77,31 @@ export abstract class BaseGraphRender implements GraphRender {
 		return titleEl;
 	}
 
+	renderHeader(
+		graphConfig: ContributionGraphConfig,
+		parent: HTMLElement,
+		contributionData: ContributionCellData[]
+	): HTMLElement | undefined {
+		const hasTitle = Boolean(graphConfig.title?.trim());
+		if (!hasTitle && graphConfig.showCellRuleIndicators === false) {
+			return undefined;
+		}
+
+		const header = createDiv({
+			cls: "graph-header",
+			parent,
+		});
+		if (hasTitle) {
+			this.renderTitle(graphConfig, header);
+		}
+		this.renderCellRuleIndicator(graphConfig, header, contributionData);
+		return header;
+	}
+
 	renderCellRuleIndicator(
 		graphConfig: ContributionGraphConfig,
-		parent: HTMLElement
+		parent: HTMLElement,
+		contributionData: ContributionCellData[] = []
 	) {
 		if (graphConfig.showCellRuleIndicators === false) {
 			return;
@@ -89,10 +112,27 @@ export abstract class BaseGraphRender implements GraphRender {
 			parent: parent,
 		});
 		const cellRules = this.getCellRules(graphConfig);
+		if (graphConfig.heatScale?.type === "GOAL") {
+			createSpan({
+				cls: "goal-caption",
+				text: Locals.get()
+					.graph_daily_goal.replace(
+						"{goal}",
+						graphConfig.heatScale.goal.toLocaleString()
+					)
+					.replace("{unit}", graphConfig.valueUnit || ""),
+				parent: cellRuleIndicatorContainer,
+			});
+		}
+
+		const heatLegend = createDiv({
+			cls: "heat-legend",
+			parent: cellRuleIndicatorContainer,
+		});
 		createDiv({
 			cls: "cell text",
 			text: Locals.get().graph_less,
-			parent: cellRuleIndicatorContainer,
+			parent: heatLegend,
 		});
 
 		if (graphConfig.heatScale?.type === "GOAL") {
@@ -101,7 +141,7 @@ export abstract class BaseGraphRender implements GraphRender {
 				.forEach((level) => {
 					const cellEl = createDiv({
 						cls: ["cell"],
-						parent: cellRuleIndicatorContainer,
+						parent: heatLegend,
 					});
 					cellEl.style.backgroundColor = level.color;
 					cellEl.innerText = level.text || "";
@@ -113,9 +153,9 @@ export abstract class BaseGraphRender implements GraphRender {
 			[...cellRules]
 				.sort((a, b) => a.min - b.min)
 				.forEach((rule) => {
-				const cellEl = createDiv({
-					cls: ["cell"],
-					parent: cellRuleIndicatorContainer,
+					const cellEl = createDiv({
+						cls: ["cell"],
+						parent: heatLegend,
 				});
 				cellEl.className = "cell";
 				cellEl.style.backgroundColor = rule.color;
@@ -130,8 +170,50 @@ export abstract class BaseGraphRender implements GraphRender {
 		createDiv({
 			cls: "cell text",
 			text: Locals.get().graph_more,
-			parent: cellRuleIndicatorContainer,
+			parent: heatLegend,
 		});
+
+		const states = [
+			{
+				visible: contributionData.some(
+					(item) =>
+						item.trackingState === "UNTRACKED" ||
+						item.tracked === false
+				),
+				className: "untracked",
+				label: Locals.get().graph_status_untracked,
+			},
+			{
+				visible: contributionData.some(
+					(item) => item.trackingState === "PARTIAL"
+				),
+				className: "partial",
+				label: Locals.get().graph_status_partial,
+			},
+			{
+				visible: contributionData.some((item) => item.future),
+				className: "future",
+				label: Locals.get().graph_status_future,
+			},
+		].filter((state) => state.visible);
+
+		if (states.length > 0) {
+			const stateLegend = createDiv({
+				cls: "tracking-state-legend",
+				parent: cellRuleIndicatorContainer,
+			});
+			states.forEach((state) => {
+				const item = createDiv({
+					cls: "state-legend-item",
+					parent: stateLegend,
+				});
+				createDiv({
+					cls: ["cell", state.className],
+					parent: item,
+				});
+				createSpan({ text: state.label, parent: item });
+			});
+		}
 	}
 
 	renderActivityContainer(
@@ -164,8 +246,13 @@ export abstract class BaseGraphRender implements GraphRender {
 		});
 
 		closeButton.onclick = () => {
+			const selectedCell = contaienr
+				.closest(".main")
+				?.querySelector<HTMLElement>(".cell.is-selected");
+			this.clearSelectedCell(contaienr.closest(".main"));
 			contaienr.empty();
 			graphConfig.onActivityClose?.();
+			selectedCell?.focus();
 		};
 
 		let summary = cellData.summary;
@@ -212,11 +299,26 @@ export abstract class BaseGraphRender implements GraphRender {
 				.you_have_no_contributions_on.replace("{date}", cellData.date)
 				.replace("{value}", "0");
 		}
-		createDiv({
-			cls: "activity-summary",
-			parent: contaienr,
-			text: summary,
-		});
+		const isEditActivity = Boolean(
+			graphConfig.trackingPeriods ||
+				cellData.editStats ||
+				cellData.tracked !== undefined ||
+				cellData.trackingState
+		);
+		if (isEditActivity) {
+			this.renderEditActivitySummary(
+				graphConfig,
+				cellData,
+				contaienr,
+				summary
+			);
+		} else {
+			createDiv({
+				cls: "activity-summary",
+				parent: contaienr,
+				text: summary,
+			});
+		}
 
 		if ((cellData.items || []).length === 0) {
 			return;
@@ -292,6 +394,108 @@ export abstract class BaseGraphRender implements GraphRender {
 		);
 		if (selected) {
 			this.renderActivity(graphConfig, selected, activityContainer);
+		}
+	}
+
+	private renderEditActivitySummary(
+		graphConfig: ContributionGraphConfig,
+		cellData: ContributionCellData,
+		parent: HTMLElement,
+		fallbackSummary: string
+	): void {
+		const summary = createDiv({
+			cls: ["activity-summary", "edit-activity-summary"],
+			parent,
+		});
+		createDiv({
+			cls: "activity-date",
+			text: cellData.date,
+			parent: summary,
+		});
+
+		const untracked =
+			cellData.trackingState === "UNTRACKED" ||
+			cellData.tracked === false;
+		if (!untracked) {
+			const stats = cellData.editStats || {
+				date: cellData.date,
+				addedChars: 0,
+				deletedChars: 0,
+				changedChars: 0,
+				documents: [],
+			};
+			const goal = Math.max(1, graphConfig.heatScale?.goal || 1000);
+			const percent = Math.round((cellData.value / goal) * 100);
+			const statsEl = createDiv({
+				cls: "activity-stats",
+				parent: summary,
+			});
+			[
+				{
+					className: "added",
+					label: Locals.get().graph_stat_added,
+					value: stats.addedChars.toLocaleString(),
+				},
+				{
+					className: "deleted",
+					label: Locals.get().graph_stat_deleted,
+					value: stats.deletedChars.toLocaleString(),
+				},
+				{
+					className: "changed",
+					label: Locals.get().graph_stat_changed,
+					value: stats.changedChars.toLocaleString(),
+				},
+				{
+					className: "goal",
+					label: Locals.get().graph_stat_goal,
+					value: `${percent}%`,
+				},
+			].forEach((stat) => {
+				const statEl = createDiv({
+					cls: ["activity-stat", stat.className],
+					parent: statsEl,
+				});
+				createSpan({
+					cls: "activity-stat-label",
+					text: stat.label,
+					parent: statEl,
+				});
+				createSpan({
+					cls: "activity-stat-value",
+					text: stat.value,
+					parent: statEl,
+				});
+			});
+		}
+
+		const warnings: string[] = [];
+		if (untracked) {
+			warnings.push(fallbackSummary);
+		} else if (cellData.trackingState === "PARTIAL") {
+			warnings.push(
+				Locals.get().graph_partially_tracked_on.replace(
+					"{date}",
+					cellData.date
+				)
+			);
+		}
+		if (cellData.editStats?.countingPolicyChanged) {
+			warnings.push(Locals.get().graph_counting_policy_changed);
+		}
+		const legacyWarning = Locals.get().graph_folder_legacy_excluded;
+		if (cellData.summary?.includes(legacyWarning)) {
+			warnings.push(legacyWarning);
+		}
+
+		if (warnings.length > 0) {
+			const warningEl = createDiv({
+				cls: "activity-warnings",
+				parent: summary,
+			});
+			warnings.forEach((warning) => {
+				createDiv({ text: warning, parent: warningEl });
+			});
 		}
 	}
 
@@ -447,12 +651,40 @@ export abstract class BaseGraphRender implements GraphRender {
 		activityContainer?: HTMLElement
 	) {
 		if (contributionItem.future) {
+			if (cellEl instanceof HTMLButtonElement) {
+				cellEl.disabled = true;
+			}
 			return;
 		}
+		if (cellEl instanceof HTMLButtonElement) {
+			cellEl.type = "button";
+		} else {
+			cellEl.setAttribute("role", "button");
+			cellEl.tabIndex = 0;
+			cellEl.onkeydown = (event: KeyboardEvent) => {
+				if (event.key === "Enter" || event.key === " ") {
+					event.preventDefault();
+					cellEl.click();
+				}
+			};
+		}
+		this.applySelectedCellState(
+			cellEl,
+			contributionItem,
+			graphConfig.selectedActivityDate
+		);
 		cellEl.onclick = (event: MouseEvent) => {
 			if (graphConfig.onCellClick) {
 				graphConfig.onCellClick(contributionItem, event);
 			}
+			this.clearSelectedCell(cellEl.closest(".main"));
+			cellEl
+				.closest(".charts")
+				?.querySelectorAll<HTMLButtonElement>("button.cell")
+				.forEach((cell) => (cell.tabIndex = -1));
+			cellEl.tabIndex = 0;
+			cellEl.classList.add("is-selected");
+			cellEl.setAttribute("aria-pressed", "true");
 
 			if (activityContainer) {
 				this.renderActivity(
@@ -462,6 +694,65 @@ export abstract class BaseGraphRender implements GraphRender {
 				);
 			}
 		};
+	}
+
+	setupCellKeyboardNavigation(chartsEl: HTMLElement): void {
+		const cells = Array.from(
+			chartsEl.querySelectorAll<HTMLButtonElement>(
+				"button.cell:not(:disabled)"
+			)
+		);
+		if (cells.length === 0) {
+			return;
+		}
+		const initial =
+			cells.find((cell) => cell.classList.contains("is-selected")) ||
+			cells[cells.length - 1];
+		cells.forEach((cell) => (cell.tabIndex = cell === initial ? 0 : -1));
+
+		chartsEl.addEventListener("keydown", (event: KeyboardEvent) => {
+			const target = event.target;
+			if (!(target instanceof HTMLButtonElement)) {
+				return;
+			}
+			const availableCells = Array.from(
+				chartsEl.querySelectorAll<HTMLButtonElement>(
+					"button.cell:not(:disabled)"
+				)
+			);
+			const targetIndex = resolveCellNavigationIndex(
+				availableCells.indexOf(target),
+				availableCells.length,
+				event.key
+			);
+			if (targetIndex === undefined) {
+				return;
+			}
+			event.preventDefault();
+			availableCells.forEach((cell, index) => {
+				cell.tabIndex = index === targetIndex ? 0 : -1;
+			});
+			availableCells[targetIndex].focus();
+		});
+	}
+
+	private applySelectedCellState(
+		cellEl: HTMLElement,
+		contributionItem: ContributionCellData,
+		selectedDate?: string
+	): void {
+		const selected = selectedDate === contributionItem.date;
+		cellEl.classList.toggle("is-selected", selected);
+		cellEl.setAttribute("aria-pressed", selected ? "true" : "false");
+	}
+
+	private clearSelectedCell(root: Element | null): void {
+		root
+			?.querySelectorAll<HTMLElement>(".cell.is-selected")
+			.forEach((cell) => {
+				cell.classList.remove("is-selected");
+				cell.setAttribute("aria-pressed", "false");
+			});
 	}
 
 	bindCellTips(cellEl: HTMLElement, contributionItem: ContributionCellData) {

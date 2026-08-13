@@ -1,5 +1,60 @@
 # Development Log
 
+## 2026-08-13 — v0.13.0 responsive heatmap refinement
+
+### Improved
+
+- Reorganized chart titles and legends into a compact responsive header. Goal
+  legends now show the daily target and explain only the tracking states that
+  occur in the visible date range.
+- Added persistent selected-day styling, roving arrow-key navigation, native
+  keyboard-operable date cells, visible focus states, and focus restoration
+  when contribution details close.
+- Git and month-track views now keep horizontal scrolling available and show
+  subtle overflow-edge cues. Month labels remain visible while scrolling, and
+  existing latest-date and preserved-position behavior is retained.
+- Calendar months now use a responsive grid, while cells adapt to narrow and
+  touch layouts without overriding explicitly configured dimensions.
+- Edit-activity details now present added, deleted, changed, and goal progress
+  as compact metrics, with collection and counting-policy warnings separated
+  from the totals.
+- Replaced graph chrome and empty-state hardcoded colors with Obsidian theme
+  variables, refined hover/selected states, and respected reduced-motion
+  preferences.
+
+### Verification
+
+- `npm test`: 91 tests passed, including keyboard navigation and timeline
+  overflow-state coverage.
+- `npm run package`: TypeScript and production bundling passed; the installable
+  `0.13.0` package and checksums were generated successfully.
+
+## 2026-08-13 — v0.12.0 meaningful character counting
+
+### Added
+
+- Added an optional **Ignore Markdown formatting marks** collection setting.
+  It uses Obsidian's incremental Markdown syntax tree to exclude recognized
+  formatting delimiters while preserving prose punctuation, link text, URLs,
+  and code content.
+- Markdown-aware edits on the current line are now coalesced and settled from
+  the final syntax tree on line changes, cursor navigation, blur, backgrounding,
+  or unload. Pending edits retain their original local date across midnight.
+- Formatting inspection is limited to changed ranges and falls back to normal
+  counting when no compatible Markdown parse information is available.
+- Added timestamped counting-policy periods. Contribution details warn when a
+  day's total combines more than one policy, without rewriting historical data.
+- Reorganized settings into character policy, input sources, collection scope,
+  and data management, with a compact summary of the active policy combination.
+- Migrated edit-activity storage to schema version 9. Existing installations
+  keep Markdown filtering disabled until explicitly enabled.
+
+### Verification
+
+- `npm test`: 86 tests passed, including formatting-node classification,
+  line settlement, midnight attribution, policy history, content-only grapheme
+  counting, and schema migration defaults.
+
 ## 2026-08-13 — v0.11.0 reliability and recovery hardening
 
 ### Fixed

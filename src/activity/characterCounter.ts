@@ -1,5 +1,6 @@
 export interface CharacterCountOptions {
 	excludeWhitespace: boolean;
+	excludeMarkdownFormatting?: boolean;
 }
 
 interface Segment {

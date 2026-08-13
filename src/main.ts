@@ -56,7 +56,7 @@ export default class ContributionGraph extends Plugin {
 			if (document.visibilityState === "visible") {
 				this.activityService.handleAppResume();
 			} else {
-				void this.activityService.flush();
+				this.activityService.handleAppSuspend();
 			}
 		});
 	}

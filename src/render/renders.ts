@@ -3,6 +3,7 @@ import { CalendarGraphRender } from "./calendarGraphRender";
 import { MonthTrackGraphRender } from "./monthTrackGraphRender";
 import { GitStyleTrackGraphRender } from "./gitStyleTrackGraphRender";
 import {
+	bindTimelineScrollAffordance,
 	captureTimelineScroll,
 	restoreTimelineScroll,
 } from "./timelineScroll";
@@ -21,6 +22,9 @@ export class Renders {
 		const previousTimelineScroll = captureTimelineScroll(
 			container.querySelector<HTMLElement>(".charts.default")
 		);
+		const previousMonthTrackScroll = captureTimelineScroll(
+			container.querySelector<HTMLElement>(".charts.month-track")
+		);
 		container.empty();
 		if (graphConfig.graphType === undefined) {
 			graphConfig.graphType = "default";
@@ -30,12 +34,24 @@ export class Renders {
 		);
 		if (render) {
 			render.render(container, graphConfig);
+			const timeline = container.querySelector<HTMLElement>(
+				".charts.default, .charts.month-track"
+			);
 			if (graphConfig.graphType === "default") {
 				restoreTimelineScroll(
-					container.querySelector<HTMLElement>(".charts.default"),
+					timeline,
 					previousTimelineScroll
 				);
+			} else if (graphConfig.graphType === "month-track") {
+				restoreTimelineScroll(
+					timeline,
+					previousMonthTrackScroll || {
+						left: 0,
+						atLatest: false,
+					}
+				);
 			}
+			bindTimelineScrollAffordance(timeline);
 		} else {
 			this.renderErrorTips(
 				container,

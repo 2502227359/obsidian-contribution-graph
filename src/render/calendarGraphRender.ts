@@ -27,10 +27,10 @@ export class CalendarGraphRender extends BaseGraphRender {
 		// main
 		const main = this.createMainEl(graphEl, graphConfig)
 
-		// title
-		if (graphConfig.title && graphConfig.title.trim() != "") {
-			this.renderTitle(graphConfig, main);
-		}
+		const contributionData = this.generateContributionData(
+			graphConfig
+		).filter((item) => item.date != "$HOLE$");
+		this.renderHeader(graphConfig, main, contributionData);
 
 		// main -> charts
 		const chartsEl = createDiv({
@@ -38,13 +38,8 @@ export class CalendarGraphRender extends BaseGraphRender {
 			parent: main,
 		});
 
-		this.renderCellRuleIndicator(graphConfig, main);
-
 		const activityContainer = this.renderActivityContainer(graphConfig, main);
 
-		const contributionData = this.generateContributionData(
-			graphConfig
-		).filter((item) => item.date != "$HOLE$");
 		this.restoreSelectedActivity(
 			graphConfig,
 			contributionData,
@@ -171,7 +166,9 @@ export class CalendarGraphRender extends BaseGraphRender {
 			}
 
 			// render cell
-			const cellEl = document.createElement("div");
+			const cellEl = document.createElement(
+				item.date === "$HOLE$" ? "div" : "button"
+			);
 			rowContainer?.appendChild(cellEl);
 			cellEl.className = "cell";
 			if (item.date == "$HOLE$") {
@@ -237,5 +234,6 @@ export class CalendarGraphRender extends BaseGraphRender {
 				}
 			}
 		}
+		this.setupCellKeyboardNavigation(chartsEl);
 	}
 }

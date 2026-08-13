@@ -348,12 +348,15 @@ export class CodeBlockProcessor {
 						),
 					});
 				}
-				const baseSummary = Locals.get()
+				let baseSummary = Locals.get()
 					.graph_edit_activity_summary.replace("{date}", stats.date)
 					.replace("{added}", stats.addedChars.toString())
 					.replace("{deleted}", stats.deletedChars.toString())
 					.replace("{changed}", stats.changedChars.toString())
 					.replace("{percent}", Math.round((value / goal) * 100).toString());
+				if (stats.countingPolicyChanged) {
+					baseSummary = `${baseSummary} ${Locals.get().graph_counting_policy_changed}`;
+				}
 				return {
 					date: stats.date,
 					value,
