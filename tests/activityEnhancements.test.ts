@@ -10,6 +10,14 @@ import {
 	formatGoalHeatLevelRange,
 	updateGoalHeatLevel,
 } from "../src/view/form/goalHeatScaleForm";
+import {
+	applyColorsToCellRules,
+	generateSequentialPalette,
+} from "../src/view/form/themePalette";
+import {
+	GRAPH_DENSITY_PRESETS,
+	normalizeGraphAppearance,
+} from "../src/render/graphAppearance";
 
 describe("edit activity metric details", () => {
 	const documents = [
@@ -183,5 +191,63 @@ describe("goal heat scale form mapping", () => {
 	it("formats bounded and open-ended percentage labels", () => {
 		expect(formatGoalHeatLevelRange(0.25, 0.6)).toBe("25%–60%");
 		expect(formatGoalHeatLevelRange(1)).toBe("≥ 100%");
+	});
+});
+
+describe("graph appearance helpers", () => {
+	it("normalizes defaults and clamps custom gaps", () => {
+		expect(normalizeGraphAppearance()).toEqual({
+			density: "BALANCED",
+			cellGap: GRAPH_DENSITY_PRESETS.BALANCED.gap,
+			highlightToday: true,
+			highlightWeekends: false,
+		});
+		expect(
+			normalizeGraphAppearance({
+				density: "CUSTOM",
+				cellGap: 20,
+				highlightToday: false,
+				highlightWeekends: true,
+			})
+		).toMatchObject({
+			density: "CUSTOM",
+			cellGap: 8,
+			highlightToday: false,
+			highlightWeekends: true,
+		});
+	});
+
+	it("generates a light-to-dark palette and applies it immutably", () => {
+		const colors = generateSequentialPalette("#000");
+		expect(colors).toEqual([
+			"#b8b8b8",
+			"#808080",
+			"#424242",
+			"#000000",
+		]);
+		const rules = applyColorsToCellRules([], colors);
+		expect(rules.map((rule) => rule.color)).toEqual(colors);
+		expect(rules).toHaveLength(4);
+	});
+
+	it("rejects malformed appearance settings", () => {
+		const config = {
+			graphType: "default",
+			dataSource: { type: "PAGE", value: "" },
+			dateRangeValue: 180,
+			dateRangeType: "LATEST_DAYS",
+			data: [],
+			titleStyle: {},
+			fillTheScreen: false,
+			startOfWeek: 1,
+			showCellRuleIndicators: true,
+			appearance: {
+				density: "BALANCED",
+				cellGap: 9,
+				highlightToday: true,
+				highlightWeekends: false,
+			},
+		} as YamlGraphConfig;
+		expect(() => YamlGraphConfig.validate(config)).toThrow();
 	});
 });

@@ -37,6 +37,22 @@
 	justify-content: unset;
 }
 
+.contribution-graph .main.density-compact {
+	--cg-cell-size: 8px;
+}
+
+.contribution-graph .main.density-balanced {
+	--cg-cell-size: 10px;
+}
+
+.contribution-graph .main.density-touch {
+	--cg-cell-size: 14px;
+}
+
+.contribution-graph .main.density-custom {
+	--cg-cell-size: 10px;
+}
+
 .contribution-graph .main .graph-header {
 	display: flex;
 	flex-wrap: wrap;
@@ -183,8 +199,8 @@
 }
 
 .contribution-graph .month-track .cell {
-	min-height: 12px;
-	min-width: 12px;
+	min-height: var(--cg-cell-size);
+	min-width: var(--cg-cell-size);
 	font-size: 10px;
 	border-radius: 3px;
 }
@@ -265,10 +281,10 @@
 }
 
 .contribution-graph .main .calendar .month-container .cell {
-	min-width: 10px;
-	min-height: 10px;
-	width: 10px;
-	height: 10px;
+	min-width: var(--cg-cell-size);
+	min-height: var(--cg-cell-size);
+	width: var(--cg-cell-size);
+	height: var(--cg-cell-size);
 	font-size: 8px;
 	border-radius: 2px;
 	margin-top: 0px;
@@ -328,8 +344,27 @@
 		0 0 0 3px var(--interactive-accent);
 }
 
+.contribution-graph .cell[data-date].is-today:not(.is-selected) {
+	box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+.contribution-graph .cell[data-date].is-weekend::after {
+	content: "";
+	position: absolute;
+	left: 1px;
+	right: 1px;
+	bottom: 1px;
+	height: 1px;
+	border-radius: 999px;
+	background: var(--text-faint);
+	pointer-events: none;
+}
+
 .contribution-graph .cell.empty {
-	background-color: var(--background-modifier-border);
+	background-color: var(
+		--cg-empty-cell-color,
+		var(--background-modifier-border)
+	);
 }
 
 .contribution-graph .main .charts.default > .column:first-child {
@@ -402,6 +437,9 @@
 	border-width: 1px;
 	border-color: var(--background-modifier-border);
 	border-style: solid;
+	padding: 0;
+	box-shadow: none;
+	cursor: pointer;
 }
 
 .color-indicator:hover {
@@ -426,6 +464,16 @@
 
 .color-reset-button:hover {
 	color: var(--text-normal);
+}
+
+.color-reset-button {
+	min-width: 20px;
+	height: 20px;
+	padding: 0;
+	border: 0;
+	box-shadow: none;
+	background: transparent;
+	color: inherit;
 }
 
 /* default cell rule indicator */
@@ -529,6 +577,22 @@
 	gap: 3px;
 }
 
+.contribution-graph-modal-form .style-section-heading {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--size-4-3);
+	margin: var(--size-4-2) 0 var(--size-2-2);
+	padding-bottom: var(--size-2-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-weight: var(--font-semibold);
+}
+
+.contribution-graph-modal-form .style-section-heading small {
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
 .contribution-graph-modal-form .form-item {
 	display: flex;
 	flex-direction: row;
@@ -579,6 +643,56 @@
 	align-items: flex-start;
 	flex: 1;
 	gap: 8px;
+}
+
+.contribution-graph-modal-form .inline-checkbox-label {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.contribution-graph-modal-form
+	.form-item
+	.form-content
+	.inline-checkbox-label
+	input {
+	flex-grow: 0;
+}
+
+.contribution-graph-theme-manager {
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+}
+
+.contribution-graph-theme-manager > select {
+	width: 100%;
+}
+
+.theme-palette-generator,
+.custom-theme-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-2-3);
+	width: 100%;
+}
+
+.theme-palette-generator > span {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.custom-theme-actions input[type="text"] {
+	min-width: 160px;
+	flex: 1 1 180px;
+}
+
+.contribution-graph-form-actions {
+	justify-content: flex-end;
 }
 
 .contribution-graph-modal-form
@@ -1268,6 +1382,10 @@
 		--cg-cell-gap: 3px;
 	}
 
+	.contribution-graph .main.density-balanced {
+		--cg-cell-size: 12px;
+	}
+
 	.contribution-graph .main .graph-header {
 		align-items: flex-start;
 		padding: 0;
@@ -1282,22 +1400,9 @@
 		justify-content: flex-start;
 	}
 
-	.contribution-graph .month-track .cell {
-		height: 14px;
-		min-height: 14px;
-		min-width: 14px;
-	}
-
 	.contribution-graph .main .charts.calendar {
 		grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
 		padding-inline: 0;
-	}
-
-	.contribution-graph .main .calendar .month-container .cell {
-		min-width: 12px;
-		min-height: 12px;
-		width: 12px;
-		height: 12px;
 	}
 
 	.contribution-graph .activity-container {
@@ -1337,6 +1442,10 @@
 	.contribution-graph {
 		--cg-cell-size: 12px;
 		--cg-cell-gap: 3px;
+	}
+
+	.contribution-graph .main.density-balanced {
+		--cg-cell-size: 12px;
 	}
 }
 
@@ -1382,14 +1491,14 @@
 .input-range-value-label {
 	font-size: 0.8rem;
 	color: var(--text-muted);
-	cursor: pointer;
+	cursor: default;
 	padding: 4px;
 	border-radius: 4px;
 }
 
 .input-range-value-label:hover {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
 }
 
 .contribution-graph-settings-intro {

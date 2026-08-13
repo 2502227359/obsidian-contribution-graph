@@ -47,6 +47,32 @@ export interface GoalHeatScale {
 	levels: GoalHeatLevel[];
 }
 
+export type GraphDensity = "COMPACT" | "BALANCED" | "TOUCH" | "CUSTOM";
+
+export interface GraphAppearance {
+	density: GraphDensity;
+	cellGap: number;
+	emptyCellColor?: string;
+	highlightToday: boolean;
+	highlightWeekends: boolean;
+}
+
+export interface SavedGraphTheme {
+	id: string;
+	name: string;
+	colors: string[];
+	density: GraphDensity;
+	cellWidth?: number;
+	cellHeight?: number;
+	cellGap: number;
+	cellShape?: string;
+	emptyCellColor?: string;
+	highlightToday: boolean;
+	highlightWeekends: boolean;
+	backgroundColor?: string;
+	enableShadow: boolean;
+}
+
 export class ContributionGraphConfig {
 	/**
 	 * the title of the graph
@@ -98,6 +124,9 @@ export class ContributionGraphConfig {
 	 * fixed cellStyleRules.
 	 */
 	heatScale?: GoalHeatScale;
+
+	/** Responsive density and calendar-emphasis settings. */
+	appearance?: GraphAppearance;
 
 	/**
 	 * Coverage information for internally tracked data sources.

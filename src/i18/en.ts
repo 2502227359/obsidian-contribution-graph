@@ -116,8 +116,31 @@ export class En implements Local {
 	form_activity_tracking_disabled = "Edit activity tracking is off. Enable it in the plugin settings";
 
     form_theme = "Theme";
-    form_theme_placeholder = "Select theme or customize style";
-    form_cell_style_rules = "Cell Style Rules";
+	form_theme_placeholder = "Select theme or customize style";
+	form_cell_style_rules = "Cell Style Rules";
+	form_quick_style = "Quick style";
+	form_density = "Display density";
+	form_density_compact = "Compact";
+	form_density_balanced = "Balanced";
+	form_density_touch = "Touch friendly";
+	form_density_custom = "Custom";
+	form_link_cell_dimensions = "Link width and height";
+	form_cell_gap = "Cell spacing";
+	form_palette_base_color = "Palette base color";
+	form_generate_palette = "Generate palette";
+	form_empty_cell_color = "Empty cell color";
+	form_highlight_today = "Highlight today";
+	form_highlight_weekends = "Mark weekends";
+	form_custom_theme_name = "My theme name";
+	form_save_custom_theme = "Save as my theme";
+	form_delete_custom_theme = "Delete selected theme";
+	form_restore_style_defaults = "Restore style defaults";
+	form_auto_preview = "Style changes preview automatically";
+	form_theme_saved = "Custom theme saved";
+	form_theme_deleted = "Custom theme deleted";
+	form_theme_name_required = "Enter a theme name first";
+	form_theme_save_failed = "Could not save the custom theme (limit: 30)";
+	form_confirm_delete_theme = "Delete this custom theme?";
 	form_goal_heat_levels = "Goal level colors";
 
     form_button_preview = "Preview";

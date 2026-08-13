@@ -107,6 +107,13 @@ activity details show added, deleted, changed, and goal-completion totals in a
 compact summary. Date cells can also be reached with Tab, traversed with the
 arrow keys, and opened with Enter or Space.
 
+The graph editor previews changes automatically after a short debounce. Its
+style tab includes compact, balanced, touch-friendly, and custom density modes;
+linked cell dimensions; cell spacing; empty-cell color; and optional today and
+weekend emphasis. A base color can generate a four-level sequential palette,
+and reusable custom themes can save the complete visual combination locally.
+Use **Restore style defaults** to reset only the current graph's presentation.
+
 Imports and data clearing create an automatic snapshot in the plugin directory
 before replacing any statistics. Use **Settings → Contribution Graph Local →
 Restore latest automatic backup** to recover the most recent snapshot. Restore
@@ -144,6 +151,7 @@ Just click the edit button at top right corner
 | startOfWeek            | start of week                                                         | number                  | 0          |            | false                                    |
 | showCellRuleIndicators | Control the display and hiding of cell rule indicator elements        | boolean                 | true       |            | false                                    |
 | cellStyleRules         | cell style rule                                                       | array                   |            |            | false                                    |
+| appearance             | density, gap, empty-cell color, and date emphasis                     | object                  | balanced   |            | false                                    |
 
 ## More Usage Guides
 

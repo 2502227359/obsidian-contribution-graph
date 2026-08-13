@@ -30,6 +30,21 @@ export function applyThemeToGoalHeatScale(
 	return next;
 }
 
+export function applyColorsToGoalHeatScale(
+	heatScale: GoalHeatScale | undefined,
+	colors: string[]
+): GoalHeatScale {
+	const next = copyGoalHeatScale(heatScale);
+	if (colors.length === 0) {
+		return next;
+	}
+	next.levels = next.levels.map((level, index) => ({
+		...level,
+		color: colors[Math.min(index, colors.length - 1)],
+	}));
+	return next;
+}
+
 export function updateGoalHeatLevel(
 	heatScale: GoalHeatScale | undefined,
 	index: number,

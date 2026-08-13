@@ -5,7 +5,7 @@ import {
 	CellStyleRule,
 	ContributionItem,
 } from "src/types";
-import { parseDate } from "src/util/dateUtils";
+import { parseDate, toFormattedDate } from "src/util/dateUtils";
 import {
 	generateByLatestDays,
 	generateByFixedDate,
@@ -15,6 +15,7 @@ import { matchCellStyleRule } from "src/util/utils";
 import { Locals } from "src/i18/messages";
 import { resolveGoalHeatLevel } from "./heatScale";
 import { resolveCellNavigationIndex } from "./cellKeyboardNavigation";
+import { normalizeGraphAppearance } from "./graphAppearance";
 
 export interface GraphRender {
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void;
@@ -50,6 +51,8 @@ export abstract class BaseGraphRender implements GraphRender {
 		if (graphConfig.enableMainContainerShadow) {
 			cls += " shadow";
 		}
+		const appearance = normalizeGraphAppearance(graphConfig.appearance);
+		cls += ` density-${appearance.density.toLowerCase()}`;
 
 		const main = createDiv({
 			cls: cls,
@@ -57,6 +60,13 @@ export abstract class BaseGraphRender implements GraphRender {
 		});
 		if (graphConfig.mainContainerStyle) {
 			Object.assign(main.style, graphConfig.mainContainerStyle);
+		}
+		main.style.setProperty("--cg-cell-gap", `${appearance.cellGap}px`);
+		if (appearance.emptyCellColor) {
+			main.style.setProperty(
+				"--cg-empty-cell-color",
+				appearance.emptyCellColor
+			);
 		}
 		return main;
 	}
@@ -582,6 +592,11 @@ export abstract class BaseGraphRender implements GraphRender {
 		graphConfig: ContributionGraphConfig,
 		defaultCellStyleRule?: () => CellStyleRule
 	) {
+		this.applyDateEmphasis(
+			cellEl,
+			contributionItem,
+			graphConfig
+		);
 		if (contributionItem.future) {
 			cellEl.style.backgroundColor = "";
 			cellEl.addClass("future");
@@ -632,6 +647,30 @@ export abstract class BaseGraphRender implements GraphRender {
 				defaultCellStyleRule();
 			cellEl.style.backgroundColor = defaultRule.color;
 			cellEl.innerText = defaultRule.text || "";
+		}
+	}
+
+	private applyDateEmphasis(
+		cellEl: HTMLElement,
+		contributionItem: ContributionCellData,
+		graphConfig: ContributionGraphConfig
+	): void {
+		if (contributionItem.date === "$HOLE$") {
+			return;
+		}
+		const appearance = normalizeGraphAppearance(graphConfig.appearance);
+		if (
+			appearance.highlightToday &&
+			contributionItem.date === toFormattedDate(new Date())
+		) {
+			cellEl.classList.add("is-today");
+		}
+		if (
+			appearance.highlightWeekends &&
+			!contributionItem.future &&
+			(contributionItem.weekDay === 0 || contributionItem.weekDay === 6)
+		) {
+			cellEl.classList.add("is-weekend");
 		}
 	}
 

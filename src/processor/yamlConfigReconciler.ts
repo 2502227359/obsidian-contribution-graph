@@ -1,5 +1,6 @@
 import { DateRangeType, YamlGraphConfig } from "./types";
 import { createDefaultGoalHeatScale } from "src/constants";
+import { normalizeGraphAppearance } from "src/render/graphAppearance";
 
 export class YamlConfigReconciler {
 	constructor() {}
@@ -43,6 +44,9 @@ export class YamlConfigReconciler {
 		) {
 			yamlConfig.heatScale = createDefaultGoalHeatScale();
 		}
+		yamlConfig.appearance = normalizeGraphAppearance(
+			yamlConfig.appearance
+		);
 		if (
 			yamlConfig.heatScale?.type === "GOAL" &&
 			(!yamlConfig.heatScale.levels ||

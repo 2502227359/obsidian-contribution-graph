@@ -139,6 +139,9 @@ export class CodeBlockProcessor {
 			if (graphConfig.dataSource?.type !== "EDIT_ACTIVITY") {
 				await this.ensureDataviewReady(app);
 			}
+			if (this.disposed) {
+				return;
+			}
 
 			const inlineData = [...(graphConfig.data || [])];
 			const queriedData = this.queryData(graphConfig, app);
@@ -174,6 +177,9 @@ export class CodeBlockProcessor {
 
 			Renders.render(el, contributionConfig);
 		} catch (error) {
+			if (this.disposed || isAbortError(error)) {
+				return;
+			}
 			this.renderError(el, error);
 		}
 	}

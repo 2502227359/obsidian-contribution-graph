@@ -1,11 +1,19 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CodeBlockProcessor } from "src/processor/codeBlockProcessor";
-import { CellStyleRule } from "src/types";
+import {
+	CellStyleRule,
+	GraphDensity,
+	SavedGraphTheme,
+} from "src/types";
 import { Choose } from "../choose/Choose";
 import { CellRuleItem } from "./CellRuleFormItem";
 import { THEMES } from "./GraphTheme";
+import {
+	applyColorsToCellRules,
+	generateSequentialPalette,
+} from "./themePalette";
 import { Locals } from "src/i18/messages";
-import { App } from "obsidian";
+import { App, Notice } from "obsidian";
 
 import {
 	cellShapes,
@@ -21,9 +29,20 @@ import NumberInput from "../number-input";
 import { ColorPicker } from "./ColorPicker";
 import { About } from "../about";
 import { EditActivityService } from "src/activity/EditActivityService";
-import { createDefaultGoalHeatScale } from "src/constants";
+import {
+	createDefaultGoalHeatScale,
+	DEFAULT_RULES,
+} from "src/constants";
 import { GoalHeatScaleFormItem } from "./GoalHeatScaleFormItem";
-import { applyThemeToGoalHeatScale } from "./goalHeatScaleForm";
+import {
+	applyColorsToGoalHeatScale,
+} from "./goalHeatScaleForm";
+import {
+	DEFAULT_GRAPH_APPEARANCE,
+	GRAPH_DENSITY_PRESETS,
+	normalizeGraphAppearance,
+	parsePixelValue,
+} from "src/render/graphAppearance";
 
 export function GraphForm(props: {
 	yamlConfig: YamlGraphConfig;
@@ -34,11 +53,23 @@ export function GraphForm(props: {
 	const { yamlConfig } = props;
 	const local = Locals.get();
 	const previewContainerRef = useRef<HTMLDivElement>(null);
+	const previewProcessorRef = useRef<CodeBlockProcessor | null>(null);
 
 	const [formData, setFormData] = useState(yamlConfig);
 	const [cellRules, setCellRules] = useState<CellStyleRule[]>(
 		yamlConfig.cellStyleRules || []
 	);
+	const [customThemes, setCustomThemes] = useState<SavedGraphTheme[]>(
+		props.activityService.getGraphThemes()
+	);
+	const [selectedThemeId, setSelectedThemeId] = useState("custom");
+	const [themeName, setThemeName] = useState("");
+	const [paletteBaseColor, setPaletteBaseColor] = useState("#216e39");
+	const [dimensionsLinked, setDimensionsLinked] = useState(
+		!yamlConfig.cellStyle?.minWidth ||
+			yamlConfig.cellStyle?.minWidth === yamlConfig.cellStyle?.minHeight
+	);
+	const appearance = normalizeGraphAppearance(formData.appearance);
 
 	const handleInputChange = (
 		e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -49,28 +80,66 @@ export function GraphForm(props: {
 
 	const handleThemeChanged = (e: React.ChangeEvent<HTMLSelectElement>) => {
 		const { value } = e.target;
-		const theme = THEMES.find((t) => t.name == value);
-		if (theme) {
-			if (
-				formData.dataSource?.type === "EDIT_ACTIVITY" &&
-				theme.rules.length > 0
-			) {
-				changeFormData(
-					"heatScale",
-					applyThemeToGoalHeatScale(
-						formData.heatScale,
-						theme.rules
-					)
-				);
-				return;
-			}
-			changeFormData("cellStyleRules", theme.rules);
-			setCellRules(theme.rules);
+		setSelectedThemeId(value);
+		const savedTheme = customThemes.find((theme) => theme.id === value);
+		if (savedTheme) {
+			applySavedTheme(savedTheme);
+			setThemeName(savedTheme.name);
+			return;
 		}
+		const theme = THEMES.find((t) => t.id === value);
+		if (theme?.colors.length) {
+			applyColors(theme.colors);
+		}
+	};
+
+	const applyColors = (colors: string[]) => {
+		if (formData.dataSource?.type === "EDIT_ACTIVITY") {
+			changeFormData(
+				"heatScale",
+				applyColorsToGoalHeatScale(formData.heatScale, colors)
+			);
+			return;
+		}
+		const nextRules = applyColorsToCellRules(cellRules, colors);
+		setCellRules(nextRules);
+		changeFormData("cellStyleRules", nextRules);
+	};
+
+	const applySavedTheme = (theme: SavedGraphTheme) => {
+		applyColors(theme.colors);
+		setFormData((previous) => ({
+			...previous,
+			appearance: {
+				density: theme.density,
+				cellGap: theme.cellGap,
+				...(theme.emptyCellColor
+					? { emptyCellColor: theme.emptyCellColor }
+					: {}),
+				highlightToday: theme.highlightToday,
+				highlightWeekends: theme.highlightWeekends,
+			},
+			cellStyle: {
+				...previous.cellStyle,
+				...(theme.cellWidth
+					? { minWidth: `${theme.cellWidth}px` }
+					: { minWidth: undefined }),
+				...(theme.cellHeight
+					? { minHeight: `${theme.cellHeight}px` }
+					: { minHeight: undefined }),
+				borderRadius: theme.cellShape,
+			},
+			mainContainerStyle: {
+				...previous.mainContainerStyle,
+				backgroundColor: theme.backgroundColor,
+			},
+			enableMainContainerShadow: theme.enableShadow,
+		}));
 	};
 
 	const handleCellShapeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
 		const { value } = e.target;
+		setSelectedThemeId("custom");
 		changeFormData("cellStyle", {
 			...formData.cellStyle,
 			borderRadius: value,
@@ -92,6 +161,65 @@ export function GraphForm(props: {
 		setFormData((prevData) => ({ ...prevData, [name]: value }));
 	};
 
+	const getCellDimension = (key: "width" | "height"): number => {
+		const customValue = parsePixelValue(
+			key === "width"
+				? formData.cellStyle?.minWidth
+				: formData.cellStyle?.minHeight
+		);
+		if (customValue !== undefined) {
+			return customValue;
+		}
+		if (appearance.density !== "CUSTOM") {
+			return GRAPH_DENSITY_PRESETS[appearance.density][key];
+		}
+		return 10;
+	};
+
+	const handleDensityChange = (density: GraphDensity) => {
+		setSelectedThemeId("custom");
+		if (density === "CUSTOM") {
+			setFormData((previous) => ({
+				...previous,
+				appearance: { ...appearance, density },
+				cellStyle: {
+					...previous.cellStyle,
+					minWidth: `${getCellDimension("width")}px`,
+					minHeight: `${getCellDimension("height")}px`,
+				},
+			}));
+			return;
+		}
+		const preset = GRAPH_DENSITY_PRESETS[density];
+		setFormData((previous) => ({
+			...previous,
+			appearance: { ...appearance, density, cellGap: preset.gap },
+			cellStyle: {
+				...previous.cellStyle,
+				minWidth: undefined,
+				minHeight: undefined,
+			},
+		}));
+	};
+
+	const updateCellDimension = (
+		key: "width" | "height",
+		value: number
+	) => {
+		setSelectedThemeId("custom");
+		const width = key === "width" ? value : getCellDimension("width");
+		const height = key === "height" ? value : getCellDimension("height");
+		setFormData((previous) => ({
+			...previous,
+			appearance: { ...appearance, density: "CUSTOM" },
+			cellStyle: {
+				...previous.cellStyle,
+				minWidth: `${dimensionsLinked ? value : width}px`,
+				minHeight: `${dimensionsLinked ? value : height}px`,
+			},
+		}));
+	};
+
 	const addCellRule = () => {
 		const newRule = {
 			id: new Date().getTime(),
@@ -104,14 +232,15 @@ export function GraphForm(props: {
 	};
 
 	const onSubmit = () => {
-		formData.cellStyleRules = cellRules;
-		props.onSubmit(formData);
+		props.onSubmit({ ...formData, cellStyleRules: cellRules });
 	};
 
 	const onPreview = () => {
 		if (previewContainerRef.current) {
+			previewProcessorRef.current?.dispose();
 			previewContainerRef.current.empty();
 			const processor = new CodeBlockProcessor(props.activityService);
+			previewProcessorRef.current = processor;
 			// copy new instance
 			const copiedFormData = JSON.parse(JSON.stringify(formData));
 			copiedFormData.cellStyleRules = cellRules;
@@ -123,23 +252,116 @@ export function GraphForm(props: {
 		}
 	};
 
+	useEffect(() => {
+		const timer = window.setTimeout(onPreview, 250);
+		return () => window.clearTimeout(timer);
+	}, [formData, cellRules]);
+
+	useEffect(
+		() => () => {
+			previewProcessorRef.current?.dispose();
+		},
+		[]
+	);
+
+	const restoreStyleDefaults = () => {
+		const defaults = new YamlGraphConfig();
+		setSelectedThemeId("default");
+		setThemeName("");
+		setPaletteBaseColor("#216e39");
+		setDimensionsLinked(true);
+		setCellRules(DEFAULT_RULES.map((rule) => ({ ...rule })));
+		setFormData((previous) => ({
+			...previous,
+			titleStyle: { ...defaults.titleStyle },
+			fillTheScreen: false,
+			mainContainerStyle: {},
+			enableMainContainerShadow: false,
+			showCellRuleIndicators: true,
+			cellStyle: {},
+			cellStyleRules: DEFAULT_RULES.map((rule) => ({ ...rule })),
+			appearance: { ...DEFAULT_GRAPH_APPEARANCE },
+			...(previous.dataSource?.type === "EDIT_ACTIVITY"
+				? { heatScale: createDefaultGoalHeatScale(previous.heatScale?.goal) }
+				: {}),
+		}));
+	};
+
+	const currentColors = (): string[] => {
+		const colors =
+			formData.dataSource?.type === "EDIT_ACTIVITY"
+				? [...(formData.heatScale?.levels || [])]
+						.sort((a, b) => a.minRatio - b.minRatio)
+						.map((level) => level.color)
+				: [...cellRules]
+						.sort((a, b) => a.min - b.min)
+						.map((rule) => rule.color);
+		const defaults = DEFAULT_RULES.map((rule) => rule.color);
+		return defaults.map((fallback, index) => colors[index] || fallback);
+	};
+
+	const saveCurrentTheme = async () => {
+		const name = themeName.trim();
+		if (!name) {
+			new Notice(local.form_theme_name_required);
+			return;
+		}
+		const existing = customThemes.find(
+			(theme) => theme.id === selectedThemeId
+		);
+		try {
+			const theme = await props.activityService.saveGraphTheme({
+				id: existing?.id || `custom-${Date.now()}`,
+				name,
+				colors: currentColors(),
+				density: appearance.density,
+				cellWidth:
+					appearance.density === "CUSTOM"
+						? getCellDimension("width")
+						: undefined,
+				cellHeight:
+					appearance.density === "CUSTOM"
+						? getCellDimension("height")
+						: undefined,
+				cellGap: appearance.cellGap,
+				cellShape: formData.cellStyle?.borderRadius,
+				emptyCellColor: appearance.emptyCellColor,
+				highlightToday: appearance.highlightToday,
+				highlightWeekends: appearance.highlightWeekends,
+				backgroundColor: formData.mainContainerStyle?.backgroundColor,
+				enableShadow: formData.enableMainContainerShadow === true,
+			});
+			setCustomThemes(props.activityService.getGraphThemes());
+			setSelectedThemeId(theme.id);
+			new Notice(local.form_theme_saved);
+		} catch {
+			new Notice(local.form_theme_save_failed);
+		}
+	};
+
+	const deleteSelectedTheme = async () => {
+		const selected = customThemes.find(
+			(theme) => theme.id === selectedThemeId
+		);
+		if (!selected) {
+			return;
+		}
+		if (!window.confirm(local.form_confirm_delete_theme)) {
+			return;
+		}
+		await props.activityService.deleteGraphTheme(selected.id);
+		setCustomThemes(props.activityService.getGraphThemes());
+		setSelectedThemeId("custom");
+		setThemeName("");
+		new Notice(local.form_theme_deleted);
+	};
+
 	const getTitleFontSize = () => {
 		if (formData.titleStyle && formData.titleStyle.fontSize) {
 			const fontSize = formData.titleStyle.fontSize;
 			return parseInt(fontSize.replace(/[^0-9]/, ""));
 		}
 		return 16;
-	};
-
-	const parseNumberFromPrefix = (
-		str: string | undefined,
-		defaultValue: number
-	): number => {
-		if (!str) {
-			return 0;
-		}
-		const numberStr = str.replace(/[^0-9]/, "") || "0";
-		return parseInt(numberStr);
 	};
 
 	return (
@@ -428,6 +650,10 @@ export function GraphForm(props: {
 						children: (
 							<div className="contribution-graph-modal-form">
 								<div className="form-group">
+									<div className="style-section-heading">
+										<span>{local.form_quick_style}</span>
+										<small>{local.form_auto_preview}</small>
+									</div>
 									<div className="form-item">
 										<span className="label">
 											{local.form_title_font_size_label}
@@ -458,7 +684,7 @@ export function GraphForm(props: {
 											<input
 												type="checkbox"
 												className="checkbox"
-												defaultChecked={
+												checked={
 													formData.fillTheScreen
 												}
 												onChange={() =>
@@ -521,6 +747,7 @@ export function GraphForm(props: {
 														?.backgroundColor
 												}
 												onChange={(color) => {
+													setSelectedThemeId("custom");
 													changeFormData(
 														"mainContainerStyle",
 														{
@@ -531,6 +758,7 @@ export function GraphForm(props: {
 													);
 												}}
 												onReset={(color) => {
+													setSelectedThemeId("custom");
 													changeFormData(
 														"mainContainerStyle",
 														{
@@ -555,10 +783,11 @@ export function GraphForm(props: {
 												name="enableMainContainerShadow"
 												type="checkbox"
 												className="checkbox"
-												defaultChecked={
+												checked={
 													formData.enableMainContainerShadow
 												}
 												onChange={(e) => {
+													setSelectedThemeId("custom");
 													if (e.target.checked) {
 														changeFormData(
 															"enableMainContainerShadow",
@@ -584,7 +813,7 @@ export function GraphForm(props: {
 												name="showCellRuleIndicators"
 												type="checkbox"
 												className="checkbox"
-												defaultChecked={
+												checked={
 													formData.showCellRuleIndicators
 												}
 												onChange={() =>
@@ -597,13 +826,41 @@ export function GraphForm(props: {
 										</div>
 									</div>
 									<div className="form-item">
+										<span className="label">{local.form_density}</span>
+										<div className="form-content">
+											<select
+												value={appearance.density}
+												onChange={(event) =>
+													handleDensityChange(
+														event.target.value as GraphDensity
+													)
+												}
+											>
+												<option value="COMPACT">{local.form_density_compact}</option>
+												<option value="BALANCED">{local.form_density_balanced}</option>
+												<option value="TOUCH">{local.form_density_touch}</option>
+												<option value="CUSTOM">{local.form_density_custom}</option>
+											</select>
+											<label className="inline-checkbox-label">
+												<input
+													type="checkbox"
+													checked={dimensionsLinked}
+													onChange={(event) =>
+														setDimensionsLinked(event.target.checked)
+													}
+												/>
+												{local.form_link_cell_dimensions}
+											</label>
+										</div>
+									</div>
+									<div className="form-item">
 										<span className="label">
 											{local.form_cell_shape}
 										</span>
 										<div className="form-content">
 											<select
 												name="cellShape"
-												defaultValue={getDefaultCellShape()}
+												value={getDefaultCellShape()}
 												onChange={handleCellShapeChange}
 											>
 												{cellShapes.map((option) => (
@@ -626,39 +883,13 @@ export function GraphForm(props: {
 												type="range"
 												min={4}
 												max={64}
-												defaultValue={parseNumberFromPrefix(
-													formData.cellStyle
-														?.minWidth,
-													8
-												)}
-												onChange={(e) => {
-													changeFormData(
-														"cellStyle",
-														{
-															...formData.cellStyle,
-															minWidth:
-																e.target.value +
-																"px",
-														}
-													);
-												}}
+												value={getCellDimension("width")}
+												onChange={(event) =>
+													updateCellDimension("width", Number(event.target.value))
+												}
 											/>
-											<span
-												className="input-range-value-label"
-												onClick={(e) => {
-													changeFormData(
-														"cellStyle",
-														{
-															...formData.cellStyle,
-															minWidth: undefined,
-														}
-													);
-												}}
-											>
-												{formData.cellStyle?.minWidth
-													? formData.cellStyle
-															?.minWidth
-													: local.default}
+											<span className="input-range-value-label">
+												{getCellDimension("width")}px
 											</span>
 										</div>
 									</div>
@@ -671,62 +902,167 @@ export function GraphForm(props: {
 												type="range"
 												min={4}
 												max={64}
-												defaultValue={parseNumberFromPrefix(
-													formData.cellStyle
-														?.minHeight,
-													8
-												)}
-												onChange={(e) => {
-													changeFormData(
-														"cellStyle",
-														{
-															...formData.cellStyle,
-															minHeight:
-																e.target.value +
-																"px",
-														}
-													);
+												value={getCellDimension("height")}
+												onChange={(event) =>
+													updateCellDimension("height", Number(event.target.value))
+												}
+											/>
+											<span className="input-range-value-label">
+												{getCellDimension("height")}px
+											</span>
+										</div>
+									</div>
+									<div className="form-item">
+										<span className="label">{local.form_cell_gap}</span>
+										<div className="form-content">
+											<input
+												type="range"
+												min={0}
+												max={8}
+												value={appearance.cellGap}
+												onChange={(event) => {
+													setSelectedThemeId("custom");
+													changeFormData("appearance", {
+														...appearance,
+														cellGap: Number(event.target.value),
+													});
 												}}
 											/>
-											<span
-												className="input-range-value-label"
-												onClick={(e) => {
-													changeFormData(
-														"cellStyle",
-														{
-															...formData.cellStyle,
-															minHeight:
-																undefined,
-														}
-													);
-												}}
-											>
-												{formData.cellStyle?.minHeight
-													? formData.cellStyle
-															?.minHeight
-													: local.default}
+											<span className="input-range-value-label">
+												{appearance.cellGap}px
 											</span>
+										</div>
+									</div>
+									<div className="form-item">
+										<span className="label">{local.form_empty_cell_color}</span>
+										<div className="form-content">
+											<ColorPicker
+												color={appearance.emptyCellColor}
+												ariaLabel={local.form_empty_cell_color}
+												onChange={(color) => {
+													setSelectedThemeId("custom");
+													changeFormData("appearance", {
+														...appearance,
+														emptyCellColor: color,
+													});
+												}}
+												onReset={() => {
+													setSelectedThemeId("custom");
+													changeFormData("appearance", {
+														...appearance,
+														emptyCellColor: undefined,
+													});
+												}}
+											/>
+										</div>
+									</div>
+									<div className="form-item">
+										<span className="label">{local.form_highlight_today}</span>
+										<div className="form-content">
+											<input
+												type="checkbox"
+												className="checkbox"
+												checked={appearance.highlightToday}
+												onChange={(event) => {
+													setSelectedThemeId("custom");
+													changeFormData("appearance", {
+														...appearance,
+														highlightToday: event.target.checked,
+													});
+												}}
+											/>
+										</div>
+									</div>
+									<div className="form-item">
+										<span className="label">{local.form_highlight_weekends}</span>
+										<div className="form-content">
+											<input
+												type="checkbox"
+												className="checkbox"
+												checked={appearance.highlightWeekends}
+												onChange={(event) => {
+													setSelectedThemeId("custom");
+													changeFormData("appearance", {
+														...appearance,
+														highlightWeekends: event.target.checked,
+													});
+												}}
+											/>
 										</div>
 									</div>
 									<div className="form-item">
 										<span className="label">
 											{local.form_theme}
 										</span>
-										<div className="form-content">
+										<div className="form-vertical-content contribution-graph-theme-manager">
 											<select
 												name="theme"
-												aria-placeholder="select theme to generate style"
+												value={selectedThemeId}
 												onChange={handleThemeChanged}
 											>
 												{THEMES.map((option) => (
 													<option
-														value={option.name}
-														key={option.name}
+														value={option.id}
+														key={option.id}
 													>
 														{option.name}
 													</option>
 												))}
+												{customThemes.map((theme) => (
+													<option
+														value={theme.id}
+														key={theme.id}
+													>
+														★ {theme.name}
+													</option>
+												))}
 											</select>
+											<div className="theme-palette-generator">
+												<span>{local.form_palette_base_color}</span>
+												<ColorPicker
+													color={paletteBaseColor}
+													ariaLabel={local.form_palette_base_color}
+													onChange={(color) =>
+														color && setPaletteBaseColor(color)
+													}
+												/>
+												<button
+													type="button"
+													onClick={() => {
+														applyColors(
+															generateSequentialPalette(
+																paletteBaseColor
+															)
+														);
+														setSelectedThemeId("custom");
+													}}
+												>
+													{local.form_generate_palette}
+												</button>
+											</div>
+											<div className="custom-theme-actions">
+												<input
+													type="text"
+													maxLength={64}
+													value={themeName}
+													placeholder={local.form_custom_theme_name}
+													onChange={(event) =>
+														setThemeName(event.target.value)
+													}
+												/>
+												<button type="button" onClick={() => void saveCurrentTheme()}>
+													{local.form_save_custom_theme}
+												</button>
+												{customThemes.some((theme) => theme.id === selectedThemeId) && (
+													<button
+														type="button"
+														className="mod-warning"
+														onClick={() => void deleteSelectedTheme()}
+													>
+														{local.form_delete_custom_theme}
+													</button>
+												)}
+											</div>
 										</div>
 									</div>
 									<div className="form-item">
@@ -743,12 +1079,10 @@ export function GraphForm(props: {
 													heatScale={
 														formData.heatScale
 													}
-													onChange={(heatScale) =>
-														changeFormData(
-															"heatScale",
-															heatScale
-														)
-													}
+													onChange={(heatScale) => {
+														setSelectedThemeId("custom");
+														changeFormData("heatScale", heatScale);
+													}}
 												/>
 											) : (
 												<>
@@ -770,9 +1104,10 @@ export function GraphForm(props: {
 																					? newRule
 																					: r
 																		);
-																	setCellRules(
-																		newRules
-																	);
+																		setCellRules(
+																			newRules
+																		);
+																		setSelectedThemeId("custom");
 																}}
 																onRemove={(
 																	id: string
@@ -820,7 +1155,10 @@ export function GraphForm(props: {
 					ref={previewContainerRef}
 				></div>
 				<div className="form-item">
-					<div className="form-content">
+					<div className="form-content contribution-graph-form-actions">
+						<button className="button" onClick={restoreStyleDefaults}>
+							{local.form_restore_style_defaults}
+						</button>
 						<button className="button" onClick={onPreview}>
 							{local.form_button_preview}
 						</button>

@@ -12,6 +12,10 @@ const NumberInput = (props: {
 	const [value, setValue] = useState<string>(props.defaultValue.toString());
 	const local = Locals.get();
 
+	useEffect(() => {
+		setValue(props.defaultValue.toString());
+	}, [props.defaultValue]);
+
 	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const inputValue = e.target.value;
 		const regex = /^-?\d*$/;

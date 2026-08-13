@@ -1,5 +1,36 @@
 # Development Log
 
+## 2026-08-14 — v0.14.0 style workflow and reusable themes
+
+### Added
+
+- Added debounced live preview to the graph editor, plus one-click restoration
+  of the built-in style defaults.
+- Added compact, balanced, touch-friendly, and custom density modes. Custom
+  sizing supports linked width and height, and every graph can set its cell gap.
+- Added configurable empty-cell color and optional today/weekend emphasis while
+  retaining Obsidian theme variables as the fallback.
+- Added base-color palette generation and two color-vision-friendly presets.
+- Added reusable custom graph themes containing heat colors, density, cell
+  dimensions and shape, spacing, empty/background colors, date emphasis, and
+  shadow state. Themes are stored locally without note content.
+
+### Improved
+
+- All three graph types now consume the same responsive cell-size variables,
+  so density presets behave consistently in Git, month-track, and calendar
+  views while explicit YAML cell dimensions keep priority.
+- Disposed previews can no longer render late Dataview results or stale errors
+  into the settings dialog.
+- Migrated edit-activity storage to schema version 10. Schema 9 statistics are
+  preserved and receive an empty reusable-theme collection automatically.
+
+### Verification
+
+- `npm test`: 96 tests passed, including appearance normalization, palette
+  generation, reusable-theme persistence, and schema 9 migration coverage.
+- `npm run build`: TypeScript validation and production bundling passed.
+
 ## 2026-08-13 — v0.13.0 responsive heatmap refinement
 
 ### Improved

@@ -160,7 +160,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 		expect(plugin.saveData).toHaveBeenCalledTimes(1);
 		expect(plugin.saveData.mock.calls[0][0]).toMatchObject({
-			schemaVersion: 9,
+			schemaVersion: 10,
 			dailyStats: {
 				"2026-07-31": {
 					addedChars: 1,
@@ -201,7 +201,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		const exported = JSON.parse(service.exportData());
 		expect(exported).toMatchObject({
-			schemaVersion: 9,
+			schemaVersion: 10,
 			countingPolicyPeriods: [
 				{
 					startedAt: "2026-07-31T08:00:00.000Z",
@@ -386,7 +386,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		await service.unload();
 		expect(plugin.saveData.mock.lastCall?.[0]).toMatchObject({
-			schemaVersion: 9,
+			schemaVersion: 10,
 			settings: {
 				trackedFolders: ["Archive", "Daily Notes"],
 			},
@@ -723,6 +723,60 @@ describe("EditActivityService persistence and lifecycle", () => {
 			{ startDate: "2026-07-31", endDate: "2026-08-01", folders: [] },
 			{ startDate: "2026-08-01", folders: ["Projects"] },
 		]);
+		await service.unload();
+	});
+
+	it("migrates schema 9 data without losing edit statistics", async () => {
+		const stored = {
+			...createStoredData(12),
+			schemaVersion: 9,
+			countingPolicyPeriods: [],
+		};
+		const plugin = createPlugin(stored);
+		const service = new EditActivityService(plugin as never);
+		await service.initialize();
+
+		expect(service.getDailyEditStats()[0]).toMatchObject({
+			addedChars: 12,
+			deletedChars: 0,
+		});
+		expect(service.getGraphThemes()).toEqual([]);
+		expect(JSON.parse(service.exportData())).toMatchObject({
+			schemaVersion: 10,
+			graphThemes: [],
+		});
+		await service.unload();
+	});
+
+	it("saves, replaces, and deletes reusable graph themes", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(plugin as never);
+		await service.initialize();
+		const theme = {
+			id: "custom-writing",
+			name: "Writing",
+			colors: ["#dbe9f4", "#91bad6", "#477da7", "#153b5b"],
+			density: "BALANCED" as const,
+			cellWidth: 10,
+			cellHeight: 10,
+			cellGap: 2,
+			cellShape: "50%",
+			highlightToday: true,
+			highlightWeekends: false,
+			enableShadow: false,
+		};
+
+		await service.saveGraphTheme(theme);
+		expect(service.getGraphThemes()).toEqual([theme]);
+		await service.saveGraphTheme({
+			...theme,
+			colors: ["#fff0c2", "#e5bd62", "#a87921", "#5c3b00"],
+		});
+		expect(service.getGraphThemes()).toHaveLength(1);
+		expect(service.getGraphThemes()[0].colors[0]).toBe("#fff0c2");
+
+		await service.deleteGraphTheme(theme.id);
+		expect(service.getGraphThemes()).toEqual([]);
 		await service.unload();
 	});
 

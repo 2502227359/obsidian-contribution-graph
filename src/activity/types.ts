@@ -3,6 +3,7 @@ import {
 	DailyEditStats,
 	EditPosition,
 	TrackingPeriod,
+	SavedGraphTheme,
 } from "src/types";
 
 export interface EditActivitySettings {
@@ -41,8 +42,9 @@ export interface StoredDocumentEditStats {
 }
 
 export interface EditActivityStore {
-	schemaVersion: 9;
+	schemaVersion: 10;
 	settings: EditActivitySettings;
+	graphThemes: SavedGraphTheme[];
 	trackingPeriods: TrackingPeriod[];
 	collectionScopePeriods: CollectionScopePeriod[];
 	countingPolicyPeriods: CountingPolicyPeriod[];
@@ -59,11 +61,12 @@ export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 };
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
-	schemaVersion: 9,
+	schemaVersion: 10,
 	settings: {
 		...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 		trackedFolders: [],
 	},
+	graphThemes: [],
 	trackingPeriods: [],
 	collectionScopePeriods: [],
 	countingPolicyPeriods: [],

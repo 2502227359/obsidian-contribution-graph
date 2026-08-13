@@ -5,9 +5,11 @@ import {
 	CellStyleRule,
 	ContributionGraphConfig,
 	GoalHeatScale,
+	GraphAppearance,
 	TrackingPeriod,
 	CollectionScopePeriod,
 } from "src/types";
+import { DEFAULT_GRAPH_APPEARANCE } from "src/render/graphAppearance";
 import {
 	MISS_CONFIG,
 	MISS_DATASOURCE_OR_DATA,
@@ -57,6 +59,7 @@ export class YamlGraphConfig {
 	cellStyle?: Partial<CSSStyleDeclaration>;
 	cellStyleRules?: CellStyleRule[];
 	heatScale?: GoalHeatScale;
+	appearance?: GraphAppearance;
 	trackingPeriods?: TrackingPeriod[];
 	collectionScopePeriods?: CollectionScopePeriod[];
 	activityFolders?: string[];
@@ -87,6 +90,7 @@ export class YamlGraphConfig {
 		} as DataSource;
 		this.fillTheScreen = false;
 		this.enableMainContainerShadow = false;
+		this.appearance = { ...DEFAULT_GRAPH_APPEARANCE };
 
 		// deprecated
 		this.query = undefined;
@@ -312,6 +316,28 @@ export class YamlGraphConfig {
 						"levels must include a minRatio of 0"
 					)
 				);
+			}
+		}
+
+		if (config.appearance !== undefined) {
+			const appearance = config.appearance as GraphAppearance;
+			if (
+				!["COMPACT", "BALANCED", "TOUCH", "CUSTOM"].includes(
+					appearance.density
+				) ||
+				!Number.isSafeInteger(appearance.cellGap) ||
+				appearance.cellGap < 0 ||
+				appearance.cellGap > 8 ||
+				typeof appearance.highlightToday !== "boolean" ||
+				typeof appearance.highlightWeekends !== "boolean" ||
+				(appearance.emptyCellColor !== undefined &&
+					(typeof appearance.emptyCellColor !== "string" ||
+						appearance.emptyCellColor.trim().length === 0 ||
+						appearance.emptyCellColor.length > 100))
+			) {
+				throw new GraphProcessError({
+					summary: "Invalid graph appearance settings",
+				});
 			}
 		}
 

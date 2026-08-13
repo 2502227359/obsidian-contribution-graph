@@ -14,6 +14,7 @@ import { useState } from "react";
 export function ColorPicker(props: {
 	color?: string;
 	defaultColor?: string;
+	ariaLabel?: string;
 	onChange: (color?: string) => void;
 	onReset?: (color?: string) => void;
 }): JSX.Element {
@@ -30,18 +31,22 @@ export function ColorPicker(props: {
 
 	return (
 		<>
-			<span
+			<button
+				type="button"
 				className="color-indicator"
+				aria-label={props.ariaLabel || "Choose color"}
 				style={{
 					backgroundColor: props.color,
 				}}
 				onClick={() => setShowColorPicker(!showColorPicker)}
-			></span>
+			></button>
 			{props.color && (
 				<div className="color-label">
 					<span>{props.color ?? ""}</span>
-					<span
+					<button
+						type="button"
 						className="color-reset-button"
+						aria-label="Reset color"
 						onClick={() => {
 							if (props.onReset) {
 								props.onReset(props.defaultColor);
@@ -51,7 +56,7 @@ export function ColorPicker(props: {
 						}}
 					>
 						x
-					</span>
+					</button>
 				</div>
 			)}
 			{showColorPicker ? (

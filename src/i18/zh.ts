@@ -114,8 +114,31 @@ export class Zh implements Local {
 	form_activity_tracking_disabled = "编辑活动采集尚未开启，请前往插件设置启用";
 
     form_theme = "主题";
-    form_theme_placeholder = "选择主题或自定义样式";
-    form_cell_style_rules = "单元格样式规则";
+	form_theme_placeholder = "选择主题或自定义样式";
+	form_cell_style_rules = "单元格样式规则";
+	form_quick_style = "快捷样式";
+	form_density = "显示密度";
+	form_density_compact = "紧凑";
+	form_density_balanced = "均衡";
+	form_density_touch = "触屏友好";
+	form_density_custom = "自定义";
+	form_link_cell_dimensions = "宽高联动";
+	form_cell_gap = "单元格间距";
+	form_palette_base_color = "色阶主色";
+	form_generate_palette = "生成色阶";
+	form_empty_cell_color = "空白格颜色";
+	form_highlight_today = "突出今天";
+	form_highlight_weekends = "标记周末";
+	form_custom_theme_name = "我的主题名称";
+	form_save_custom_theme = "保存为我的主题";
+	form_delete_custom_theme = "删除当前主题";
+	form_restore_style_defaults = "恢复默认样式";
+	form_auto_preview = "样式修改会自动预览";
+	form_theme_saved = "自定义主题已保存";
+	form_theme_deleted = "自定义主题已删除";
+	form_theme_name_required = "请先输入主题名称";
+	form_theme_save_failed = "自定义主题保存失败（最多保存 30 个）";
+	form_confirm_delete_theme = "确定删除这个自定义主题吗？";
 	form_goal_heat_levels = "目标比例颜色";
 
     form_button_preview = "预览";

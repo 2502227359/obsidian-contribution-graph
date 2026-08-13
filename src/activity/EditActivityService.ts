@@ -11,6 +11,7 @@ import { Locals } from "src/i18/messages";
 import {
 	CollectionScopePeriod,
 	DailyEditStats,
+	SavedGraphTheme,
 	TrackingPeriod,
 } from "src/types";
 import {
@@ -208,6 +209,47 @@ export class EditActivityService {
 			...this.store.settings,
 			trackedFolders: [...this.store.settings.trackedFolders],
 		};
+	}
+
+	getGraphThemes(): SavedGraphTheme[] {
+		return this.store.graphThemes.map((theme) => ({
+			...theme,
+			colors: [...theme.colors],
+		}));
+	}
+
+	async saveGraphTheme(theme: SavedGraphTheme): Promise<SavedGraphTheme> {
+		const normalized = this.normalizeSavedGraphTheme(theme);
+		if (!normalized) {
+			throw new Error("Invalid graph theme");
+		}
+		const duplicate = this.store.graphThemes.findIndex(
+			(candidate) =>
+				candidate.id === normalized.id ||
+				candidate.name.toLocaleLowerCase() ===
+					normalized.name.toLocaleLowerCase()
+		);
+		if (duplicate >= 0) {
+			this.store.graphThemes[duplicate] = normalized;
+		} else {
+			if (this.store.graphThemes.length >= 30) {
+				throw new Error("Graph theme limit reached");
+			}
+			this.store.graphThemes.push(normalized);
+		}
+		this.markDirty();
+		await this.flush();
+		return { ...normalized, colors: [...normalized.colors] };
+	}
+
+	async deleteGraphTheme(id: string): Promise<void> {
+		const next = this.store.graphThemes.filter((theme) => theme.id !== id);
+		if (next.length === this.store.graphThemes.length) {
+			return;
+		}
+		this.store.graphThemes = next;
+		this.markDirty();
+		await this.flush();
 	}
 
 	getTrackingPeriods(): TrackingPeriod[] {
@@ -1270,6 +1312,7 @@ export class EditActivityService {
 				...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 				trackedFolders: [],
 			},
+			graphThemes: [],
 			trackingPeriods: [],
 			collectionScopePeriods: [],
 			countingPolicyPeriods: [],
@@ -1288,17 +1331,13 @@ export class EditActivityService {
 		const candidate = raw as Partial<EditActivityStore>;
 		const schemaVersion = (raw as { schemaVersion?: unknown })
 			.schemaVersion;
+		const numericSchemaVersion =
+			typeof schemaVersion === "number" ? schemaVersion : 0;
 		if (
 			strict &&
-			schemaVersion !== 1 &&
-			schemaVersion !== 2 &&
-			schemaVersion !== 3 &&
-			schemaVersion !== 4 &&
-			schemaVersion !== 5 &&
-			schemaVersion !== 6 &&
-			schemaVersion !== 7 &&
-			schemaVersion !== 8 &&
-			schemaVersion !== 9
+			(!Number.isSafeInteger(numericSchemaVersion) ||
+				numericSchemaVersion < 1 ||
+				numericSchemaVersion > 10)
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -1380,17 +1419,7 @@ export class EditActivityService {
 							);
 						}
 					}
-				} else if (
-					strict &&
-					(schemaVersion === 2 ||
-						schemaVersion === 3 ||
-						schemaVersion === 4 ||
-						schemaVersion === 5 ||
-						schemaVersion === 6 ||
-						schemaVersion === 7 ||
-						schemaVersion === 8 ||
-						schemaVersion === 9)
-				) {
+				} else if (strict && numericSchemaVersion >= 2) {
 					throw new Error(
 						`Invalid document edit statistics for ${date}`
 					);
@@ -1449,12 +1478,7 @@ export class EditActivityService {
 		const rawTrackedFolders = candidate.settings?.trackedFolders;
 		if (
 			strict &&
-			(schemaVersion === 4 ||
-				schemaVersion === 5 ||
-				schemaVersion === 6 ||
-				schemaVersion === 7 ||
-				schemaVersion === 8 ||
-				schemaVersion === 9) &&
+			numericSchemaVersion >= 4 &&
 			(!Array.isArray(rawTrackedFolders) ||
 				rawTrackedFolders.some(
 					(folder) => typeof folder !== "string"
@@ -1472,26 +1496,21 @@ export class EditActivityService {
 		);
 		if (
 			strict &&
-			(schemaVersion === 6 ||
-				schemaVersion === 7 ||
-				schemaVersion === 8 ||
-				schemaVersion === 9) &&
+			numericSchemaVersion >= 6 &&
 			typeof candidate.settings?.strictUserInputOnly !== "boolean"
 		) {
 			throw new Error("Invalid strict input setting");
 		}
 		if (
 			strict &&
-			(schemaVersion === 7 ||
-				schemaVersion === 8 ||
-				schemaVersion === 9) &&
+			numericSchemaVersion >= 7 &&
 			typeof candidate.settings?.countPastedText !== "boolean"
 		) {
 			throw new Error("Invalid paste input setting");
 		}
 		if (
 			strict &&
-			(schemaVersion === 8 || schemaVersion === 9) &&
+			numericSchemaVersion >= 8 &&
 			typeof candidate.settings?.excludeMarkdownFormatting !==
 				"boolean"
 		) {
@@ -1499,22 +1518,14 @@ export class EditActivityService {
 		}
 		if (
 			strict &&
-			(schemaVersion === 5 ||
-				schemaVersion === 6 ||
-				schemaVersion === 7 ||
-				schemaVersion === 8 ||
-				schemaVersion === 9) &&
+			numericSchemaVersion >= 5 &&
 			!Array.isArray(candidate.collectionScopePeriods)
 		) {
 			throw new Error("Invalid collection scope periods");
 		}
 		const collectionScopePeriods: CollectionScopePeriod[] = [];
 		if (
-			(schemaVersion === 5 ||
-				schemaVersion === 6 ||
-				schemaVersion === 7 ||
-				schemaVersion === 8 ||
-				schemaVersion === 9) &&
+			numericSchemaVersion >= 5 &&
 			Array.isArray(candidate.collectionScopePeriods)
 		) {
 			for (const period of candidate.collectionScopePeriods) {
@@ -1553,13 +1564,16 @@ export class EditActivityService {
 
 		if (
 			strict &&
-			schemaVersion === 9 &&
+			numericSchemaVersion >= 9 &&
 			!Array.isArray(candidate.countingPolicyPeriods)
 		) {
 			throw new Error("Invalid counting policy periods");
 		}
 		const countingPolicyPeriods: EditActivityStore["countingPolicyPeriods"] = [];
-		if (schemaVersion === 9 && Array.isArray(candidate.countingPolicyPeriods)) {
+		if (
+			numericSchemaVersion >= 9 &&
+			Array.isArray(candidate.countingPolicyPeriods)
+		) {
 			for (const period of candidate.countingPolicyPeriods) {
 				const policy = this.normalizeCountingPolicy(period?.policy);
 				if (
@@ -1584,8 +1598,39 @@ export class EditActivityService {
 			}
 		}
 
+		if (
+			strict &&
+			numericSchemaVersion >= 10 &&
+			(!Array.isArray(candidate.graphThemes) ||
+				candidate.graphThemes.length > 30)
+		) {
+			throw new Error("Invalid graph themes");
+		}
+		const graphThemes: SavedGraphTheme[] = [];
+		const rawGraphThemes = Array.isArray(candidate.graphThemes)
+			? candidate.graphThemes.slice(0, 30)
+			: [];
+		for (const value of rawGraphThemes) {
+			const theme = this.normalizeSavedGraphTheme(value);
+			if (theme) {
+				const duplicate = graphThemes.some(
+					(existing) =>
+						existing.id === theme.id ||
+						existing.name.toLocaleLowerCase() ===
+							theme.name.toLocaleLowerCase()
+				);
+				if (!duplicate) {
+					graphThemes.push(theme);
+				} else if (strict) {
+					throw new Error("Duplicate graph theme");
+				}
+			} else if (strict) {
+				throw new Error("Invalid graph theme");
+			}
+		}
+
 		return {
-			schemaVersion: 9,
+			schemaVersion: 10,
 			settings: {
 				trackingEnabled:
 					candidate.settings?.trackingEnabled === true,
@@ -1599,10 +1644,87 @@ export class EditActivityService {
 				countPastedText:
 					candidate.settings?.countPastedText !== false,
 			},
+			graphThemes,
 			trackingPeriods,
 			collectionScopePeriods,
 			countingPolicyPeriods,
 			dailyStats,
+		};
+	}
+
+	private normalizeSavedGraphTheme(value: unknown): SavedGraphTheme | undefined {
+		if (!value || typeof value !== "object") {
+			return undefined;
+		}
+		const theme = value as Partial<SavedGraphTheme>;
+		const densities = ["COMPACT", "BALANCED", "TOUCH", "CUSTOM"];
+		const validOptionalPixel = (pixel: unknown) =>
+			pixel === undefined ||
+			(typeof pixel === "number" &&
+				Number.isFinite(pixel) &&
+				pixel >= 4 &&
+				pixel <= 64);
+		const validOptionalColor = (color: unknown) =>
+			color === undefined ||
+			(typeof color === "string" &&
+				/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(color));
+		if (
+			typeof theme.id !== "string" ||
+			theme.id.trim().length === 0 ||
+			theme.id.length > 100 ||
+			theme.id.includes("\u0000") ||
+			typeof theme.name !== "string" ||
+			theme.name.trim().length === 0 ||
+			theme.name.trim().length > 64 ||
+			!Array.isArray(theme.colors) ||
+			theme.colors.length !== 4 ||
+			!theme.colors.every(
+				(color) =>
+					typeof color === "string" &&
+					/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(color)
+			) ||
+			!densities.includes(theme.density || "") ||
+			!validOptionalPixel(theme.cellWidth) ||
+			!validOptionalPixel(theme.cellHeight) ||
+			typeof theme.cellGap !== "number" ||
+			!Number.isSafeInteger(theme.cellGap) ||
+			theme.cellGap < 0 ||
+			theme.cellGap > 8 ||
+			(theme.cellShape !== undefined &&
+				(typeof theme.cellShape !== "string" ||
+					!['', "0%", "50%"].includes(theme.cellShape))) ||
+			!validOptionalColor(theme.emptyCellColor) ||
+			!validOptionalColor(theme.backgroundColor) ||
+			typeof theme.highlightToday !== "boolean" ||
+			typeof theme.highlightWeekends !== "boolean" ||
+			typeof theme.enableShadow !== "boolean"
+		) {
+			return undefined;
+		}
+		return {
+			id: theme.id.trim(),
+			name: theme.name.trim(),
+			colors: [...theme.colors],
+			density: theme.density!,
+			...(theme.cellWidth !== undefined
+				? { cellWidth: theme.cellWidth }
+				: {}),
+			...(theme.cellHeight !== undefined
+				? { cellHeight: theme.cellHeight }
+				: {}),
+			cellGap: theme.cellGap,
+			...(theme.cellShape !== undefined
+				? { cellShape: theme.cellShape }
+				: {}),
+			...(theme.emptyCellColor
+				? { emptyCellColor: theme.emptyCellColor }
+				: {}),
+			highlightToday: theme.highlightToday,
+			highlightWeekends: theme.highlightWeekends,
+			...(theme.backgroundColor
+				? { backgroundColor: theme.backgroundColor }
+				: {}),
+			enableShadow: theme.enableShadow,
 		};
 	}
 
