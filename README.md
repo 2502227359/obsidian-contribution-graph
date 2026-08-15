@@ -110,8 +110,12 @@ arrow keys, and opened with Enter or Space.
 The graph editor previews changes automatically after a short debounce. Its
 style tab includes compact, balanced, touch-friendly, and custom density modes;
 linked cell dimensions; cell spacing; empty-cell color; and optional today and
-weekend emphasis. A base color can generate a four-level sequential palette,
-and reusable custom themes can save the complete visual combination locally.
+weekend emphasis. Edit-activity graphs start with four goal levels, but the
+editor can add, remove, and reorder levels by starting percentage, with up to
+eight levels created visually and existing YAML scales of up to twenty levels
+preserved. A base color generates a sequential palette sized to the current
+scale. Reusable themes resample their colors without changing goal thresholds
+or emoji, and can save the complete visual combination locally.
 Use **Restore style defaults** to reset only the current graph's presentation.
 
 Imports and data clearing create an automatic snapshot in the plugin directory

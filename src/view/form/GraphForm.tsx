@@ -296,9 +296,15 @@ export function GraphForm(props: {
 				: [...cellRules]
 						.sort((a, b) => a.min - b.min)
 						.map((rule) => rule.color);
-		const defaults = DEFAULT_RULES.map((rule) => rule.color);
-		return defaults.map((fallback, index) => colors[index] || fallback);
+		return colors.length > 0
+			? colors
+			: DEFAULT_RULES.map((rule) => rule.color);
 	};
+
+	const currentColorCount = (): number =>
+		formData.dataSource?.type === "EDIT_ACTIVITY"
+			? formData.heatScale?.levels.length || DEFAULT_RULES.length
+			: cellRules.length || DEFAULT_RULES.length;
 
 	const saveCurrentTheme = async () => {
 		const name = themeName.trim();
@@ -1031,7 +1037,8 @@ export function GraphForm(props: {
 													onClick={() => {
 														applyColors(
 															generateSequentialPalette(
-																paletteBaseColor
+																paletteBaseColor,
+																currentColorCount()
 															)
 														);
 														setSelectedThemeId("custom");

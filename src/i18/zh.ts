@@ -139,7 +139,15 @@ export class Zh implements Local {
 	form_theme_name_required = "请先输入主题名称";
 	form_theme_save_failed = "自定义主题保存失败（最多保存 30 个）";
 	form_confirm_delete_theme = "确定删除这个自定义主题吗？";
-	form_goal_heat_levels = "目标比例颜色";
+	form_goal_heat_levels = "目标比例色阶";
+	form_goal_heat_level_threshold = "起始";
+	form_goal_heat_level_emoji = "色阶 emoji";
+	form_goal_heat_level_add = "添加色阶";
+	form_goal_heat_level_remove = "删除这个色阶";
+	form_goal_heat_level_zero_locked = "0% 起始色阶必须保留";
+	form_goal_heat_level_invalid = "请输入不小于 0 的有效百分比";
+	form_goal_heat_level_duplicate = "起始百分比不能重复";
+	form_goal_heat_level_limit = "界面最多新增 {max} 档；已有的更多档位会原样保留";
 
     form_button_preview = "预览";
     form_button_save = "保存";

@@ -1,5 +1,33 @@
 # Development Log
 
+## 2026-08-15 — v0.15.0 customizable goal heat levels
+
+### Added
+
+- Added visual add, remove, and percentage-threshold controls for edit-activity
+  heat levels. The required zero-percent level stays locked, invalid or
+  duplicate drafts never reach live preview, and new levels extend the current
+  scale in 25-percent steps.
+- Added compact responsive level rows with localized validation, keyboard
+  commit/cancel behavior, and horizontally safe legends for larger scales.
+
+### Improved
+
+- Sequential palettes and built-in or saved themes now resample smoothly to the
+  current number of levels while preserving the existing four-color output.
+- Reusable themes accept one to twenty colors and remain visual-only: applying
+  one does not replace a graph's goal, thresholds, or emoji.
+- The visual editor can create up to eight levels while preserving and editing
+  existing YAML scales containing up to twenty levels.
+
+### Verification
+
+- `npm test`: 108 tests passed, including level mutation and validation,
+  variable palette generation, six-level boundary resolution, and one-to-twenty
+  color theme persistence.
+- `npm run package`: TypeScript validation, production bundling, version
+  consistency checks, and release staging passed.
+
 ## 2026-08-14 — v0.14.0 style workflow and reusable themes
 
 ### Added

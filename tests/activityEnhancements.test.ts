@@ -6,13 +6,18 @@ import {
 } from "../src/activity/metrics";
 import { YamlGraphConfig } from "../src/processor/types";
 import {
+	addGoalHeatLevel,
 	applyThemeToGoalHeatScale,
 	formatGoalHeatLevelRange,
+	removeGoalHeatLevel,
 	updateGoalHeatLevel,
+	updateGoalHeatLevelRatio,
+	validateGoalHeatLevelRatio,
 } from "../src/view/form/goalHeatScaleForm";
 import {
 	applyColorsToCellRules,
 	generateSequentialPalette,
+	resamplePalette,
 } from "../src/view/form/themePalette";
 import {
 	GRAPH_DENSITY_PRESETS,
@@ -115,6 +120,21 @@ describe("goal heat scale validation", () => {
 		).not.toThrow();
 	});
 
+	it("accepts up to twenty custom goal levels", () => {
+		expect(() =>
+			YamlGraphConfig.validate(
+				configWithHeatScale({
+					type: "GOAL",
+					goal: 1000,
+					levels: Array.from({ length: 20 }, (_, index) => ({
+						minRatio: index * 0.1,
+						color: "#123456",
+					})),
+				})
+			)
+		).not.toThrow();
+	});
+
 	it.each([
 		{
 			type: "GOAL",
@@ -130,6 +150,14 @@ describe("goal heat scale validation", () => {
 			type: "GOAL",
 			goal: 1000,
 			levels: [{ minRatio: 0, color: "" }],
+		},
+		{
+			type: "GOAL",
+			goal: 1000,
+			levels: Array.from({ length: 21 }, (_, index) => ({
+				minRatio: index * 0.1,
+				color: "#123456",
+			})),
 		},
 	])("rejects invalid goal scales", (heatScale) => {
 		expect(() =>
@@ -188,8 +216,64 @@ describe("goal heat scale form mapping", () => {
 		expect(heatScale.levels[2].color).toBe("#333333");
 	});
 
+	it("adds, removes, validates, and sorts custom levels immutably", () => {
+		const added = addGoalHeatLevel(heatScale);
+		expect(added.levels.map((level) => level.minRatio)).toEqual([
+			0, 0.25, 0.6, 1, 1.25,
+		]);
+		expect(added.levels[4].color).toBe("#393939");
+		expect(heatScale.levels).toHaveLength(4);
+
+		expect(validateGoalHeatLevelRatio(heatScale, 1, -0.1)).toBe(
+			"INVALID"
+		);
+		expect(validateGoalHeatLevelRatio(heatScale, 1, 0.6)).toBe(
+			"DUPLICATE"
+		);
+		expect(validateGoalHeatLevelRatio(heatScale, 0, 0.1)).toBe(
+			"ZERO_LOCKED"
+		);
+
+		const reordered = updateGoalHeatLevelRatio(heatScale, 1, 0.8);
+		expect(reordered.levels.map((level) => level.minRatio)).toEqual([
+			0, 0.6, 0.8, 1,
+		]);
+		expect(removeGoalHeatLevel(reordered, 0)).toEqual(reordered);
+		expect(
+			removeGoalHeatLevel(reordered, 2).levels.map(
+				(level) => level.minRatio
+			)
+		).toEqual([0, 0.6, 1]);
+	});
+
+	it("does not add beyond the visual editor limit", () => {
+		const eightLevels = {
+			...heatScale,
+			levels: Array.from({ length: 8 }, (_, index) => ({
+				minRatio: index * 0.25,
+				color: "#123456",
+			})),
+		};
+		expect(addGoalHeatLevel(eightLevels)).toEqual(eightLevels);
+
+		const twelveLevels = {
+			...heatScale,
+			levels: Array.from({ length: 12 }, (_, index) => ({
+				minRatio: index * 0.1,
+				color: "#123456",
+			})),
+		};
+		expect(addGoalHeatLevel(twelveLevels).levels).toHaveLength(12);
+		expect(
+			updateGoalHeatLevelRatio(twelveLevels, 5, 0.55).levels
+		).toHaveLength(12);
+	});
+
 	it("formats bounded and open-ended percentage labels", () => {
 		expect(formatGoalHeatLevelRange(0.25, 0.6)).toBe("25%–60%");
+		expect(formatGoalHeatLevelRange(0.3333, 0.6666)).toBe(
+			"33.33%–66.66%"
+		);
 		expect(formatGoalHeatLevelRange(1)).toBe("≥ 100%");
 	});
 });
@@ -228,6 +312,47 @@ describe("graph appearance helpers", () => {
 		const rules = applyColorsToCellRules([], colors);
 		expect(rules.map((rule) => rule.color)).toEqual(colors);
 		expect(rules).toHaveLength(4);
+	});
+
+	it.each([1, 3, 6, 8, 20])(
+		"generates and resamples a %i-level palette",
+		(colorCount) => {
+			const generated = generateSequentialPalette("#216e39", colorCount);
+			expect(generated).toHaveLength(colorCount);
+			expect(generated[generated.length - 1]).toBe("#216e39");
+
+			const resampled = resamplePalette(
+				["#ffffff", "#999999", "#000000"],
+				colorCount
+			);
+			expect(resampled).toHaveLength(colorCount);
+			expect(resampled[resampled.length - 1]).toBe("#000000");
+		}
+	);
+
+	it("resamples theme colors without changing goal semantics", () => {
+		const sixLevelScale = {
+			type: "GOAL" as const,
+			goal: 1500,
+			levels: [0, 0.2, 0.4, 0.6, 0.8, 1].map((minRatio, index) => ({
+				minRatio,
+				color: `#${index}${index}${index}${index}${index}${index}`,
+				text: index === 5 ? "★" : undefined,
+			})),
+		};
+		const themed = applyThemeToGoalHeatScale(sixLevelScale, [
+			{ id: "a", min: 1, max: 2, color: "#8dd1e2" },
+			{ id: "b", min: 2, max: 3, color: "#63a1be" },
+			{ id: "c", min: 3, max: 5, color: "#376d93" },
+			{ id: "d", min: 5, max: 9999, color: "#012f60" },
+		]);
+		expect(themed.levels).toHaveLength(6);
+		expect(themed.levels.map((level) => level.minRatio)).toEqual([
+			0, 0.2, 0.4, 0.6, 0.8, 1,
+		]);
+		expect(themed.levels[5].text).toBe("★");
+		expect(themed.levels[0].color).toBe("#8dd1e2");
+		expect(themed.levels[5].color).toBe("#012f60");
 	});
 
 	it("rejects malformed appearance settings", () => {

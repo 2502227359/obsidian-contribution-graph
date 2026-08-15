@@ -22,6 +22,20 @@ describe("resolveGoalHeatLevel", () => {
 	])("maps %i characters to the %f ratio level", (value, ratio) => {
 		expect(resolveGoalHeatLevel(value, scale)?.minRatio).toBe(ratio);
 	});
+
+	it("resolves a custom six-level scale at every boundary", () => {
+		const customScale = {
+			type: "GOAL" as const,
+			goal: 1000,
+			levels: [0, 0.2, 0.4, 0.6, 0.8, 1].map((minRatio) => ({
+				minRatio,
+				color: "#123456",
+			})),
+		};
+		expect([1, 200, 400, 600, 800, 1000].map((value) =>
+			resolveGoalHeatLevel(value, customScale)?.minRatio
+		)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1]);
+	});
 });
 
 describe("tracking coverage", () => {

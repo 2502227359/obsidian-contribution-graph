@@ -8,6 +8,7 @@ import {
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, Notice, Plugin } from "obsidian";
 import { Locals } from "src/i18/messages";
+import { MAX_GOAL_HEAT_LEVELS } from "src/constants";
 import {
 	CollectionScopePeriod,
 	DailyEditStats,
@@ -1677,7 +1678,8 @@ export class EditActivityService {
 			theme.name.trim().length === 0 ||
 			theme.name.trim().length > 64 ||
 			!Array.isArray(theme.colors) ||
-			theme.colors.length !== 4 ||
+			theme.colors.length < 1 ||
+			theme.colors.length > MAX_GOAL_HEAT_LEVELS ||
 			!theme.colors.every(
 				(color) =>
 					typeof color === "string" &&

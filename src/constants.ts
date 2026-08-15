@@ -34,6 +34,10 @@ export const DEFAULT_GOAL_HEAT_LEVELS: GoalHeatLevel[] = [
 	{ minRatio: 1, color: "#216e39" },
 ];
 
+export const MAX_GOAL_HEAT_LEVELS = 20;
+export const MAX_EDITABLE_GOAL_HEAT_LEVELS = 8;
+export const DEFAULT_GOAL_HEAT_LEVEL_STEP = 0.25;
+
 export function createDefaultGoalHeatScale(goal = 1000): GoalHeatScale {
 	return {
 		type: "GOAL",

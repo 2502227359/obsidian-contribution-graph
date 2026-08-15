@@ -504,6 +504,11 @@
 
 .contribution-graph .cell-rule-indicator-container .heat-legend {
 	gap: 2px;
+	max-width: 100%;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-inline: contain;
+	scrollbar-width: thin;
 }
 
 .contribution-graph .cell-rule-indicator-container .tracking-state-legend {
@@ -784,22 +789,106 @@
 .contribution-graph-modal-form .goal-heat-level-list {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: var(--size-2-3);
 	width: 100%;
 }
 
 .contribution-graph-modal-form .goal-heat-level-item {
 	display: grid;
-	grid-template-columns: minmax(72px, auto) auto minmax(48px, 1fr);
+	grid-template-columns: 30px minmax(126px, 1fr) minmax(76px, auto) auto minmax(48px, 64px);
 	align-items: center;
-	gap: 10px;
-	min-height: 32px;
+	gap: var(--size-2-3);
+	min-height: 38px;
+	padding: var(--size-2-2) var(--size-2-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary-alt);
+}
+
+.contribution-graph-modal-form .goal-heat-level-item:focus-within {
+	border-color: var(--background-modifier-border-focus);
+}
+
+.contribution-graph-modal-form .goal-heat-level-item.has-error {
+	border-color: var(--text-error);
+}
+
+.contribution-graph-modal-form .goal-heat-level-threshold {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	min-width: 0;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.contribution-graph-modal-form .goal-heat-level-percentage-input {
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	color: var(--text-muted);
+}
+
+.contribution-graph-modal-form .goal-heat-level-percentage-input input {
+	width: 72px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.contribution-graph-modal-form .goal-heat-level-percentage-input input[readonly] {
+	color: var(--text-muted);
+	background: var(--background-secondary);
 }
 
 .contribution-graph-modal-form .goal-heat-level-range {
 	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
+}
+
+.contribution-graph-modal-form .goal-heat-level-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	font-size: 18px;
+}
+
+.contribution-graph-modal-form .goal-heat-level-remove:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+.contribution-graph-modal-form .goal-heat-level-error {
+	grid-column: 2 / -1;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-error);
+}
+
+.contribution-graph-modal-form .goal-heat-level-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-2-3);
+}
+
+.contribution-graph-modal-form .goal-heat-level-add {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.contribution-graph-modal-form .goal-heat-level-add:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.contribution-graph-modal-form .goal-heat-level-limit {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
 }
 
 .contribution-graph-modal-form .preview-content {
@@ -830,6 +919,21 @@
 .contribution-graph-modal-form .form-item .list-add-button:hover {
 	background-color: var(--interactive-accent-hover);
 	color: var(--text-on-accent);
+}
+
+@media (max-width: 720px) {
+	.contribution-graph-modal-form .goal-heat-level-item {
+		grid-template-columns: 30px minmax(118px, 1fr) auto minmax(48px, 64px);
+	}
+
+	.contribution-graph-modal-form .goal-heat-level-range {
+		grid-column: 2 / -1;
+		grid-row: 2;
+	}
+
+	.contribution-graph-modal-form .goal-heat-level-error {
+		grid-row: 3;
+	}
 }
 
 /* edit button */

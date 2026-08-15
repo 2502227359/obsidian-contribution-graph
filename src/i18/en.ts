@@ -141,7 +141,15 @@ export class En implements Local {
 	form_theme_name_required = "Enter a theme name first";
 	form_theme_save_failed = "Could not save the custom theme (limit: 30)";
 	form_confirm_delete_theme = "Delete this custom theme?";
-	form_goal_heat_levels = "Goal level colors";
+	form_goal_heat_levels = "Goal heat levels";
+	form_goal_heat_level_threshold = "Starts at";
+	form_goal_heat_level_emoji = "Level emoji";
+	form_goal_heat_level_add = "Add level";
+	form_goal_heat_level_remove = "Remove this level";
+	form_goal_heat_level_zero_locked = "The 0% starting level is required";
+	form_goal_heat_level_invalid = "Enter a valid percentage of 0 or greater";
+	form_goal_heat_level_duplicate = "Starting percentages must be unique";
+	form_goal_heat_level_limit = "Add up to {max} levels here; existing larger scales are preserved";
 
     form_button_preview = "Preview";
     form_button_save = "Save";

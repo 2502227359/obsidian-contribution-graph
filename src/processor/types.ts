@@ -10,6 +10,7 @@ import {
 	CollectionScopePeriod,
 } from "src/types";
 import { DEFAULT_GRAPH_APPEARANCE } from "src/render/graphAppearance";
+import { MAX_GOAL_HEAT_LEVELS } from "src/constants";
 import {
 	MISS_CONFIG,
 	MISS_DATASOURCE_OR_DATA,
@@ -258,11 +259,11 @@ export class YamlGraphConfig {
 			if (
 				!Array.isArray(heatScale.levels) ||
 				heatScale.levels.length === 0 ||
-				heatScale.levels.length > 20
+				heatScale.levels.length > MAX_GOAL_HEAT_LEVELS
 			) {
 				throw new GraphProcessError(
 					INVALID_HEAT_SCALE(
-						"levels must contain between 1 and 20 entries"
+						`levels must contain between 1 and ${MAX_GOAL_HEAT_LEVELS} entries`
 					)
 				);
 			}

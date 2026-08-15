@@ -139,6 +139,14 @@ export interface Local {
 	form_theme_save_failed: string;
 	form_confirm_delete_theme: string;
 	form_goal_heat_levels: string;
+	form_goal_heat_level_threshold: string;
+	form_goal_heat_level_emoji: string;
+	form_goal_heat_level_add: string;
+	form_goal_heat_level_remove: string;
+	form_goal_heat_level_zero_locked: string;
+	form_goal_heat_level_invalid: string;
+	form_goal_heat_level_duplicate: string;
+	form_goal_heat_level_limit: string;
 
 	form_button_preview: string;
 	form_button_save: string;

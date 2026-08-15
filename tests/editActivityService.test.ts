@@ -780,6 +780,43 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 	});
 
+	it("accepts one to twenty theme colors and rejects larger palettes", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(plugin as never);
+		await service.initialize();
+		const theme = {
+			id: "variable-palette",
+			name: "Variable palette",
+			colors: ["#123456"],
+			density: "BALANCED" as const,
+			cellGap: 2,
+			highlightToday: true,
+			highlightWeekends: false,
+			enableShadow: false,
+		};
+
+		await expect(service.saveGraphTheme(theme)).resolves.toMatchObject({
+			colors: ["#123456"],
+		});
+		const twentyColors = Array.from({ length: 20 }, (_, index) =>
+			`#${index.toString(16).padStart(6, "0")}`
+		);
+		await expect(
+			service.saveGraphTheme({ ...theme, colors: twentyColors })
+		).resolves.toMatchObject({ colors: twentyColors });
+		await expect(
+			service.saveGraphTheme({ ...theme, colors: [] })
+		).rejects.toThrow("Invalid graph theme");
+		await expect(
+			service.saveGraphTheme({
+				...theme,
+				colors: [...twentyColors, "#ffffff"],
+			})
+		).rejects.toThrow("Invalid graph theme");
+		expect(service.getGraphThemes()[0].colors).toEqual(twentyColors);
+		await service.unload();
+	});
+
 	it("backs up existing data before import and restores the latest backup", async () => {
 		const plugin = createPlugin(createStoredData(4));
 		const service = new EditActivityService(
