@@ -48,6 +48,7 @@ import {
 export function GraphForm(props: {
 	yamlConfig: YamlGraphConfig;
 	onSubmit: (yamlGraphConfig: YamlGraphConfig) => void;
+	onCancel?: () => void;
 	app: App;
 	activityService: EditActivityService;
 }): JSX.Element {
@@ -68,7 +69,7 @@ export function GraphForm(props: {
 	);
 	const [selectedThemeId, setSelectedThemeId] = useState("custom");
 	const [themeName, setThemeName] = useState("");
-	const [paletteBaseColor, setPaletteBaseColor] = useState("#216e39");
+	const [paletteBaseColor, setPaletteBaseColor] = useState("#0a6cdb");
 	const [dimensionsLinked, setDimensionsLinked] = useState(
 		!yamlConfig.cellStyle?.minWidth ||
 			yamlConfig.cellStyle?.minWidth === yamlConfig.cellStyle?.minHeight
@@ -302,7 +303,7 @@ export function GraphForm(props: {
 		const defaults = new YamlGraphConfig();
 		setSelectedThemeId("default");
 		setThemeName("");
-		setPaletteBaseColor("#216e39");
+		setPaletteBaseColor("#0a6cdb");
 		setDimensionsLinked(true);
 		const rules = formData.graphType === "hourly" ? TIME_HOURLY_RULES : DEFAULT_RULES;
 		setCellRules(rules.map((rule) => ({ ...rule })));
@@ -406,14 +407,19 @@ export function GraphForm(props: {
 	};
 
 	return (
-		<>
+		<div className="cg-editor-shell">
+			<div className="cg-editor-workspace">
+				<section className="cg-editor-settings" aria-label="图表配置">
 			<Tab
 				activeIndex={0}
 				tabs={[
 					{
-						title: local.form_basic_settings,
+						title: "内容",
 						children: (
-							<div className="contribution-graph-modal-form">
+							<div
+								className="contribution-graph-modal-form cg-editor-content-panel"
+								data-editor-section="content"
+							>
 								<div className="form-group">
 									<div className="form-item">
 										<span className="label">
@@ -661,35 +667,16 @@ export function GraphForm(props: {
 						),
 					},
 					{
-						title: local.form_style_settings,
+						title: "外观",
 						children: (
-							<div className="contribution-graph-modal-form">
+							<div
+								className="contribution-graph-modal-form cg-editor-appearance-panel"
+								data-editor-section="appearance"
+							>
 								<div className="form-group">
 									<div className="style-section-heading">
 										<span>{local.form_quick_style}</span>
 										<small>{local.form_auto_preview}</small>
-									</div>
-									<div className="form-item">
-										<span className="label">
-											{local.form_title_font_size_label}
-										</span>
-										<div className="form-content">
-											<NumberInput
-												defaultValue={getTitleFontSize()}
-												onChange={(value) => {
-													changeFormData(
-														"titleStyle",
-														{
-															...formData.titleStyle,
-															fontSize:
-																value + "px",
-														}
-													);
-												}}
-												min={1}
-												max={128}
-											/>
-										</div>
 									</div>
 									<div className="form-item">
 										<span className="label">
@@ -750,74 +737,6 @@ export function GraphForm(props: {
 											</div>
 										</div>
 									)}
-
-									<div className="form-item">
-										<span className="label">
-											{local.form_main_container_bg_color}
-										</span>
-										<div className="form-content">
-											<ColorPicker
-												color={
-													formData.mainContainerStyle
-														?.backgroundColor
-												}
-												onChange={(color) => {
-													setSelectedThemeId("custom");
-													changeFormData(
-														"mainContainerStyle",
-														{
-															...formData.mainContainerStyle,
-															backgroundColor:
-																color,
-														}
-													);
-												}}
-												onReset={(color) => {
-													setSelectedThemeId("custom");
-													changeFormData(
-														"mainContainerStyle",
-														{
-															...formData.mainContainerStyle,
-															backgroundColor:
-																color,
-														}
-													);
-												}}
-											/>
-										</div>
-									</div>
-
-									<div className="form-item">
-										<span className="label">
-											{
-												local.form_enable_main_container_shadow
-											}
-										</span>
-										<div className="form-content">
-											<input
-												name="enableMainContainerShadow"
-												type="checkbox"
-												className="checkbox"
-												checked={
-													formData.enableMainContainerShadow
-												}
-												onChange={(e) => {
-													setSelectedThemeId("custom");
-													if (e.target.checked) {
-														changeFormData(
-															"enableMainContainerShadow",
-															true
-														);
-													} else {
-														changeFormData(
-															"enableMainContainerShadow",
-															false
-														);
-													}
-												}}
-											/>
-										</div>
-									</div>
 
 									<div className="form-item">
 										<span className="label">
@@ -1081,18 +1000,83 @@ export function GraphForm(props: {
 											</div>
 										</div>
 									</div>
+								</div>
+							</div>
+						),
+					},
+					{
+						title: "高级",
+						children: (
+							<div
+								className="contribution-graph-modal-form cg-editor-advanced-panel"
+								data-editor-section="advanced"
+							>
+								<div className="form-group">
+									<div className="style-section-heading">
+										<span>高级外观设置</span>
+										<small>低频选项，修改后实时预览</small>
+									</div>
+									<div className="form-item">
+										<span className="label">{local.form_title_font_size_label}</span>
+										<div className="form-content">
+											<NumberInput
+												defaultValue={getTitleFontSize()}
+												onChange={(value) =>
+													changeFormData("titleStyle", {
+														...formData.titleStyle,
+														fontSize: value + "px",
+													})
+												}
+												min={1}
+												max={128}
+											/>
+										</div>
+									</div>
+									<div className="form-item">
+										<span className="label">{local.form_main_container_bg_color}</span>
+										<div className="form-content">
+											<ColorPicker
+												color={formData.mainContainerStyle?.backgroundColor}
+												onChange={(color) => {
+													setSelectedThemeId("custom");
+													changeFormData("mainContainerStyle", {
+														...formData.mainContainerStyle,
+														backgroundColor: color,
+													});
+												}}
+												onReset={(color) => {
+													setSelectedThemeId("custom");
+													changeFormData("mainContainerStyle", {
+														...formData.mainContainerStyle,
+														backgroundColor: color,
+													});
+												}}
+											/>
+										</div>
+									</div>
+									<div className="form-item">
+										<span className="label">{local.form_enable_main_container_shadow}</span>
+										<div className="form-content">
+											<input
+												name="enableMainContainerShadow"
+												type="checkbox"
+												className="checkbox"
+												checked={formData.enableMainContainerShadow}
+												onChange={(event) => {
+													setSelectedThemeId("custom");
+													changeFormData("enableMainContainerShadow", event.target.checked);
+												}}
+											/>
+										</div>
+									</div>
 									<div className="form-item">
 										<span className="label">
-											{isGoalSource
-												? local.form_goal_heat_levels
-												: local.form_cell_style_rules}
+											{isGoalSource ? local.form_goal_heat_levels : local.form_cell_style_rules}
 										</span>
 										<div className="form-vertical-content">
 											{isGoalSource ? (
 												<GoalHeatScaleFormItem
-													heatScale={
-														formData.heatScale
-													}
+													heatScale={formData.heatScale}
 													onChange={(heatScale) => {
 														setSelectedThemeId("custom");
 														changeFormData("heatScale", heatScale);
@@ -1100,89 +1084,68 @@ export function GraphForm(props: {
 												/>
 											) : (
 												<>
-													{cellRules.map((rule) => {
-														return (
-															<CellRuleItem
-																rule={rule}
-																key={rule.id}
-																onChange={(
-																	newRule
-																) => {
-																	const newRules =
-																		cellRules.map(
-																			(
-																				r
-																			) =>
-																				r.id ==
-																				newRule.id
-																					? newRule
-																					: r
-																		);
-																		setCellRules(
-																			newRules
-																		);
-																		setSelectedThemeId("custom");
-																}}
-																onRemove={(
-																	id: string
-																) => {
-																	const newRules =
-																		cellRules.filter(
-																			(
-																				r
-																			) =>
-																				r.id !=
-																				id
-																		);
-																	setCellRules(
-																		newRules
-																	);
-																}}
-															/>
-														);
-													})}
-													<button
-														onClick={() =>
-															addCellRule()
-														}
-														className="list-add-button"
-													>
-														+
-													</button>
+													{cellRules.map((rule) => (
+														<CellRuleItem
+															rule={rule}
+															key={rule.id}
+															onChange={(newRule) => {
+																setCellRules(cellRules.map((current) =>
+																	current.id === newRule.id ? newRule : current
+																));
+																setSelectedThemeId("custom");
+															}}
+															onRemove={(id) => setCellRules(cellRules.filter((rule) => rule.id !== id))}
+														/>
+													))}
+													<button type="button" onClick={addCellRule} className="list-add-button">+</button>
 												</>
 											)}
 										</div>
 									</div>
+									<details className="cg-editor-about">
+										<summary>{local.form_about}</summary>
+										<About />
+									</details>
 								</div>
 							</div>
 						),
 					},
-					{
-						title: local.form_about,
-						children: <About />,
-					},
 				]}
 			></Tab>
-			<div className="contribution-graph-modal-form">
-				<div
-					className="preview-container"
-					ref={previewContainerRef}
-				></div>
-				<div className="form-item">
-					<div className="form-content contribution-graph-form-actions">
-						<button className="button" onClick={restoreStyleDefaults}>
-							{local.form_restore_style_defaults}
-						</button>
-						<button className="button" onClick={onPreview}>
-							{local.form_button_preview}
-						</button>
-						<button className="button" onClick={onSubmit}>
-							{local.form_button_save}
-						</button>
-					</div>
-				</div>
+				</section>
+				<section className="cg-editor-preview" aria-label="实时预览">
+					<div className="cg-preview-heading">实时预览</div>
+					<div
+						className="preview-graph preview-container"
+						ref={previewContainerRef}
+					></div>
+				</section>
 			</div>
-		</>
+			<footer className="cg-editor-footer">
+				<div className="cg-editor-footer-secondary">
+					<button
+						type="button"
+						className="cg-button"
+						onClick={restoreStyleDefaults}
+					>
+						{local.form_restore_style_defaults}
+					</button>
+				</div>
+				<div className="cg-editor-footer-actions">
+					<button type="button" className="cg-button" onClick={onPreview}>
+						{local.form_button_preview}
+					</button>
+					{props.onCancel && (
+						<button type="button" className="cg-button" onClick={props.onCancel}>
+							取消
+						</button>
+					)}
+					<button type="button" className="cg-button cg-button-primary" onClick={onSubmit}>
+						{local.form_button_save}
+					</button>
+				</div>
+			</footer>
+		</div>
 	);
 }
 

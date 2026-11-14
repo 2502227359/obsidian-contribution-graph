@@ -157,6 +157,7 @@ export class CodeBlockProcessor {
 				renderConfig.data = time.data;
 				renderConfig.hourlyData = time.hourlyData;
 				renderConfig.timeTracking = true;
+				renderConfig.activityFolders = normalizeTrackedFolders(graphConfig.dataSource.folders || []);
 				renderConfig.valueUnit = "分钟";
 				if (graphConfig.graphType === "hourly") {
 					renderConfig.heatScale = undefined;

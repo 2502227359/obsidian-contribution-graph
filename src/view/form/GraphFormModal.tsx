@@ -26,8 +26,19 @@ export class ContributionGraphCreateModal extends Modal {
 
 	async onOpen() {
 		const { contentEl } = this;
+		this.modalEl.addClass("contribution-graph-editor-modal");
+		const header = contentEl.createDiv({ cls: "cg-editor-header" });
+		header.createEl("h2", {
+			cls: "cg-editor-title",
+			text: this.originalConfigContent ? "编辑贡献图" : "新建贡献图",
+		});
+		header.createEl("p", {
+			cls: "cg-editor-subtitle",
+			text: "调整设置后实时预览，保存时写入当前图表配置",
+		});
 		const rootContainer = createDiv({
 			parent: contentEl,
+			cls: "cg-editor-root",
 		});
 
 		let yamlConfig: YamlGraphConfig;
@@ -81,6 +92,7 @@ export class ContributionGraphCreateModal extends Modal {
 				<GraphForm
 					yamlConfig={yamlConfig}
 					onSubmit={onSubmit}
+					onCancel={() => this.close()}
 					app={this.app}
 					activityService={this.activityService}
 				/>

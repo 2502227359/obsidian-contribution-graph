@@ -14,6 +14,7 @@ import { mountEditButtonToCodeblock } from "./view/codeblock/CodeblockEditButton
 import { Locals } from "./i18/messages";
 import "../style/styles.css";
 import "../style/timeGraph.css";
+import "../style/apple.css";
 import { EditActivityService } from "./activity/EditActivityService";
 import { EditActivitySettingTab } from "./activity/EditActivitySettingTab";
 import { TimeActivityObserver } from "./time/TimeActivityObserver";

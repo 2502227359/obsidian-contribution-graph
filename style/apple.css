@@ -1,0 +1,1042 @@
+/*
+ * 苹果风格视觉覆盖层。
+ *
+ * 这是独立覆盖层：图表内联热力颜色和用户自定义格子尺寸始终优先。
+ * 所有选择器都限定在贡献图表面内，不影响仓库中的其他插件和正文。
+ */
+
+.contribution-graph,
+.contribution-graph-settings,
+.contribution-graph-editor-modal {
+	--cg-font-family: var(--font-interface);
+	--cg-blue: #007aff;
+	--cg-blue-soft: color-mix(in srgb, var(--cg-blue) 12%, transparent);
+	--cg-blue-wash: color-mix(in srgb, var(--cg-blue) 6%, transparent);
+	--cg-surface: var(--background-primary);
+	--cg-surface-raised: var(--background-primary-alt, var(--background-secondary));
+	--cg-surface-grouped: var(--background-secondary);
+	--cg-surface-data: var(--background-primary);
+	--cg-border: color-mix(
+		in srgb,
+		var(--background-modifier-border) 72%,
+		transparent
+	);
+	--cg-border-strong: color-mix(
+		in srgb,
+		var(--background-modifier-border-hover) 78%,
+		transparent
+	);
+	--cg-text: var(--text-normal);
+	--cg-text-muted: var(--text-muted);
+	--cg-text-faint: var(--text-faint);
+	--cg-radius-card: 16px;
+	--cg-radius-control: 8px;
+	--cg-radius-small: 10px;
+	--cg-shadow-card: 0 8px 28px rgba(15, 23, 42, 0.07),
+		0 1px 2px rgba(15, 23, 42, 0.04);
+	--cg-shadow-float: 0 14px 38px rgba(15, 23, 42, 0.14),
+		0 2px 8px rgba(15, 23, 42, 0.08);
+	--cg-motion-fast: 140ms ease;
+	--cg-motion: 180ms ease;
+	font-family: var(--cg-font-family);
+}
+
+.theme-dark .contribution-graph,
+.theme-dark .contribution-graph-settings,
+.theme-dark .contribution-graph-editor-modal {
+	--cg-surface: var(--background-primary);
+	--cg-surface-raised: var(--background-primary-alt, var(--background-secondary));
+	--cg-surface-grouped: var(--background-secondary);
+	--cg-surface-data: var(--background-primary);
+	--cg-shadow-card: 0 8px 28px rgba(0, 0, 0, 0.22),
+		0 1px 2px rgba(0, 0, 0, 0.25);
+	--cg-shadow-float: 0 16px 42px rgba(0, 0, 0, 0.38),
+		0 2px 8px rgba(0, 0, 0, 0.24);
+}
+
+.theme-light .contribution-graph,
+.theme-light .contribution-graph-settings,
+.theme-light .contribution-graph-editor-modal {
+	--cg-surface-data: var(--background-primary);
+}
+
+/* 图表表面 */
+
+.contribution-graph {
+	--cg-font-family: var(--font-text);
+	container: cg-chart / inline-size;
+	box-sizing: border-box;
+	color: var(--cg-text);
+	font-size: var(--font-ui-medium);
+}
+
+.contribution-graph *,
+.contribution-graph-settings *,
+.contribution-graph-editor-modal * {
+	box-sizing: border-box;
+}
+
+.contribution-graph .main {
+	background: var(--cg-surface);
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-card);
+	box-shadow: var(--cg-shadow-card);
+	padding: 20px 18px 16px;
+	grid-template-columns: minmax(0, 1fr);
+	justify-content: stretch;
+	row-gap: 14px;
+	overflow: hidden;
+}
+
+.contribution-graph .main.shadow {
+	box-shadow: var(--cg-shadow-card);
+}
+
+.contribution-graph .main .graph-header {
+	align-items: flex-start;
+	column-gap: 18px;
+	row-gap: 12px;
+	margin: 0;
+	padding: 0 2px;
+}
+
+.contribution-graph .main .graph-heading {
+	min-width: 0;
+	flex: 1 1 240px;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+}
+
+.contribution-graph .main .graph-header > .title,
+.contribution-graph .main .graph-heading .title {
+	flex: 0 1 auto;
+	min-width: 0;
+	font-size: var(--font-ui-large);
+	font-weight: 650;
+	line-height: 1.2;
+	letter-spacing: -0.01em;
+	color: var(--cg-text);
+}
+
+.contribution-graph .main .graph-subtitle {
+	font-size: var(--font-ui-small);
+	line-height: 1.35;
+	color: var(--cg-text-muted);
+}
+
+
+.contribution-graph .main > .cg-metric {
+	width: 100%;
+	min-width: 128px;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	font-variant-numeric: tabular-nums;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .main .cg-metric-number {
+	font-size: clamp(28px, 3vw, 32px);
+	font-weight: 650;
+	line-height: 1.05;
+	letter-spacing: -0.02em;
+	color: var(--cg-text);
+}
+
+.contribution-graph .main .cg-metric-value {
+	display: inline-flex;
+	align-items: baseline;
+	justify-content: flex-start;
+	gap: 4px;
+	font-variant-numeric: tabular-nums;
+}
+
+.contribution-graph .main .cg-metric-unit,
+.contribution-graph .main .cg-metric-caption {
+	font-size: var(--font-ui-smaller);
+	line-height: 1.25;
+}
+
+.contribution-graph .main .cg-metric-unit {
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .main .cg-metric-caption {
+	color: var(--cg-text-muted);
+}
+
+/* 内容层使用稳定实底，保持热力颜色和对比度。 */
+
+.contribution-graph .main .charts,
+.contribution-graph .main .charts.default,
+.contribution-graph .main .charts.month-track,
+.contribution-graph .main .charts.calendar,
+.contribution-graph .main .charts.hourly {
+	background: var(--cg-surface-data);
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+}
+
+.contribution-graph .main .charts.default {
+	padding: 30px 12px 10px;
+}
+
+.contribution-graph .main .charts.month-track {
+	padding: 24px 12px 10px;
+}
+
+.contribution-graph .main .charts.calendar {
+	padding: 12px;
+}
+
+.contribution-graph .main .charts .column:first-child,
+.contribution-graph .main .charts.hourly .hourly-axis {
+	background-color: var(--cg-surface-data);
+	box-shadow: 8px 0 12px -12px var(--cg-border-strong);
+}
+
+.contribution-graph .main .charts .month-indicator,
+.contribution-graph .main .charts .week-indicator,
+.contribution-graph .main .charts .hourly-date-label,
+.contribution-graph .main .charts .hourly-hour-label,
+.contribution-graph .main .charts .hourly-axis-title {
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.01em;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .main .charts .month-indicator,
+.contribution-graph .main .charts .hourly-date-label {
+	background: var(--cg-surface-data);
+}
+
+.contribution-graph .main .charts .cell {
+	border-radius: var(--cg-cell-radius, 3px);
+	transition: box-shadow var(--cg-motion-fast), outline-color var(--cg-motion-fast),
+		background-color var(--cg-motion-fast);
+}
+
+.contribution-graph .main .charts .cell[data-date]:not(.future):hover {
+	z-index: 2;
+	transform: none;
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--cg-blue) 42%, transparent);
+}
+
+.contribution-graph .main .charts .cell[data-date]:focus-visible {
+	z-index: 3;
+	outline: 2px solid var(--cg-blue);
+	outline-offset: 2px;
+}
+
+.contribution-graph .main .charts .cell[data-date].is-today:not(.is-selected) {
+	box-shadow: inset 0 0 0 1px var(--cg-blue);
+}
+
+.contribution-graph .main .charts .cell[data-date].is-selected {
+	z-index: 3;
+	box-shadow: 0 0 0 1px var(--cg-surface-data), 0 0 0 3px var(--cg-blue);
+}
+
+.contribution-graph .main .charts .cell.future {
+	border-color: var(--cg-border-strong);
+	background: transparent;
+}
+
+.contribution-graph .main .charts .cell.untracked {
+	background-color: var(--cg-surface-grouped);
+}
+
+.contribution-graph .main .charts .cell.partial {
+	background-blend-mode: normal;
+}
+
+/* 小时图保留 24 行，同时收窄日期列。 */
+
+.contribution-graph .main .charts.hourly {
+	gap: 0;
+	padding: 8px 10px 10px;
+	contain: inline-size;
+}
+
+.contribution-graph .main .charts.hourly .hourly-axis {
+	width: 42px;
+	min-width: 42px;
+	flex-basis: 42px;
+}
+
+.contribution-graph .main .charts.hourly .hourly-day-column {
+	width: max(24px, var(--cg-cell-size));
+	min-width: max(24px, var(--cg-cell-size));
+	margin-left: 4px;
+}
+
+.contribution-graph .main .charts.hourly .hourly-date-label {
+	min-width: max(24px, var(--cg-cell-size));
+	height: 22px;
+	margin-bottom: 4px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.contribution-graph .main .charts.hourly .hourly-hour-label,
+.contribution-graph .main .charts.hourly .hourly-cell {
+	margin-bottom: var(--cg-cell-gap);
+}
+
+.contribution-graph .main .charts.hourly .hourly-hour-label {
+	width: 42px;
+	min-width: 42px;
+	padding-right: 8px;
+}
+
+.contribution-graph .main .charts.hourly .hourly-cell {
+	border-radius: var(--cg-cell-radius, 3px);
+}
+
+/* 图例作为安静的页脚，可换行但不推动格子布局。 */
+
+.contribution-graph .main .graph-legend,
+.contribution-graph .main > .cell-rule-indicator-container {
+	display: flex;
+	flex: 1 1 100%;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 10px 16px;
+	min-width: 0;
+	margin: 0;
+	padding: 2px 2px 0;
+	font-size: var(--font-ui-smaller);
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .main .graph-legend .cell-rule-indicator-container {
+	flex: 1 1 auto;
+	justify-content: flex-start;
+	gap: 8px 14px;
+}
+
+.contribution-graph .main .cell-rule-indicator-container .heat-legend,
+.contribution-graph .main .cell-rule-indicator-container .tracking-state-legend {
+	gap: 4px;
+}
+
+.contribution-graph .main .cell-rule-indicator-container .state-legend-item {
+	gap: 6px;
+}
+
+.contribution-graph .main .cell-rule-indicator-container .cell {
+		box-shadow: none;
+		transform: none;
+}
+
+/* 详情面板 */
+
+.contribution-graph .activity-container {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+	align-items: start;
+	gap: 16px;
+	margin-top: 14px;
+	padding: 16px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-raised);
+}
+
+.contribution-graph .activity-container .activity-summary,
+.contribution-graph .activity-container .cg-detail-summary {
+	min-width: 0;
+	padding: 2px 32px 2px 0;
+	font-size: var(--font-ui-small);
+}
+
+.contribution-graph .activity-container .cg-detail-heading,
+.contribution-graph .activity-container .activity-date {
+	margin: 0 0 4px;
+	font-size: var(--font-ui-medium);
+	font-weight: 650;
+	line-height: 1.25;
+	font-variant-numeric: tabular-nums;
+	color: var(--cg-text);
+}
+
+.contribution-graph .activity-container .cg-detail-value {
+	display: flex;
+	align-items: baseline;
+	gap: 4px;
+	margin-top: 8px;
+	font-size: 24px;
+	font-weight: 650;
+	line-height: 1.05;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+	color: var(--cg-text);
+}
+
+.contribution-graph .activity-container .cg-detail-meta {
+	display: block;
+	margin-top: 4px;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .activity-container .activity-stats {
+	grid-template-columns: repeat(4, minmax(64px, 1fr));
+	gap: 8px;
+	margin-top: 14px;
+}
+
+.contribution-graph .activity-container .activity-stat {
+	min-width: 0;
+	padding: 10px 11px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-data);
+}
+
+.contribution-graph .activity-container .activity-stat.goal {
+	border-color: color-mix(in srgb, var(--cg-blue) 58%, var(--cg-border));
+	background: var(--cg-blue-wash);
+}
+
+.contribution-graph .activity-container .activity-stat-label {
+	font-size: var(--font-ui-smaller);
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .activity-container .activity-stat-value {
+	margin-top: 3px;
+	font-size: var(--font-ui-medium);
+	font-weight: 650;
+	color: var(--cg-text);
+}
+
+.contribution-graph .activity-container .activity-content {
+	width: 100%;
+	min-width: 0;
+	max-width: none;
+	gap: 8px;
+	padding: 12px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-data);
+}
+
+.contribution-graph .activity-container .activity-content .activity-list {
+	gap: 0;
+	max-height: clamp(180px, 38vh, 360px);
+	padding-right: 2px;
+	font-size: var(--font-ui-small);
+	color: var(--cg-text);
+}
+
+.contribution-graph .activity-container .activity-content .activity-list .activity-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 8px;
+	padding: 9px 4px;
+	border-bottom: 1px solid var(--cg-border);
+}
+
+.contribution-graph .activity-container .activity-list .cg-document-main {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	gap: 2px;
+}
+
+.contribution-graph .activity-container .activity-list .cg-document-name,
+.contribution-graph .activity-container .activity-list .label {
+	min-width: 0;
+	padding: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--cg-text);
+}
+
+.contribution-graph .activity-container .activity-list .cg-document-path {
+	min-width: 0;
+	font-size: var(--font-ui-smaller);
+	color: var(--cg-text-faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.contribution-graph .activity-container .activity-list .cg-document-value,
+.contribution-graph .activity-container .activity-list .description {
+	padding: 0;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .activity-container .activity-list .activity-item:hover {
+	background: var(--cg-blue-wash);
+}
+
+.contribution-graph .activity-container .activity-warnings {
+	gap: 6px;
+	margin-top: 14px;
+	padding: 10px 12px;
+	border: 1px solid color-mix(in srgb, var(--text-warning) 36%, var(--cg-border));
+	border-left-width: 3px;
+	border-radius: var(--cg-radius-small);
+	background: color-mix(in srgb, var(--text-warning) 7%, var(--cg-surface-data));
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph .activity-container .close-button {
+	top: 10px;
+	right: 10px;
+	width: 28px;
+	height: 28px;
+	min-width: 28px;
+	min-height: 28px;
+	border-radius: 50%;
+	font-size: 20px;
+	color: var(--cg-text-muted);
+	transition: background-color var(--cg-motion-fast), color var(--cg-motion-fast);
+}
+
+.contribution-graph .activity-container .close-button:hover,
+.contribution-graph .activity-container .close-button:focus-visible {
+	border-color: transparent;
+	background: var(--cg-blue-soft);
+	color: var(--cg-blue);
+}
+
+/* 编辑器弹窗 */
+
+.contribution-graph-editor-modal {
+	width: min(1120px, calc(100vw - 48px));
+	max-width: calc(100vw - 48px);
+	height: min(860px, 90vh);
+	max-height: 90vh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.contribution-graph-editor-modal .modal-content {
+	width: 100%;
+	max-width: none;
+	max-height: none;
+	min-height: 0;
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	padding: 0;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-card);
+	background: var(--cg-surface);
+	box-shadow: var(--cg-shadow-float);
+	overflow: hidden;
+}
+
+.contribution-graph-editor-modal .cg-editor-root {
+	display: flex;
+	flex: 1 1 auto;
+	min-height: 0;
+	min-width: 0;
+}
+
+.contribution-graph-editor-modal .cg-editor-shell {
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	font-family: var(--cg-font-family);
+}
+
+.contribution-graph-editor-modal .cg-editor-header {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	padding: 18px 22px 14px;
+	border-bottom: 1px solid var(--cg-border);
+	background: color-mix(in srgb, var(--cg-surface) 86%, var(--cg-surface-grouped));
+}
+
+.contribution-graph-editor-modal .cg-editor-header .cg-editor-title {
+	margin: 0;
+	font-size: var(--font-ui-large);
+	font-weight: 650;
+	line-height: 1.2;
+	color: var(--cg-text);
+}
+
+.contribution-graph-editor-modal .cg-editor-header .cg-editor-subtitle {
+	margin: 0;
+	font-size: var(--font-ui-small);
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph-editor-modal .cg-editor-workspace {
+	display: grid;
+	grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.08fr);
+	gap: 18px;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+	padding: 18px 22px;
+	overflow: auto;
+}
+
+.contribution-graph-editor-modal .cg-editor-settings,
+.contribution-graph-editor-modal .cg-editor-preview {
+	min-width: 0;
+	min-height: 0;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-data);
+}
+
+.contribution-graph-editor-modal .cg-editor-settings {
+	overflow: auto;
+}
+
+.contribution-graph-editor-modal .cg-editor-preview {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.contribution-graph-editor-modal .cg-preview-heading {
+	padding: 12px 14px;
+	border-bottom: 1px solid var(--cg-border);
+	font-size: var(--font-ui-small);
+	font-weight: 650;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph-editor-modal .preview-graph,
+.contribution-graph-editor-modal .preview-content {
+	min-width: 0;
+	overflow: auto;
+	padding: 14px;
+}
+
+.contribution-graph-editor-modal .tab-container {
+	gap: 12px;
+	min-width: 0;
+	padding: 14px;
+	overflow: visible;
+}
+
+.contribution-graph-editor-modal .form-item {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 6px;
+}
+
+.contribution-graph-editor-modal .form-item .label {
+	width: 100%;
+	padding: 0;
+	justify-content: flex-start;
+	line-height: 1.5;
+	font-size: var(--font-ui-small);
+	font-weight: 550;
+}
+
+.contribution-graph-editor-modal .form-item .label:empty {
+	display: none;
+}
+
+.contribution-graph-editor-modal .form-item .form-content,
+.contribution-graph-editor-modal .form-item .form-vertical-content {
+	min-width: 0;
+	width: 100%;
+}
+
+.contribution-graph-editor-modal .form-item select,
+.contribution-graph-editor-modal .form-item input {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.contribution-graph-editor-modal .tab-container .tab-titles {
+	gap: 2px;
+	padding: 3px;
+	border-radius: var(--cg-radius-control);
+	background: var(--cg-surface-grouped);
+}
+
+.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title {
+	border: 0;
+	box-shadow: none;
+	background: transparent;
+		min-width: 0;
+		flex: 1 1 0;
+		padding: 7px 10px;
+		border-radius: 6px;
+		font-size: var(--font-ui-small);
+		color: var(--cg-text-muted);
+		transition: background-color var(--cg-motion-fast), color var(--cg-motion-fast),
+			box-shadow var(--cg-motion-fast);
+}
+
+.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title.active {
+		background: var(--cg-surface-data);
+		box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+		color: var(--cg-text);
+		font-weight: 600;
+}
+
+.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title:hover {
+		background: var(--cg-blue-wash);
+		color: var(--cg-blue);
+}
+
+.contribution-graph-editor-modal .tab-container .tab-items .tab-item {
+	padding: 0;
+}
+
+.contribution-graph-editor-modal .cg-editor-footer {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	flex-wrap: wrap;
+	padding: 12px 22px 16px;
+	border-top: 1px solid var(--cg-border);
+	background: color-mix(in srgb, var(--cg-surface) 90%, var(--cg-surface-grouped));
+}
+
+.contribution-graph-editor-modal .cg-editor-footer-secondary,
+.contribution-graph-editor-modal .cg-editor-footer-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.contribution-graph-editor-modal .cg-editor-footer .cg-button,
+.contribution-graph-editor-modal .cg-editor-footer .cg-button-primary {
+	min-height: 34px;
+	padding: 7px 14px;
+	border: 1px solid var(--cg-border-strong);
+	border-radius: var(--cg-radius-control);
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	transition: background-color var(--cg-motion-fast), border-color var(--cg-motion-fast),
+		color var(--cg-motion-fast);
+}
+
+.contribution-graph-editor-modal .cg-editor-footer .cg-button-primary {
+	border-color: var(--cg-blue);
+	background: var(--cg-blue);
+	color: var(--text-on-accent, #fff);
+}
+
+.contribution-graph-editor-modal .cg-editor-footer .cg-button-primary:hover {
+	filter: brightness(1.06);
+}
+
+.contribution-graph-editor-modal .cg-editor-footer .cg-button:not(.cg-button-primary) {
+	background: transparent;
+	color: var(--cg-text);
+}
+
+.contribution-graph-editor-modal .cg-editor-footer .cg-button:not(.cg-button-primary):hover {
+	border-color: var(--cg-blue);
+	background: var(--cg-blue-wash);
+	color: var(--cg-blue);
+}
+
+/* 设置页使用分组列表层级，不再堆叠第二套卡片网格。 */
+
+.contribution-graph-settings {
+	max-width: 760px;
+	padding: 24px 22px 40px;
+	font-family: var(--cg-font-family);
+	color: var(--cg-text);
+}
+
+.contribution-graph-settings .cg-settings-header {
+	margin-bottom: 20px;
+}
+
+.contribution-graph-settings .cg-settings-header h1,
+.contribution-graph-settings .cg-settings-header h2,
+.contribution-graph-settings > h2:first-of-type {
+	margin: 0;
+	font-size: 24px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+	color: var(--cg-text);
+}
+
+.contribution-graph-settings .cg-settings-header .subtitle,
+.contribution-graph-settings .contribution-graph-settings-intro {
+	max-width: 620px;
+	margin: 6px 0 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	font-size: var(--font-ui-small);
+	line-height: 1.45;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph-settings .cg-settings-section,
+.contribution-graph-settings .contribution-graph-settings-section {
+	margin: 22px 0 0;
+	padding: 0;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-card);
+	background: var(--cg-surface-raised);
+	overflow: hidden;
+}
+
+.contribution-graph-settings .cg-settings-section-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 16px 9px;
+}
+
+.contribution-graph-settings .cg-settings-section-head .title,
+.contribution-graph-settings .cg-settings-section-head h2,
+.contribution-graph-settings .cg-settings-section-head h3 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+	font-weight: 650;
+	color: var(--cg-text);
+}
+
+.contribution-graph-settings .cg-settings-status {
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph-settings .setting-item {
+	margin: 0;
+	padding: 12px 16px;
+	border-top: 1px solid var(--cg-border);
+	background: transparent;
+}
+
+.contribution-graph-settings .setting-item:first-of-type {
+	border-top: 0;
+}
+
+.contribution-graph-settings .setting-item:hover {
+	background: var(--cg-blue-wash);
+}
+
+.contribution-graph-settings .setting-item-name {
+	font-size: var(--font-ui-small);
+	font-weight: 550;
+	color: var(--cg-text);
+}
+
+.contribution-graph-settings .setting-item-description {
+	font-size: var(--font-ui-smaller);
+	line-height: 1.4;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph-settings .contribution-graph-counting-summary {
+	max-width: none;
+	margin: 12px 16px;
+	padding: 12px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-data);
+}
+
+.contribution-graph-settings .contribution-graph-counting-summary-items {
+	gap: 6px;
+}
+
+.contribution-graph-settings .contribution-graph-counting-summary-items span {
+	padding: 4px 8px;
+	border: 1px solid var(--cg-border);
+	border-radius: 999px;
+	background: var(--cg-surface-grouped);
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph-settings .contribution-graph-tracked-folder-item {
+	margin: 0 16px 10px;
+	padding-left: 12px;
+	border-left-color: var(--cg-border-strong);
+}
+
+.contribution-graph-settings .cg-settings-section[data-section="data"] .setting-item:last-child,
+.contribution-graph-settings .cg-settings-section[data-section="data"] .is-danger {
+	color: var(--text-error);
+}
+
+.contribution-graph-settings .cg-settings-section[data-section="data"] .is-danger:hover {
+	background: color-mix(in srgb, var(--text-error) 7%, transparent);
+}
+
+/* 原生控件样式只作用于插件拥有的表面。 */
+
+.contribution-graph-settings,
+.contribution-graph-editor-modal {
+	--interactive-accent: #007aff;
+	--interactive-accent-hover: #006fe6;
+	--interactive-accent-hsl: 211, 100%, 50%;
+}
+
+.contribution-graph-settings input[type="checkbox"],
+.contribution-graph-settings input[type="radio"],
+.contribution-graph-editor-modal input[type="checkbox"],
+.contribution-graph-editor-modal input[type="radio"] {
+	accent-color: var(--cg-blue);
+}
+
+.contribution-graph-editor-modal input:not([type="checkbox"]):not([type="radio"]),
+.contribution-graph-editor-modal select,
+.contribution-graph-editor-modal textarea,
+.contribution-graph-settings input:not([type="checkbox"]):not([type="radio"]),
+.contribution-graph-settings select,
+.contribution-graph-settings textarea {
+	min-height: 32px;
+	border-radius: var(--cg-radius-control);
+	border-color: var(--cg-border-strong);
+	background: var(--cg-surface-data);
+	color: var(--cg-text);
+	transition: border-color var(--cg-motion-fast), box-shadow var(--cg-motion-fast),
+		background-color var(--cg-motion-fast);
+}
+
+.contribution-graph-editor-modal input:focus,
+.contribution-graph-editor-modal select:focus,
+.contribution-graph-editor-modal textarea:focus,
+.contribution-graph-settings input:focus,
+.contribution-graph-settings select:focus,
+.contribution-graph-settings textarea:focus {
+	border-color: var(--cg-blue);
+	box-shadow: 0 0 0 3px var(--cg-blue-soft);
+}
+
+.contribution-graph-editor-modal button:focus-visible,
+.contribution-graph-settings button:focus-visible {
+	outline: 2px solid var(--cg-blue);
+	outline-offset: 2px;
+}
+
+/* 优先用容器查询切换布局，媒体查询作为回退。 */
+
+@container cg-chart (max-width: 600px) {
+	.contribution-graph .activity-container {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.contribution-graph .activity-container .activity-stats {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.contribution-graph .main {
+		padding: 16px 12px 12px;
+	}
+}
+
+.contribution-graph-editor-modal .cg-editor-shell {
+	container: cg-editor / inline-size;
+}
+
+@container cg-editor (max-width: 860px) {
+	.contribution-graph-editor-modal .cg-editor-workspace {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 860px) {
+	.contribution-graph-editor-modal .cg-editor-workspace {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 720px) {
+	.contribution-graph .main {
+		padding: 16px 12px 12px;
+	}
+
+	.contribution-graph .main .graph-header {
+		padding: 0;
+	}
+
+	.contribution-graph .main .graph-heading,
+	.contribution-graph .main > .cg-metric {
+		flex-basis: 100%;
+		align-items: flex-start;
+	}
+
+	.contribution-graph .main .charts.default {
+		padding-inline: 8px;
+	}
+
+	.contribution-graph .activity-container {
+		grid-template-columns: 1fr;
+		padding: 14px;
+	}
+
+	.contribution-graph .activity-container .activity-summary,
+	.contribution-graph .activity-container .cg-detail-summary {
+		padding-right: 26px;
+	}
+
+	.contribution-graph .activity-container .activity-stats {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.contribution-graph-editor-modal .cg-editor-workspace {
+		padding: 12px;
+	}
+
+	.contribution-graph-editor-modal .cg-editor-header {
+		padding-inline: 14px;
+	}
+
+	.contribution-graph-editor-modal .cg-editor-footer {
+		padding-inline: 14px;
+	}
+
+	.contribution-graph-settings {
+		padding: 18px 12px 32px;
+	}
+}
+
+@media (prefers-contrast: more) {
+	.contribution-graph .main,
+	.contribution-graph .activity-container,
+	.contribution-graph-editor-modal .modal-content,
+	.contribution-graph-settings .cg-settings-section,
+	.contribution-graph-settings .contribution-graph-settings-section {
+		border-color: var(--background-modifier-border-hover);
+		box-shadow: none;
+	}
+
+	.contribution-graph .main .charts .cell[data-date].is-selected {
+		outline: 2px solid var(--cg-blue);
+		outline-offset: 1px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.contribution-graph *,
+	.contribution-graph-settings *,
+	.contribution-graph-editor-modal * {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		scroll-behavior: auto !important;
+	}
+
+	.contribution-graph .main .charts .cell[data-date]:not(.future):hover {
+		transform: none;
+	}
+}

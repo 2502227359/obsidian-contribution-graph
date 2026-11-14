@@ -88,10 +88,3 @@
 .contribution-graph .charts.hourly .hourly-missing {
 	visibility: hidden;
 }
-
-.contribution-graph .time-total {
-	flex: 0 0 auto;
-	font-size: var(--font-ui-smaller);
-	font-variant-numeric: tabular-nums;
-	color: var(--text-muted);
-}

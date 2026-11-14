@@ -8,7 +8,10 @@ import {
 import { ContributionGraphCreateModal } from "../form/GraphFormModal";
 import { EditActivityService } from "src/activity/EditActivityService";
 import { Locals } from "src/i18/messages";
-import { createCodeblockYamlEdit } from "./codeblockSource";
+import {
+	applyCodeblockYamlEdit,
+	createCodeblockYamlEdit,
+} from "./codeblockSource";
 
 export function mountEditButtonToCodeblock(
 	app: App,
@@ -62,22 +65,39 @@ export function mountEditButtonToCodeblock(
 					return;
 				}
 				const section = ctx.getSectionInfo(renderedEl);
-				const edit = section
-					? createCodeblockYamlEdit(
-							(line) => sourceView.editor.getLine(line),
-							section,
-							content
-					  )
-					: undefined;
-				if (!edit) {
+				if (!section) {
 					new Notice(Locals.get().codeblock_edit_unavailable);
 					return;
 				}
-				sourceView.editor.replaceRange(
-					edit.insert,
-					edit.from,
-					edit.to
-				);
+				if (sourceView.getMode() === "source") {
+					const edit = createCodeblockYamlEdit(
+						(line) => sourceView.editor.getLine(line),
+						section,
+						content
+					);
+					if (!edit) {
+						new Notice(Locals.get().codeblock_edit_unavailable);
+						return;
+					}
+					sourceView.editor.replaceRange(edit.insert, edit.from, edit.to);
+					return;
+				}
+				const file = sourceView.file;
+				if (!file) {
+					new Notice(Locals.get().codeblock_edit_unavailable);
+					return;
+				}
+				void app.vault.process(file, (source) => {
+					const updated = applyCodeblockYamlEdit(source, section, content);
+					if (updated === undefined) {
+						new Notice(Locals.get().codeblock_edit_unavailable);
+						return source;
+					}
+					return updated;
+				}).catch((error) => {
+					console.error(error);
+					new Notice(Locals.get().codeblock_edit_unavailable);
+				});
 			}
 		).open();
 	};

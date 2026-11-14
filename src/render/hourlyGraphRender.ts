@@ -115,7 +115,7 @@ export class HourlyGraphRender extends BaseGraphRender {
 		for (let hour = 0; hour < 24; hour++) {
 			const label = createDiv({
 				cls: ["hourly-hour-label", "cell"],
-				text: `${String(hour).padStart(2, "0")}:00`,
+				text: hour % 3 === 0 ? `${String(hour).padStart(2, "0")}:00` : "",
 				parent: axis,
 			});
 			this.applyCellGlobalStylePartial(label, graphConfig, ["height", "minHeight", "maxHeight"]);
@@ -135,7 +135,7 @@ export class HourlyGraphRender extends BaseGraphRender {
 		});
 		const dateLabel = createDiv({
 			cls: ["hourly-date-label", "hourly-day-label"],
-			text: column.date.slice(5),
+			text: dayIndex % 3 === 0 ? column.date.slice(5) : "",
 			parent: dayColumn,
 		});
 		dateLabel.title = column.date;

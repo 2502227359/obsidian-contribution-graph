@@ -16,7 +16,7 @@ import { Locals } from "src/i18/messages";
 import { resolveGoalHeatLevel } from "./heatScale";
 import { resolveCellNavigationIndex } from "./cellKeyboardNavigation";
 import { normalizeGraphAppearance } from "./graphAppearance";
-import { formatDuration } from "../time/timeData";
+import { durationParts, getDetailHeading, getDocumentPresentation, getGraphContext, getGraphMetric } from "./graphPresentation";
 
 export interface GraphRender {
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void;
@@ -102,13 +102,18 @@ export abstract class BaseGraphRender implements GraphRender {
 			cls: "graph-header",
 			parent,
 		});
+		const heading = createDiv({ cls: "graph-heading", parent: header });
 		if (hasTitle) {
-			this.renderTitle(graphConfig, header);
+			this.renderTitle(graphConfig, heading);
 		}
-		this.renderCellRuleIndicator(graphConfig, header, contributionData);
-		if (graphConfig.timeTracking) {
-			createDiv({ cls: "time-total", parent: header, text: `范围累计：${formatDuration(contributionData.reduce((sum, cell) => sum + (cell.timeStats?.seconds || 0), 0))}` });
-		}
+		createDiv({ cls: "graph-subtitle", parent: heading, text: getGraphContext(graphConfig, contributionData) });
+		const metric = getGraphMetric(graphConfig, contributionData);
+		const metricEl = createDiv({ cls: "cg-metric", parent });
+		const valueEl = createDiv({ cls: "cg-metric-value", parent: metricEl, attr: { "aria-label": metric.text } });
+		renderMetricParts(valueEl, metric.parts);
+		createDiv({ cls: "cg-metric-caption", parent: metricEl, text: metric.caption });
+		const legend = createDiv({ cls: "graph-legend", parent });
+		this.renderCellRuleIndicator(graphConfig, legend, contributionData);
 		return header;
 	}
 
@@ -234,6 +239,8 @@ export abstract class BaseGraphRender implements GraphRender {
 		graphConfig: ContributionGraphConfig,
 		parent: HTMLElement
 	): HTMLElement {
+		const legend = parent.querySelector(".graph-legend");
+		if (legend) parent.appendChild(legend);
 		const activityContainer = createDiv({
 			cls: "activity-container",
 			parent: parent,
@@ -319,7 +326,9 @@ export abstract class BaseGraphRender implements GraphRender {
 				cellData.tracked !== undefined ||
 				cellData.trackingState
 		);
-		if (isEditActivity && !graphConfig.timeTracking) {
+		if (graphConfig.timeTracking) {
+			this.renderTimeActivitySummary(graphConfig, cellData, contaienr);
+		} else if (isEditActivity) {
 			this.renderEditActivitySummary(
 				graphConfig,
 				cellData,
@@ -362,7 +371,7 @@ export abstract class BaseGraphRender implements GraphRender {
 					items.length.toString()
 				)
 		);
-		renderActivityItem(items.slice(0, size), list);
+		renderActivityItem(items.slice(0, size), list, graphConfig);
 
 		const navigation = createDiv({
 			cls: "activity-navigation",
@@ -382,7 +391,8 @@ export abstract class BaseGraphRender implements GraphRender {
 				page++;
 				renderActivityItem(
 					items.slice((page - 1) * size, page * size),
-					list
+					list,
+					graphConfig
 				);
 				list.scrollTo({
 					top: Math.max(0, previousScrollHeight - 16),
@@ -393,6 +403,23 @@ export abstract class BaseGraphRender implements GraphRender {
 				}
 			};
 		}
+	}
+
+	private renderTimeActivitySummary(config: ContributionGraphConfig, cell: ContributionCellData, parent: HTMLElement): void {
+		const summary = createDiv({ cls: "activity-summary cg-detail-summary", parent });
+		createDiv({ cls: "cg-detail-heading", parent: summary, text: getDetailHeading(cell) });
+		const untracked = cell.trackingState === "UNTRACKED" || cell.tracked === false;
+		const value = createDiv({ cls: "cg-detail-value", parent: summary });
+		if (untracked) value.textContent = "未采集";
+		else renderMetricParts(value, durationParts(cell.timeStats?.seconds ?? cell.value * 60));
+		const goal = config.heatScale?.goal;
+		const meta = goal && cell.hour === undefined ? `每日目标 ${goal} 分钟 · 已完成 ${Math.round(cell.value / goal * 100)}%` : "阅读与编辑的活跃使用时长";
+		createDiv({ cls: "cg-detail-meta", parent: summary, text: meta });
+		const warnings: string[] = [];
+		if (untracked) warnings.push("该时段未采集数据，不代表没有活动。");
+		if (cell.trackingState === "PARTIAL") warnings.push("该时段仅部分时间处于采集范围内。");
+		if (cell.timeStats?.policyChanged) warnings.push("当日调整过空闲阈值，记录按各时段规则累计。");
+		if (warnings.length) createDiv({ cls: "activity-warnings", parent: summary, text: warnings.join(" ") });
 	}
 
 	restoreSelectedActivity(
@@ -845,46 +872,43 @@ export abstract class BaseGraphRender implements GraphRender {
 	}
 }
 
-function renderActivityItem(items: ContributionItem[], listMain: HTMLElement) {
-	(items || []).slice(0, 10).forEach((item) => {
-		const listItem = createDiv({
-			cls: "activity-item",
-			parent: listMain,
-		});
-		listItem.setAttribute("role", "listitem");
+function renderMetricParts(parent: HTMLElement, parts: { value: string; unit: string }[]): void {
+	for (const part of parts) {
+		createSpan({ cls: "cg-metric-number", parent, text: part.value });
+		createSpan({ cls: "cg-metric-unit", parent, text: part.unit });
+	}
+}
 
-		const labelEl =
-			item.link || item.open
-				? createEl("a", {
-						text: item.label,
-						parent: listItem,
-						cls: `label ${item.link?.className || ""}`,
-				  })
-				: createSpan({
-						text: item.label,
-						parent: listItem,
-						cls: "label",
-				  });
-		labelEl.ariaLabel = item.label;
-		if (item.link) {
-			const link = item.link;
-			labelEl.setAttribute("data-href", link.href || "#");
-			labelEl.setAttribute("href", link.href || "#");
-			labelEl.setAttribute("target", link.target || "_blank");
-			labelEl.setAttribute("rel", link.rel || "noopener");
-		}
-		labelEl.onclick = (event) => {
-			if (item.open) {
-				event.preventDefault();
-				item.open(event);
-			}
-		};
-		if (item.description) {
-			createSpan({
-				text: item.description,
-				parent: listItem,
-				cls: "description",
-			});
-		}
-	});
+function renderActivityItem(items: ContributionItem[], listMain: HTMLElement, config: ContributionGraphConfig): void {
+	for (const item of items.slice(0, 10)) {
+		const listItem = createDiv({ cls: "activity-item", parent: listMain, attr: { role: "listitem" } });
+		const main = createDiv({ cls: "cg-document-main", parent: listItem });
+		const presentation = getDocumentPresentation(item, Boolean(config.timeTracking), config.valueUnit);
+		const label = createActivityLabel(item, main);
+		label.classList.add("cg-document-name");
+		label.textContent = presentation.name;
+		if (presentation.path) createSpan({ cls: "cg-document-path", parent: main, text: presentation.path });
+		if (presentation.detail) createSpan({ cls: "description cg-document-description", parent: main, text: presentation.detail });
+		createSpan({ cls: "cg-document-value", parent: listItem, text: presentation.value });
+	}
+}
+
+function createActivityLabel(item: ContributionItem, parent: HTMLElement): HTMLElement {
+	const label = item.link || item.open
+		? createEl("a", { parent, cls: `label ${item.link?.className || ""}` })
+		: createSpan({ parent, cls: "label" });
+	label.ariaLabel = item.label;
+	label.title = item.label;
+	if (item.link) {
+		label.setAttribute("data-href", item.link.href || "#");
+		label.setAttribute("href", item.link.href || "#");
+		label.setAttribute("target", item.link.target || "_blank");
+		label.setAttribute("rel", item.link.rel || "noopener");
+	}
+	label.onclick = event => {
+		if (!item.open) return;
+		event.preventDefault();
+		void item.open(event);
+	};
+	return label;
 }

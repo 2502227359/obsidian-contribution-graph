@@ -63,6 +63,24 @@ export function createCodeblockYamlEdit(
 	};
 }
 
+/** 在已读入的正文中应用保守的代码块替换，并保留原文件换行符。 */
+export function applyCodeblockYamlEdit(
+	source: string,
+	section: CodeblockSectionRange,
+	content: string
+): string | undefined {
+	const lines = source.split(/\r\n|\n|\r/);
+	const edit = createCodeblockYamlEdit((line) => lines[line], section, content);
+	if (!edit) {
+		return undefined;
+	}
+	const breaks = [...source.matchAll(/\r\n|\n|\r/g)];
+	const offsets = [0, ...breaks.map(match => match.index! + match[0].length)];
+	const newline = breaks[section.lineStart]?.[0] || "\n";
+	return source.slice(0, offsets[edit.from.line]) +
+		edit.insert.replace(/\n/g, newline) + source.slice(offsets[edit.to.line]);
+}
+
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
