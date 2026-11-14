@@ -40,6 +40,9 @@ import {
 	intentMatchesUserEvent,
 	TrustedInputIntent,
 } from "./trustedInput";
+import { TimeTracker } from "../time/timeTracker";
+import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths } from "../time/timeData";
+import { TimeSpan, TimeStatsQuery } from "../time/types";
 
 interface CompositionState {
 	startDocument: Text;
@@ -73,7 +76,7 @@ export interface DailyEditStatsQuery {
 }
 
 export interface EditActivityChangeEvent {
-	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT";
+	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT" | "TIME_STATS";
 	date?: string;
 	filePath?: string;
 }
@@ -81,7 +84,7 @@ export interface EditActivityChangeEvent {
 const SAVE_DEBOUNCE_MS = 2000;
 const SAVE_RETRY_MS = 5000;
 const MAX_SAVE_RETRIES = 3;
-const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
+const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
 const AUTOMATIC_BACKUP_PREFIX = "data.backup-";
 
 export class EditActivityBackupError extends Error {
@@ -114,12 +117,18 @@ export class EditActivityService {
 	private trustedCompositions = new WeakSet<EditorView>();
 	private backupSequence = 0;
 	private readonly now: () => Date;
+	private readonly timeTracker: TimeTracker;
+	private lastTimePath?: string;
 
 	constructor(
 		private readonly plugin: Plugin,
-		now: () => Date = () => new Date()
+		now: () => Date = () => new Date(),
+		monotonic: () => number = () => performance.now()
 	) {
 		this.now = now;
+		this.timeTracker = new TimeTracker(span => this.recordTimeSpan(span), {
+			wall: () => this.now().getTime(), monotonic,
+		});
 	}
 
 	async initialize(): Promise<void> {
@@ -162,7 +171,96 @@ export class EditActivityService {
 			this.scheduleSave();
 		}
 		this.captureTemporalState();
+		this.timeTracker.setIdleTimeout(this.store.settings.idleTimeoutMinutes);
+		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
 		this.scheduleMidnightRefresh();
+	}
+
+	recordTimeActivity(path: string): void {
+		this.lastTimePath = path;
+		if (!this.store.settings.timeTrackingEnabled || !isFileInTrackedFolders(path, this.store.settings.trackedFolders)) {
+			this.timeTracker.pause();
+			return;
+		}
+		this.timeTracker.activity(path);
+	}
+
+	checkpointTimeActivity(): void {
+		this.timeTracker.checkpoint();
+		if (this.store.settings.timeTrackingEnabled) void this.flush();
+	}
+
+	pauseTimeActivity(): void {
+		this.timeTracker.pause();
+		this.lastTimePath = undefined;
+	}
+
+	getTimeTrackingStatus(): string {
+		if (!this.store.settings.timeTrackingEnabled) return "时长统计：未启用";
+		if (this.lastTimePath && !isFileInTrackedFolders(this.lastTimePath, this.store.settings.trackedFolders)) return "时长统计：笔记不在范围内";
+		return this.timeTracker.getStatus() === "ACTIVE" ? "时长统计：计时中" : "时长统计：空闲暂停";
+	}
+
+	async setTimeTrackingEnabled(enabled: boolean): Promise<void> {
+		if (enabled === this.store.settings.timeTrackingEnabled) return;
+		this.pauseTimeActivity();
+		this.closeTimeCoverage();
+		this.store.settings.timeTrackingEnabled = enabled;
+		if (enabled) this.openTimeCoverage();
+		this.markDirty();
+		this.emitChange({ type: "TIME_STATS" });
+		await this.flush();
+	}
+
+	async setIdleTimeoutMinutes(minutes: number): Promise<void> {
+		if (!Number.isSafeInteger(minutes) || minutes <= 0 || minutes > 10080) throw new Error("空闲阈值必须为 1—10080 的整数分钟");
+		if (minutes === this.store.settings.idleTimeoutMinutes) return;
+		this.timeTracker.setIdleTimeout(minutes);
+		this.store.settings.idleTimeoutMinutes = minutes;
+		this.store.timeActivity.policyChanges.push({ at: this.now().getTime(), idleTimeoutMinutes: minutes });
+		this.markDirty();
+		this.emitChange({ type: "TIME_STATS" });
+		await this.flush();
+	}
+
+	getDailyTimeStats(query: TimeStatsQuery = {}) {
+		return queryTimeStats(this.store.timeActivity, query, this.now().getTime(), false);
+	}
+
+	getHourlyTimeStats(query: TimeStatsQuery = {}) {
+		return queryTimeStats(this.store.timeActivity, query, this.now().getTime(), true);
+	}
+
+	getTimeCellInfo(start: number, end: number, folders: string[] = []) {
+		const now = this.now().getTime();
+		return { trackingState: getTimeTrackingState(this.store.timeActivity, start, end, folders, now), future: start > now };
+	}
+
+	private recordTimeSpan(span: TimeSpan): void {
+		addTimeSpan(this.store.timeActivity, span);
+		this.markDirty();
+		this.emitChange({ type: "TIME_STATS", filePath: span.path });
+		this.scheduleSave();
+	}
+
+	private openTimeCoverage(): void {
+		const periods = this.store.timeActivity.periods;
+		if (periods.length && periods[periods.length - 1].end === undefined) return;
+		periods.push({ start: this.now().getTime(), folders: [...this.store.settings.trackedFolders] });
+		this.markDirty();
+		this.scheduleSave();
+	}
+
+	private closeTimeCoverage(): void {
+		const periods = this.store.timeActivity.periods;
+		const last = periods[periods.length - 1];
+		if (last && last.end === undefined) last.end = Math.max(last.start, this.now().getTime());
+	}
+
+	private resetTimeTrackingAfterReplacement(): void {
+		this.timeTracker.setIdleTimeout(this.store.settings.idleTimeoutMinutes);
+		this.closeTimeCoverage();
+		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
 	}
 
 	createEditorExtension(): Extension {
@@ -290,6 +388,8 @@ export class EditActivityService {
 		newPath: string,
 		isFolder: boolean
 	): void {
+		this.pauseTimeActivity();
+		const timeChanged = renameTimePaths(this.store.timeActivity, oldPath, newPath, isFolder);
 		this.flushAllPendingEdits();
 		const changedDates = migrateDocumentPaths(
 			this.store.dailyStats,
@@ -329,7 +429,7 @@ export class EditActivityService {
 		if (
 			changedDates.length === 0 &&
 			!trackedFoldersChanged &&
-			!scopeFoldersChanged
+			!scopeFoldersChanged && !timeChanged
 		) {
 			return;
 		}
@@ -434,8 +534,11 @@ export class EditActivityService {
 		) {
 			return;
 		}
+		this.pauseTimeActivity();
+		this.closeTimeCoverage();
 		this.flushAllPendingEdits();
 		this.store.settings.trackedFolders = normalized;
+		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
 		this.resetTrustedInputState();
 		if (this.store.settings.trackingEnabled) {
 			this.closeOpenCollectionScopePeriod();
@@ -447,18 +550,21 @@ export class EditActivityService {
 	}
 
 	exportData(): string {
+		this.checkpointTimeActivity();
 		return JSON.stringify(this.store, null, 2);
 	}
 
 	async importData(serialized: string): Promise<void> {
 		if (new TextEncoder().encode(serialized).byteLength > MAX_IMPORT_BYTES) {
-			throw new Error("Edit activity import exceeds 10 MB");
+			throw new Error("统计数据导入超过 100 MB");
 		}
 		this.flushAllPendingEdits();
 		const parsed = JSON.parse(serialized);
 		const importedStore = this.normalizeStore(parsed, true);
+		this.pauseTimeActivity();
 		await this.createAutomaticBackup("import");
 		this.store = importedStore;
+		this.resetTimeTrackingAfterReplacement();
 		this.resetTrustedInputState();
 		if (this.store.settings.trackingEnabled) {
 			this.ensureOpenTrackingPeriod();
@@ -472,8 +578,11 @@ export class EditActivityService {
 	}
 
 	async clearData(): Promise<void> {
+		this.pauseTimeActivity();
 		this.flushAllPendingEdits();
 		await this.createAutomaticBackup("clear");
+		this.store.timeActivity = createEmptyTimeActivity();
+		this.resetTimeTrackingAfterReplacement();
 		const trackingEnabled = this.store.settings.trackingEnabled;
 		this.store.dailyStats = Object.create(null);
 		this.store.trackingPeriods = trackingEnabled
@@ -528,6 +637,7 @@ export class EditActivityService {
 	}
 
 	async restoreLatestBackup(): Promise<string | undefined> {
+		this.pauseTimeActivity();
 		this.flushAllPendingEdits();
 		const backupPath = await this.getLatestBackupPath();
 		if (!backupPath) {
@@ -552,6 +662,7 @@ export class EditActivityService {
 
 		await this.createAutomaticBackup("restore");
 		this.store = restoredStore;
+		this.resetTimeTrackingAfterReplacement();
 		this.resetTrustedInputState();
 		if (this.store.settings.trackingEnabled) {
 			this.ensureOpenTrackingPeriod();
@@ -574,11 +685,13 @@ export class EditActivityService {
 	}
 
 	handleAppSuspend(): void {
+		this.pauseTimeActivity();
 		this.flushAllPendingEdits();
 		void this.flush();
 	}
 
 	async flush(): Promise<void> {
+		this.timeTracker.checkpoint();
 		if (this.saveTimer !== null) {
 			window.clearTimeout(this.saveTimer);
 			this.saveTimer = null;
@@ -621,6 +734,9 @@ export class EditActivityService {
 
 	async unload(): Promise<void> {
 		this.unloading = true;
+		this.pauseTimeActivity();
+		this.closeTimeCoverage();
+		if (this.store.settings.timeTrackingEnabled) this.markDirty();
 		if (this.midnightTimer !== null) {
 			window.clearTimeout(this.midnightTimer);
 			this.midnightTimer = null;
@@ -1309,6 +1425,7 @@ export class EditActivityService {
 	private createEmptyStore(): EditActivityStore {
 		return {
 			schemaVersion: EMPTY_EDIT_ACTIVITY_STORE.schemaVersion,
+			timeActivity: createEmptyTimeActivity(),
 			settings: {
 				...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 				trackedFolders: [],
@@ -1338,7 +1455,7 @@ export class EditActivityService {
 			strict &&
 			(!Number.isSafeInteger(numericSchemaVersion) ||
 				numericSchemaVersion < 1 ||
-				numericSchemaVersion > 10)
+				numericSchemaVersion > 11)
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -1630,9 +1747,18 @@ export class EditActivityService {
 			}
 		}
 
+		if (strict && numericSchemaVersion >= 11 && (
+			typeof candidate.settings?.timeTrackingEnabled !== "boolean" ||
+			!Number.isSafeInteger(candidate.settings?.idleTimeoutMinutes) ||
+			(candidate.settings?.idleTimeoutMinutes || 0) <= 0 ||
+			(candidate.settings?.idleTimeoutMinutes || 0) > 10080
+		)) throw new Error("时长统计设置无效");
 		return {
-			schemaVersion: 10,
+			schemaVersion: 11,
+			timeActivity: normalizeTimeActivity(candidate.timeActivity, strict && numericSchemaVersion >= 11),
 			settings: {
+				timeTrackingEnabled: candidate.settings?.timeTrackingEnabled === true,
+				idleTimeoutMinutes: Number.isSafeInteger(candidate.settings?.idleTimeoutMinutes) && candidate.settings!.idleTimeoutMinutes > 0 && candidate.settings!.idleTimeoutMinutes <= 10080 ? candidate.settings!.idleTimeoutMinutes : 5,
 				trackingEnabled:
 					candidate.settings?.trackingEnabled === true,
 				excludeWhitespace:

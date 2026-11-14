@@ -13,15 +13,25 @@ import { ContributionGraphCreateModal } from "./view/form/GraphFormModal";
 import { mountEditButtonToCodeblock } from "./view/codeblock/CodeblockEditButtonMount";
 import { Locals } from "./i18/messages";
 import "../style/styles.css";
+import "../style/timeGraph.css";
 import { EditActivityService } from "./activity/EditActivityService";
 import { EditActivitySettingTab } from "./activity/EditActivitySettingTab";
+import { TimeActivityObserver } from "./time/TimeActivityObserver";
 
 export default class ContributionGraph extends Plugin {
 	activityService: EditActivityService;
+	private timeObserver: TimeActivityObserver;
 
 	async onload() {
 		this.activityService = new EditActivityService(this);
 		await this.activityService.initialize();
+		this.timeObserver = new TimeActivityObserver(this, {
+			activity: path => this.activityService.recordTimeActivity(path),
+			pause: () => this.activityService.pauseTimeActivity(),
+			checkpoint: () => this.activityService.checkpointTimeActivity(),
+			status: () => this.activityService.getTimeTrackingStatus(),
+		});
+		this.app.workspace.onLayoutReady(() => this.timeObserver.start());
 		this.registerEditorExtension(
 			this.activityService.createEditorExtension()
 		);
@@ -41,6 +51,7 @@ export default class ContributionGraph extends Plugin {
 	}
 
 	async onunload() {
+		this.timeObserver?.stop();
 		// @ts-ignore
 		window.renderContributionGraph = undefined;
 		// @ts-ignore
@@ -71,6 +82,7 @@ export default class ContributionGraph extends Plugin {
 							file.path,
 							false
 						);
+						this.timeObserver.handlePathRename();
 					}
 					return;
 				}
@@ -80,6 +92,7 @@ export default class ContributionGraph extends Plugin {
 						file.path,
 						true
 					);
+					this.timeObserver.handlePathRename();
 				}
 			})
 		);
@@ -112,6 +125,8 @@ export default class ContributionGraph extends Plugin {
 		};
 		//@ts-ignore
 		window.contributionGraphApi = {
+			getDailyTimeStats: (query?: import("./time/types").TimeStatsQuery) => this.activityService.getDailyTimeStats(query),
+			getHourlyTimeStats: (query?: import("./time/types").TimeStatsQuery) => this.activityService.getHourlyTimeStats(query),
 			getDailyEditStats: (query?: {
 				fromDate?: string;
 				toDate?: string;

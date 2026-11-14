@@ -1,4 +1,5 @@
 import { DEFAULT_RULES } from "./constants";
+import { TimeStats } from "./time/types";
 
 export interface DailyEditStats {
 	date: string;
@@ -74,6 +75,8 @@ export interface SavedGraphTheme {
 }
 
 export class ContributionGraphConfig {
+	timeTracking?: boolean;
+	hourlyData?: ContributionCellData[];
 	/**
 	 * the title of the graph
 	 */
@@ -169,7 +172,7 @@ export class ContributionGraphConfig {
 	 *
 	 * default value: `default`
 	 */
-	graphType: "default" | "month-track" | "calendar" = "default";
+	graphType: "default" | "month-track" | "calendar" | "hourly" = "default";
 
 	/**
 	 * value range: 0->Sunday, 1->Monday, 2->Tuesday, 3->Wednesday, 4->Thursday, 5->Friday, 6->Saturday
@@ -199,6 +202,7 @@ export class ContributionGraphConfig {
 }
 
 export interface Contribution {
+	timeStats?: TimeStats;
 	/**
 	 * the date of the contribution, format: yyyy-MM-dd
 	 */
@@ -244,6 +248,8 @@ export interface CellStyleRule {
 }
 
 export class ContributionCellData {
+	hour?: number;
+	timeStats?: TimeStats;
 	date: string; // yyyy-MM-dd
 	weekDay: number; // 0 - 6
 	month: number; // 0 - 11

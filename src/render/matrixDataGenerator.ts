@@ -100,9 +100,10 @@ export function generateByFixedDate(
 			summary: contribution ? contribution.summary : undefined,
 			items: contribution ? contribution.items || [] : [],
 			editStats: contribution?.editStats,
-			tracked,
-			trackingState,
-			future,
+			timeStats: contribution?.timeStats,
+			tracked: contribution?.timeStats ? contribution.timeStats.trackingState !== "UNTRACKED" : tracked,
+			trackingState: contribution?.timeStats?.trackingState || trackingState,
+			future: contribution?.timeStats?.future ?? future,
 		});
 	}
 

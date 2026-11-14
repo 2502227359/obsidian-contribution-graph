@@ -31,6 +31,7 @@ export const titleAlignChooseOptions: ChooseOption[] = [
 ];
 
 export const graphOptions: SelectOption<string>[] = [
+	{ label: "时段分布（日期 × 小时）", value: "hourly" },
 	{
 		label: Locals.get().form_graph_type_git,
 		value: "default",
@@ -96,6 +97,7 @@ export const cellShapes: SelectOption<string>[] = [
 ];
 
 export const dataSourceTypes: SelectOption<DataSourceType>[] = [
+	{ label: "活跃使用时长（阅读＋编辑）", value: "TIME_ACTIVITY" },
 	{
 		label: Locals.get().form_datasource_type_page,
 		value: "PAGE",

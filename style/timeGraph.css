@@ -1,0 +1,97 @@
+.contribution-graph .charts.hourly {
+	position: relative;
+	display: flex;
+	align-items: flex-start;
+	width: 100%;
+	min-width: 0;
+	padding: 0 0 var(--size-4-2);
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-inline: contain;
+	scrollbar-width: thin;
+	touch-action: pan-x;
+}
+
+.contribution-graph .charts.hourly .hourly-axis,
+.contribution-graph .charts.hourly .hourly-day-column {
+	flex: 0 0 auto;
+}
+
+.contribution-graph .charts.hourly .hourly-axis {
+	position: sticky;
+	left: 0;
+	z-index: 3;
+	width: 48px;
+	min-width: 48px;
+	flex: 0 0 48px;
+	background: var(--background-primary);
+	box-shadow: 6px 0 8px -8px var(--background-modifier-border-hover);
+}
+
+.contribution-graph .charts.hourly .hourly-day-column {
+	width: max(42px, var(--cg-cell-size));
+	min-width: max(42px, var(--cg-cell-size));
+	margin-left: var(--cg-cell-gap);
+	align-items: center;
+}
+
+.contribution-graph .charts.hourly .hourly-date-label {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 24px;
+	min-width: 42px;
+	margin-bottom: var(--cg-cell-gap);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	background: var(--background-primary);
+	color: var(--text-muted);
+}
+
+.contribution-graph .charts.hourly .hourly-axis-title {
+	width: 48px;
+	min-width: 48px;
+	justify-content: flex-start;
+	padding-left: var(--size-2-2);
+}
+
+.contribution-graph .charts.hourly .hourly-hour-label,
+.contribution-graph .charts.hourly .hourly-cell {
+	box-sizing: border-box;
+	width: var(--cg-cell-size);
+	height: var(--cg-cell-size);
+	min-width: var(--cg-cell-size);
+	min-height: var(--cg-cell-size);
+	margin-bottom: var(--cg-cell-gap);
+}
+
+.contribution-graph .charts.hourly .hourly-hour-label {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	width: 48px;
+	min-width: 48px;
+	padding-right: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.contribution-graph .charts.hourly .hourly-cell {
+	padding: 0;
+}
+
+.contribution-graph .charts.hourly .hourly-missing {
+	visibility: hidden;
+}
+
+.contribution-graph .time-total {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}

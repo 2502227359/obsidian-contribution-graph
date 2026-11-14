@@ -31,6 +31,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		const settings = this.activityService.getSettings();
 		containerEl.empty();
 		containerEl.addClass("contribution-graph-settings");
+		this.createTimeSettings(containerEl);
 
 		containerEl.createEl("h2", {
 			text: local.settings_activity_heading,
@@ -263,7 +264,9 @@ export class EditActivitySettingTab extends PluginSettingTab {
 				return;
 			}
 			try {
-				await this.activityService.importData(await file.text());
+				const serialized = await file.text();
+				if (!window.confirm("导入会替换当前字数和时长统计；不含时长的旧备份会清空现有时长。替换前会自动备份。继续导入？")) return;
+				await this.activityService.importData(serialized);
 				new Notice(local.settings_import_success);
 				this.display();
 			} catch (error) {
@@ -343,6 +346,31 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		link.download = "contribution-graph-edit-activity.json";
 		link.click();
 		window.setTimeout(() => URL.revokeObjectURL(url), 0);
+	}
+
+	private createTimeSettings(container: HTMLElement): void {
+		const settings = this.activityService.getSettings();
+		this.createSectionHeading(container, "活跃使用时长");
+		new Setting(container).setName("启用时长统计")
+			.setDesc("自动累计 Markdown 笔记的阅读和编辑时长，与字数统计独立。后台、弹窗和空闲时暂停；仅保存本机统计，不保存正文。")
+			.addToggle(toggle => toggle.setValue(settings.timeTrackingEnabled).onChange(async enabled => {
+				await this.activityService.setTimeTrackingEnabled(enabled);
+				this.display();
+			}));
+		new Setting(container).setName("空闲阈值（分钟）")
+			.setDesc("默认 5 分钟，允许 1—10080 的整数。最后一次正文操作后继续计时到阈值；静止阅读可能少计，前台挂机可能多计。修改仅影响后续记录。")
+			.addText(text => {
+				text.setValue(String(settings.idleTimeoutMinutes));
+				text.inputEl.type = "number";
+				text.inputEl.min = "1";
+				text.inputEl.max = "10080";
+				text.inputEl.step = "1";
+				text.inputEl.addEventListener("change", async () => {
+					try { await this.activityService.setIdleTimeoutMinutes(Number(text.getValue())); }
+					catch { new Notice("请输入 1—10080 的整数分钟，原设置未变更。"); text.setValue(String(this.activityService.getSettings().idleTimeoutMinutes)); }
+				});
+			});
+		container.createEl("p", { cls: "setting-item-description", text: this.activityService.getTimeTrackingStatus() });
 	}
 
 	private createSectionHeading(containerEl: HTMLElement, text: string): void {

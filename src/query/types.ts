@@ -4,7 +4,8 @@ export type DataSourceType =
 	| "PAGE"
 	| "ALL_TASK"
 	| "TASK_IN_SPECIFIC_PAGE"
-	| "EDIT_ACTIVITY";
+	| "EDIT_ACTIVITY"
+	| "TIME_ACTIVITY";
 
 export type EditActivityMetric =
 	| "CHANGED_CHARS"

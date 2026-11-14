@@ -16,6 +16,7 @@ import { Locals } from "src/i18/messages";
 import { resolveGoalHeatLevel } from "./heatScale";
 import { resolveCellNavigationIndex } from "./cellKeyboardNavigation";
 import { normalizeGraphAppearance } from "./graphAppearance";
+import { formatDuration } from "../time/timeData";
 
 export interface GraphRender {
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void;
@@ -93,7 +94,7 @@ export abstract class BaseGraphRender implements GraphRender {
 		contributionData: ContributionCellData[]
 	): HTMLElement | undefined {
 		const hasTitle = Boolean(graphConfig.title?.trim());
-		if (!hasTitle && graphConfig.showCellRuleIndicators === false) {
+		if (!hasTitle && graphConfig.showCellRuleIndicators === false && !graphConfig.timeTracking) {
 			return undefined;
 		}
 
@@ -105,6 +106,9 @@ export abstract class BaseGraphRender implements GraphRender {
 			this.renderTitle(graphConfig, header);
 		}
 		this.renderCellRuleIndicator(graphConfig, header, contributionData);
+		if (graphConfig.timeTracking) {
+			createDiv({ cls: "time-total", parent: header, text: `范围累计：${formatDuration(contributionData.reduce((sum, cell) => sum + (cell.timeStats?.seconds || 0), 0))}` });
+		}
 		return header;
 	}
 
@@ -315,7 +319,7 @@ export abstract class BaseGraphRender implements GraphRender {
 				cellData.tracked !== undefined ||
 				cellData.trackingState
 		);
-		if (isEditActivity) {
+		if (isEditActivity && !graphConfig.timeTracking) {
 			this.renderEditActivitySummary(
 				graphConfig,
 				cellData,
@@ -400,7 +404,7 @@ export abstract class BaseGraphRender implements GraphRender {
 			return;
 		}
 		const selected = contributionData.find(
-			(item) => item.date === graphConfig.selectedActivityDate
+			(item) => this.getCellKey(item) === graphConfig.selectedActivityDate
 		);
 		if (selected) {
 			this.renderActivity(graphConfig, selected, activityContainer);
@@ -610,6 +614,10 @@ export abstract class BaseGraphRender implements GraphRender {
 		if (contributionItem.trackingState === "PARTIAL") {
 			cellEl.addClass("partial");
 		}
+		if (graphConfig.timeTracking && contributionItem.value <= 0) {
+			cellEl.addClass("empty");
+			return;
+		}
 
 		if (graphConfig.heatScale?.type === "GOAL") {
 			if (contributionItem.value <= 0) {
@@ -780,9 +788,13 @@ export abstract class BaseGraphRender implements GraphRender {
 		contributionItem: ContributionCellData,
 		selectedDate?: string
 	): void {
-		const selected = selectedDate === contributionItem.date;
+		const selected = selectedDate === this.getCellKey(contributionItem);
 		cellEl.classList.toggle("is-selected", selected);
 		cellEl.setAttribute("aria-pressed", selected ? "true" : "false");
+	}
+
+	getCellKey(cell: ContributionCellData): string {
+		return cell.hour === undefined ? cell.date : `${cell.date}T${cell.hour}`;
 	}
 
 	private clearSelectedCell(root: Element | null): void {

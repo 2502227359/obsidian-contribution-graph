@@ -52,6 +52,10 @@ Contribution Graph is a plugin for [obsidian.md](https://obsidian.md/) which can
 
 ![](attachment/74103317de5336b5283338c56171f268.png)
 
+## 活跃使用时长
+
+新增每日活跃时长与日期 × 小时热力图，自动统计阅读和编辑活动；空闲阈值默认 5 分钟，可在设置中调整。使用方法与计时边界见[使用时长热力图](使用时长热力图.md)。
+
 ## Character Edit Activity
 
 Enable **Settings → Contribution Graph → Track edit activity**, then create a

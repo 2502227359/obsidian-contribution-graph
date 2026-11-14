@@ -225,7 +225,7 @@ export class Zh implements Local {
 	settings_count_pasted_text = "统计粘贴内容";
 	settings_count_pasted_text_description = "将用户手动粘贴的文本计入编辑活动。关闭后会排除整笔粘贴替换，包括粘贴时被替换的字符。";
 	settings_tracked_folders = "统计文件夹";
-	settings_tracked_folders_description = "从当前仓库选择一个或多个文件夹。修改后只影响之后的编辑；严格模式下会排除范围内文档的模板自动插入。";
+	settings_tracked_folders_description = "字数与时长统计共用此采集范围，修改只影响之后的记录。严格输入模式仅影响字数统计。";
 	settings_tracked_folders_choose = "选择文件夹";
 	settings_tracked_folders_remove = "移除此文件夹";
 	settings_tracked_folders_all = "当前统计整个仓库。";
@@ -252,7 +252,7 @@ export class Zh implements Local {
 	settings_corrupt_data_recovered = "编辑活动数据存在异常，已恢复可用数据并备份到 {path}";
 	settings_save_failed = "编辑活动数据保存失败，将自动重试";
 	settings_clear = "清除统计";
-	settings_clear_description = "创建自动备份后，清除所有已记录的每日字符数据。";
+	settings_clear_description = "创建自动备份后，清除所有已记录的字符与时长数据。";
 	settings_clear_button = "清除";
 	settings_clear_confirm = "确定清除全部编辑活动统计吗？清除前会自动创建备份。";
 	settings_clear_success = "编辑活动统计已清除，并已创建备份";

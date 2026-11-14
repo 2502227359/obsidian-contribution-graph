@@ -5,8 +5,12 @@ import {
 	TrackingPeriod,
 	SavedGraphTheme,
 } from "src/types";
+import { createEmptyTimeActivity } from "../time/timeData";
+import { StoredTimeActivity } from "../time/types";
 
 export interface EditActivitySettings {
+	timeTrackingEnabled: boolean;
+	idleTimeoutMinutes: number;
 	trackingEnabled: boolean;
 	excludeWhitespace: boolean;
 	excludeMarkdownFormatting: boolean;
@@ -42,7 +46,8 @@ export interface StoredDocumentEditStats {
 }
 
 export interface EditActivityStore {
-	schemaVersion: 10;
+	schemaVersion: 11;
+	timeActivity: StoredTimeActivity;
 	settings: EditActivitySettings;
 	graphThemes: SavedGraphTheme[];
 	trackingPeriods: TrackingPeriod[];
@@ -52,6 +57,8 @@ export interface EditActivityStore {
 }
 
 export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
+	timeTrackingEnabled: false,
+	idleTimeoutMinutes: 5,
 	trackingEnabled: false,
 	excludeWhitespace: true,
 	excludeMarkdownFormatting: false,
@@ -61,7 +68,8 @@ export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 };
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
-	schemaVersion: 10,
+	schemaVersion: 11,
+	timeActivity: createEmptyTimeActivity(),
 	settings: {
 		...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 		trackedFolders: [],

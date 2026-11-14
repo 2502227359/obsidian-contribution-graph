@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Locals } from "src/i18/messages";
 import {
 	DataFilter,
@@ -36,6 +36,8 @@ export function DataSourceFormItem(props: {
 	const [dataSourceType, setDataSourceType] = useState(
 		dataSource.type || "PAGE"
 	);
+
+	useEffect(() => setDataSourceType(dataSource.type), [dataSource.type]);
 
 	const changeDataSource = (name: string, value: any) => {
 		const newDataSource = { ...dataSource, [name]: value };
@@ -81,9 +83,9 @@ export function DataSourceFormItem(props: {
 
 	const onDataSourceTypeChange = (newSource: DataSourceType) => {
 		const newDataSource = { ...dataSource, type: newSource };
-		if (newSource === "EDIT_ACTIVITY") {
+		if (newSource === "EDIT_ACTIVITY" || newSource === "TIME_ACTIVITY") {
 			props.onChange({
-				type: "EDIT_ACTIVITY",
+				type: newSource,
 				metric: "CHANGED_CHARS",
 				folders: [],
 			});
@@ -141,7 +143,7 @@ export function DataSourceFormItem(props: {
 				<span className="label">{local.form_data_source_value}</span>
 				<div className="form-content">
 					<select
-						defaultValue={dataSource.type || "PAGE"}
+					value={dataSource.type || "PAGE"}
 						onChange={(e) => {
 							setDataSourceType(e.target.value as DataSourceType);
 							onDataSourceTypeChange(
@@ -158,7 +160,7 @@ export function DataSourceFormItem(props: {
 						})}
 					</select>
 					{dataSourceType != "ALL_TASK" &&
-						dataSourceType != "EDIT_ACTIVITY" && (
+						!(["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(dataSourceType)) && (
 						<input
 							type="text"
 							defaultValue={dataSource.value}
@@ -171,7 +173,7 @@ export function DataSourceFormItem(props: {
 				</div>
 			</div>
 
-			{dataSourceType === "EDIT_ACTIVITY" && (
+			{["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(dataSourceType) && (
 				<div className="form-item contribution-graph-activity-folders">
 					<span className="label">{local.form_edit_activity_folders}</span>
 					<div className="form-vertical-content">
@@ -434,7 +436,7 @@ export function DataSourceFormItem(props: {
 				</div>
 			)}
 
-			{dataSourceType !== "EDIT_ACTIVITY" && <div className="form-item">
+			{!(["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(dataSourceType)) && <div className="form-item">
 				<span className="label">{local.form_date_field}</span>
 				<div className="form-content">
 					<select
@@ -492,7 +494,7 @@ export function DataSourceFormItem(props: {
 				</div>
 			</div>}
 
-			{dataSourceType !== "EDIT_ACTIVITY" && <div className="form-item">
+			{!(["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(dataSourceType)) && <div className="form-item">
 				<span className="label">{local.form_date_field_format}</span>
 				<div className="form-vertical-content">
 					<select
@@ -545,7 +547,7 @@ export function DataSourceFormItem(props: {
 				</div>
 			</div>}
 
-			{dataSourceType !== "EDIT_ACTIVITY" && <div className="form-item">
+			{!(["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(dataSourceType)) && <div className="form-item">
 				<span className="label">
 					{local.form_count_field_count_field_label}
 				</span>

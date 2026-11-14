@@ -27,6 +27,13 @@ export const DEFAULT_RULES: CellStyleRule[] = [
 	},
 ];
 
+export const TIME_HOURLY_RULES: CellStyleRule[] = [
+	{ id: "time-15", min: 0, max: 15, color: "#9be9a8" },
+	{ id: "time-30", min: 15, max: 30, color: "#40c463" },
+	{ id: "time-45", min: 30, max: 45, color: "#30a14e" },
+	{ id: "time-60", min: 45, max: 100000, color: "#216e39" },
+];
+
 export const DEFAULT_GOAL_HEAT_LEVELS: GoalHeatLevel[] = [
 	{ minRatio: 0, color: "#9be9a8" },
 	{ minRatio: 0.25, color: "#40c463" },

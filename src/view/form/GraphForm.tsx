@@ -32,6 +32,7 @@ import { EditActivityService } from "src/activity/EditActivityService";
 import {
 	createDefaultGoalHeatScale,
 	DEFAULT_RULES,
+	TIME_HOURLY_RULES,
 } from "src/constants";
 import { GoalHeatScaleFormItem } from "./GoalHeatScaleFormItem";
 import {
@@ -55,9 +56,12 @@ export function GraphForm(props: {
 	const previewContainerRef = useRef<HTMLDivElement>(null);
 	const previewProcessorRef = useRef<CodeBlockProcessor | null>(null);
 
-	const [formData, setFormData] = useState(yamlConfig);
+	const [formData, setFormData] = useState(() => ({ ...yamlConfig,
+		...(yamlConfig.dataSource?.type === "TIME_ACTIVITY" && yamlConfig.graphType !== "hourly"
+			? { heatScale: yamlConfig.heatScale || createDefaultGoalHeatScale(60) } : {}),
+	}));
 	const [cellRules, setCellRules] = useState<CellStyleRule[]>(
-		yamlConfig.cellStyleRules || []
+		yamlConfig.cellStyleRules || (yamlConfig.graphType === "hourly" ? TIME_HOURLY_RULES : [])
 	);
 	const [customThemes, setCustomThemes] = useState<SavedGraphTheme[]>(
 		props.activityService.getGraphThemes()
@@ -69,6 +73,8 @@ export function GraphForm(props: {
 		!yamlConfig.cellStyle?.minWidth ||
 			yamlConfig.cellStyle?.minWidth === yamlConfig.cellStyle?.minHeight
 	);
+	const isTimeSource = formData.dataSource?.type === "TIME_ACTIVITY";
+	const isGoalSource = formData.dataSource?.type === "EDIT_ACTIVITY" || (isTimeSource && formData.graphType !== "hourly");
 	const appearance = normalizeGraphAppearance(formData.appearance);
 
 	const handleInputChange = (
@@ -94,7 +100,7 @@ export function GraphForm(props: {
 	};
 
 	const applyColors = (colors: string[]) => {
-		if (formData.dataSource?.type === "EDIT_ACTIVITY") {
+		if (isGoalSource) {
 			changeFormData(
 				"heatScale",
 				applyColorsToGoalHeatScale(formData.heatScale, colors)
@@ -159,6 +165,34 @@ export function GraphForm(props: {
 
 	const changeFormData = (name: string, value: any) => {
 		setFormData((prevData) => ({ ...prevData, [name]: value }));
+	};
+
+	const changeGraphType = (graphType: string) => {
+		const hourly = graphType === "hourly";
+		const rules = hourly ? TIME_HOURLY_RULES : DEFAULT_RULES;
+		const resetRules = hourly || formData.graphType === "hourly";
+		if (resetRules) setCellRules(rules.map(rule => ({ ...rule })));
+		setFormData(previous => ({ ...previous, graphType,
+			...(resetRules ? { cellStyleRules: rules.map(rule => ({ ...rule })) } : {}),
+			...(hourly ? { dataSource: { type: "TIME_ACTIVITY", folders: previous.dataSource?.folders || [] },
+				dateRangeType: "LATEST_DAYS", dateRangeValue: 28, fromDate: undefined, toDate: undefined, heatScale: undefined,
+				cellStyleRules: rules.map(rule => ({ ...rule })) }
+				: previous.dataSource?.type === "TIME_ACTIVITY" ? { heatScale: previous.heatScale || createDefaultGoalHeatScale(60) } : {}),
+		}));
+	};
+
+	const changeDataSource = (dataSource: YamlGraphConfig["dataSource"]) => {
+		const time = dataSource.type === "TIME_ACTIVITY";
+		const sourceChanged = dataSource.type !== formData.dataSource?.type;
+		const leavingHourly = !time && formData.graphType === "hourly";
+		if (leavingHourly) setCellRules(DEFAULT_RULES.map(rule => ({ ...rule })));
+		setFormData(previous => ({ ...previous, dataSource,
+			...(leavingHourly ? { cellStyleRules: DEFAULT_RULES.map(rule => ({ ...rule })) } : {}),
+			graphType: !time && previous.graphType === "hourly" ? "default" : previous.graphType,
+			heatScale: !sourceChanged ? previous.heatScale
+				: time && previous.graphType !== "hourly" ? createDefaultGoalHeatScale(60)
+				: dataSource.type === "EDIT_ACTIVITY" ? createDefaultGoalHeatScale() : undefined,
+		}));
 	};
 
 	const getCellDimension = (key: "width" | "height"): number => {
@@ -270,7 +304,8 @@ export function GraphForm(props: {
 		setThemeName("");
 		setPaletteBaseColor("#216e39");
 		setDimensionsLinked(true);
-		setCellRules(DEFAULT_RULES.map((rule) => ({ ...rule })));
+		const rules = formData.graphType === "hourly" ? TIME_HOURLY_RULES : DEFAULT_RULES;
+		setCellRules(rules.map((rule) => ({ ...rule })));
 		setFormData((previous) => ({
 			...previous,
 			titleStyle: { ...defaults.titleStyle },
@@ -279,17 +314,17 @@ export function GraphForm(props: {
 			enableMainContainerShadow: false,
 			showCellRuleIndicators: true,
 			cellStyle: {},
-			cellStyleRules: DEFAULT_RULES.map((rule) => ({ ...rule })),
+			cellStyleRules: rules.map((rule) => ({ ...rule })),
 			appearance: { ...DEFAULT_GRAPH_APPEARANCE },
-			...(previous.dataSource?.type === "EDIT_ACTIVITY"
-				? { heatScale: createDefaultGoalHeatScale(previous.heatScale?.goal) }
+			...((previous.dataSource?.type === "EDIT_ACTIVITY" || (previous.dataSource?.type === "TIME_ACTIVITY" && previous.graphType !== "hourly"))
+				? { heatScale: createDefaultGoalHeatScale(previous.heatScale?.goal || (isTimeSource ? 60 : 1000)) }
 				: {}),
 		}));
 	};
 
 	const currentColors = (): string[] => {
 		const colors =
-			formData.dataSource?.type === "EDIT_ACTIVITY"
+			isGoalSource
 				? [...(formData.heatScale?.levels || [])]
 						.sort((a, b) => a.minRatio - b.minRatio)
 						.map((level) => level.color)
@@ -302,7 +337,7 @@ export function GraphForm(props: {
 	};
 
 	const currentColorCount = (): number =>
-		formData.dataSource?.type === "EDIT_ACTIVITY"
+		isGoalSource
 			? formData.heatScale?.levels.length || DEFAULT_RULES.length
 			: cellRules.length || DEFAULT_RULES.length;
 
@@ -437,13 +472,13 @@ export function GraphForm(props: {
 										<div className="form-content">
 											<select
 												name="graphType"
-												defaultValue={
+												value={
 													formData.graphType ||
 													graphOptions.find(
 														(p) => p.selected
 													)?.value
 												}
-												onChange={handleInputChange}
+												onChange={(event) => changeGraphType(event.target.value)}
 											>
 												{graphOptions.map((option) => (
 													<option
@@ -463,7 +498,7 @@ export function GraphForm(props: {
 										</span>
 										<div className="form-content">
 											<select
-												defaultValue={
+												value={
 													formData.dateRangeType ||
 													"LATEST_DAYS"
 												}
@@ -515,7 +550,7 @@ export function GraphForm(props: {
 												<>
 													<input
 														type="number"
-														defaultValue={
+														value={
 															formData.dateRangeValue
 														}
 														min={1}
@@ -567,46 +602,22 @@ export function GraphForm(props: {
 
 									<DataSourceFormItem
 										dataSource={formData.dataSource}
-										onChange={(newDataSource) => {
-											changeFormData(
-												"dataSource",
-												newDataSource
-											);
-											if (
-												newDataSource.type ===
-												"EDIT_ACTIVITY"
-											) {
-												changeFormData(
-													"heatScale",
-													formData.heatScale ||
-														createDefaultGoalHeatScale()
-												);
-											} else if (
-												formData.heatScale?.type ===
-												"GOAL"
-											) {
-												changeFormData(
-													"heatScale",
-													undefined
-												);
-											}
-										}}
+										onChange={changeDataSource}
 										app={props.app}
 										collectionFolders={props.activityService.getSettings().trackedFolders}
 									/>
-									{formData.dataSource?.type ===
-										"EDIT_ACTIVITY" && (
+									{isGoalSource && (
 										<div className="form-item contribution-graph-goal-setting">
 											<span className="label">
-												{local.form_daily_goal}
+												{(isTimeSource ? "每日目标（分钟）" : local.form_daily_goal)}
 											</span>
 											<div className="form-vertical-content">
 												<input
 													type="number"
 													min={1}
-													defaultValue={
+													value={
 														formData.heatScale
-															?.goal || 1000
+															?.goal || (isTimeSource ? 60 : 1000)
 													}
 													onChange={(event) => {
 														const goal = Math.max(
@@ -620,7 +631,7 @@ export function GraphForm(props: {
 															"heatScale",
 															{
 																...(formData.heatScale ||
-																	createDefaultGoalHeatScale()),
+																	createDefaultGoalHeatScale(isTimeSource ? 60 : 1000)),
 																goal,
 															}
 														);
@@ -628,19 +639,17 @@ export function GraphForm(props: {
 												/>
 												<span className="form-description">
 													{
-														local.form_daily_goal_description
+														(isTimeSource ? "每天的活跃使用时长目标，单位为分钟。" : local.form_daily_goal_description)
 													}
 												</span>
 												<span
 													className={`activity-tracking-state ${
-														props.activityService.getSettings()
-															.trackingEnabled
+														(isTimeSource ? props.activityService.getSettings().timeTrackingEnabled : props.activityService.getSettings().trackingEnabled)
 															? "is-enabled"
 															: "is-disabled"
 													}`}
 												>
-													{props.activityService.getSettings()
-														.trackingEnabled
+													{(isTimeSource ? props.activityService.getSettings().timeTrackingEnabled : props.activityService.getSettings().trackingEnabled)
 														? local.form_activity_tracking_enabled
 														: local.form_activity_tracking_disabled}
 												</span>
@@ -1074,14 +1083,12 @@ export function GraphForm(props: {
 									</div>
 									<div className="form-item">
 										<span className="label">
-											{formData.dataSource?.type ===
-											"EDIT_ACTIVITY"
+											{isGoalSource
 												? local.form_goal_heat_levels
 												: local.form_cell_style_rules}
 										</span>
 										<div className="form-vertical-content">
-											{formData.dataSource?.type ===
-											"EDIT_ACTIVITY" ? (
+											{isGoalSource ? (
 												<GoalHeatScaleFormItem
 													heatScale={
 														formData.heatScale

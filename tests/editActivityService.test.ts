@@ -160,7 +160,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 		expect(plugin.saveData).toHaveBeenCalledTimes(1);
 		expect(plugin.saveData.mock.calls[0][0]).toMatchObject({
-			schemaVersion: 10,
+			schemaVersion: 11,
 			dailyStats: {
 				"2026-07-31": {
 					addedChars: 1,
@@ -201,7 +201,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		const exported = JSON.parse(service.exportData());
 		expect(exported).toMatchObject({
-			schemaVersion: 10,
+			schemaVersion: 11,
 			countingPolicyPeriods: [
 				{
 					startedAt: "2026-07-31T08:00:00.000Z",
@@ -386,7 +386,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		await service.unload();
 		expect(plugin.saveData.mock.lastCall?.[0]).toMatchObject({
-			schemaVersion: 10,
+			schemaVersion: 11,
 			settings: {
 				trackedFolders: ["Archive", "Daily Notes"],
 			},
@@ -742,7 +742,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		});
 		expect(service.getGraphThemes()).toEqual([]);
 		expect(JSON.parse(service.exportData())).toMatchObject({
-			schemaVersion: 10,
+			schemaVersion: 11,
 			graphThemes: [],
 		});
 		await service.unload();

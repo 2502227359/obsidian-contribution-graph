@@ -65,6 +65,8 @@ export class YamlGraphConfig {
 	collectionScopePeriods?: CollectionScopePeriod[];
 	activityFolders?: string[];
 	valueUnit?: string;
+	timeTracking?: boolean;
+	hourlyData?: import("src/types").ContributionCellData[];
 
 	// deprecated
 	days?: number;
@@ -148,9 +150,12 @@ export class YamlGraphConfig {
 		if (!config.dataSource && !config.data) {
 			throw new GraphProcessError(MISS_DATASOURCE_OR_DATA());
 		}
+		if (config.graphType === "hourly" && config.dataSource?.type !== "TIME_ACTIVITY") {
+			throw new GraphProcessError({ summary: "时段图需要选择活跃时长数据源" });
+		}
 
 		if (config.graphType) {
-			const graphTypes = ["default", "month-track", "calendar"];
+			const graphTypes = ["default", "month-track", "calendar", "hourly"];
 			if (!graphTypes.includes(config.graphType)) {
 				throw new GraphProcessError(
 					INVALID_GRAPH_TYPE(config.graphType)
@@ -164,7 +169,7 @@ export class YamlGraphConfig {
 			}
 		}
 		if (
-			config.dataSource?.type === "EDIT_ACTIVITY" &&
+			["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(config.dataSource?.type) &&
 			config.dataSource.folders !== undefined &&
 			(!Array.isArray(config.dataSource.folders) ||
 				config.dataSource.folders.length > 100 ||

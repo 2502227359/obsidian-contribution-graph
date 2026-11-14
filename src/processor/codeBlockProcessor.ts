@@ -24,6 +24,8 @@ import { MISS_CONFIG } from "./bizErrors";
 import { GraphProcessError } from "./graphProcessError";
 import { YamlGraphConfig } from "./types";
 import { YamlConfigReconciler } from "./yamlConfigReconciler";
+import { queryTimeGraph } from "../time/timeGraphData";
+import { createDefaultGoalHeatScale, TIME_HOURLY_RULES } from "src/constants";
 import {
 	DataviewIndexTimeoutError,
 	isAbortError,
@@ -100,7 +102,7 @@ export class CodeBlockProcessor {
 
 			if (
 				!this.disposed &&
-				graphConfig.dataSource?.type === "EDIT_ACTIVITY"
+				["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)
 			) {
 				ctx.addChild(
 					new ReactiveGraphRenderChild(
@@ -136,7 +138,7 @@ export class CodeBlockProcessor {
 	): Promise<void> {
 		try {
 			YamlGraphConfig.validate(graphConfig);
-			if (graphConfig.dataSource?.type !== "EDIT_ACTIVITY") {
+			if (!["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)) {
 				await this.ensureDataviewReady(app);
 			}
 			if (this.disposed) {
@@ -150,6 +152,18 @@ export class CodeBlockProcessor {
 				dataSource: { ...graphConfig.dataSource },
 				data: [...inlineData, ...queriedData],
 			};
+			if (graphConfig.dataSource?.type === "TIME_ACTIVITY") {
+				const time = queryTimeGraph(graphConfig, this.activityService, app);
+				renderConfig.data = time.data;
+				renderConfig.hourlyData = time.hourlyData;
+				renderConfig.timeTracking = true;
+				renderConfig.valueUnit = "分钟";
+				if (graphConfig.graphType === "hourly") {
+					renderConfig.heatScale = undefined;
+					renderConfig.cellStyleRules = graphConfig.cellStyleRules || TIME_HOURLY_RULES;
+				}
+				if (graphConfig.graphType !== "hourly") renderConfig.heatScale = graphConfig.heatScale || createDefaultGoalHeatScale(60);
+			}
 
 			if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
 				renderConfig.trackingPeriods =
@@ -164,11 +178,11 @@ export class CodeBlockProcessor {
 
 			const contributionConfig =
 				YamlGraphConfig.toContributionGraphConfig(renderConfig);
-			if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
+			if (["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)) {
 				contributionConfig.selectedActivityDate =
 					this.selectedActivityDate;
 				contributionConfig.onCellClick = (cellData) => {
-					this.selectedActivityDate = cellData.date;
+					this.selectedActivityDate = cellData.hour === undefined ? cellData.date : `${cellData.date}T${cellData.hour}`;
 				};
 				contributionConfig.onActivityClose = () => {
 					this.selectedActivityDate = undefined;
@@ -210,6 +224,7 @@ export class CodeBlockProcessor {
 	}
 
 	private queryData(graphConfig: YamlGraphConfig, app: App): Contribution[] {
+		if (graphConfig.dataSource?.type === "TIME_ACTIVITY") return [];
 		if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
 			const folders = normalizeTrackedFolders(
 				graphConfig.dataSource.folders || []
@@ -383,6 +398,8 @@ export class CodeBlockProcessor {
 		event: EditActivityChangeEvent,
 		graphConfig: YamlGraphConfig
 	): boolean {
+		if (event.type === "TIME_STATS" && graphConfig.dataSource?.type !== "TIME_ACTIVITY") return false;
+		if (event.type === "STATS" && graphConfig.dataSource?.type === "TIME_ACTIVITY") return false;
 		if (event.type !== "STATS") {
 			return true;
 		}
