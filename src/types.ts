@@ -195,6 +195,9 @@ export class ContributionGraphConfig {
 	 */
 	selectedActivityDate?: string;
 
+	/** 时段图的临时视图状态，不写入笔记配置或统计数据。 */
+	hourlyViewState?: { view: "day" | "week"; date: string };
+
 	/**
 	 * Called when the activity-detail panel is closed.
 	 */

@@ -31,7 +31,7 @@ export const titleAlignChooseOptions: ChooseOption[] = [
 ];
 
 export const graphOptions: SelectOption<string>[] = [
-	{ label: "时段分布（日期 × 小时）", value: "hourly" },
+	{ label: "学习时段（单日柱状图 / 一周节奏）", value: "hourly" },
 	{
 		label: Locals.get().form_graph_type_git,
 		value: "default",

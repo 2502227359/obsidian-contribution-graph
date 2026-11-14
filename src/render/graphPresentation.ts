@@ -25,7 +25,7 @@ export function durationParts(seconds: number): MetricPart[] {
 export function getGraphContext(config: ContributionGraphConfig, cells: ContributionCellData[]): string {
 	const dates = cells.map(cell => cell.date).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)).sort();
 	const scope = config.activityFolders?.length ? config.activityFolders.join("、") : undefined;
-	const range = dates.length ? `${dates[0]} — ${dates[dates.length - 1]}` : "暂无记录";
+	const range = !dates.length ? "暂无记录" : dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]} — ${dates[dates.length - 1]}`;
 	return scope ? `${scope} · ${range}` : range;
 }
 

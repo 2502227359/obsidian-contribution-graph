@@ -24,7 +24,12 @@ export class Renders {
 		const focused = container.ownerDocument.activeElement as HTMLElement | null;
 		const focusedCell = focused && container.contains(focused) && focused.matches("button.cell")
 			? { date: focused.dataset.date, hour: focused.dataset.hour } : undefined;
-		const previousHourlyScroll = captureTimelineScroll(container.querySelector<HTMLElement>(".charts.hourly"));
+		const hourly = container.querySelector<HTMLElement>(".charts.hourly-profile");
+		if (hourly) graphConfig.hourlyViewState = {
+			view: hourly.dataset.view === "week" ? "week" : "day",
+			date: hourly.dataset.selectedDate || "",
+		};
+		const focusKey = focused && container.contains(focused) ? focused.dataset.timeFocus : undefined;
 		const previousTimelineScroll = captureTimelineScroll(
 			container.querySelector<HTMLElement>(".charts.default")
 		);
@@ -41,11 +46,9 @@ export class Renders {
 		if (render) {
 			render.render(container, graphConfig);
 			const timeline = container.querySelector<HTMLElement>(
-				".charts.default, .charts.month-track, .charts.hourly"
+				".charts.default, .charts.month-track"
 			);
-			if (graphConfig.graphType === "hourly") {
-				restoreTimelineScroll(timeline, previousHourlyScroll);
-			} else if (graphConfig.graphType === "default") {
+			if (graphConfig.graphType === "default") {
 				restoreTimelineScroll(
 					timeline,
 					previousTimelineScroll
@@ -60,6 +63,8 @@ export class Renders {
 				);
 			}
 			bindTimelineScrollAffordance(timeline);
+			if (focusKey) Array.from(container.querySelectorAll<HTMLElement>("[data-time-focus]:not(:disabled)"))
+				.find(element => element.dataset.timeFocus === focusKey)?.focus({preventScroll: true});
 			if (focusedCell) {
 				Array.from(container.querySelectorAll<HTMLButtonElement>("button.cell:not(:disabled)"))
 					.find(cell => cell.dataset.date === focusedCell.date && cell.dataset.hour === focusedCell.hour)?.focus({ preventScroll: true });

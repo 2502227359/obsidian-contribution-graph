@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-	getHourlyCellKey,
-	groupHourlyData,
-} from "../src/render/hourlyGraphRender";
-import {
-	chooseInitialHourlyPosition,
-	resolveHourlyNavigation,
-} from "../src/render/hourlyNavigation";
+import { getHourlyCellKey, groupHourlyData } from "../src/render/hourlyData";
+import { resolveHourNavigation } from "../src/render/hourlyNavigation";
 
 describe("时段热力图数据", () => {
 	it("按日期分组并保持小时顺序", () => {
@@ -32,54 +26,17 @@ describe("时段热力图数据", () => {
 	});
 });
 
-describe("时段热力图键盘导航", () => {
-	it("按小时上下、按日期左右移动", () => {
-		expect(resolveHourlyNavigation({ day: 1, hour: 8 }, 3, "ArrowUp")).toEqual({
-			day: 1,
-			hour: 7,
-		});
-		expect(resolveHourlyNavigation({ day: 1, hour: 8 }, 3, "ArrowDown")).toEqual({
-			day: 1,
-			hour: 9,
-		});
-		expect(resolveHourlyNavigation({ day: 1, hour: 8 }, 3, "ArrowLeft")).toEqual({
-			day: 0,
-			hour: 8,
-		});
-		expect(resolveHourlyNavigation({ day: 1, hour: 8 }, 3, "ArrowRight")).toEqual({
-			day: 2,
-			hour: 8,
-		});
+describe("单日柱图键盘导航", () => {
+	it("按小时上下移动并跳过未来或缺失小时", () => {
+		expect(resolveHourNavigation(8, "ArrowDown", [8, 9, 11])).toBe(9);
+		expect(resolveHourNavigation(9, "ArrowDown", [8, 9, 11])).toBe(11);
+		expect(resolveHourNavigation(11, "ArrowDown", [8, 9, 11])).toBe(11);
+		expect(resolveHourNavigation(8, "ArrowUp", [8, 9, 11])).toBe(8);
 	});
 
-	it("限制日期和小时边界", () => {
-		expect(resolveHourlyNavigation({ day: 0, hour: 0 }, 3, "ArrowLeft")).toEqual({
-			day: 0,
-			hour: 0,
-		});
-		expect(resolveHourlyNavigation({ day: 2, hour: 23 }, 3, "ArrowRight")).toEqual({
-			day: 2,
-			hour: 23,
-		});
-	});
-
-	it("跳过未来小时并保留当前可用焦点", () => {
-		const isAvailable = ({ hour }: { hour: number }) => hour < 23;
-
-		expect(
-			resolveHourlyNavigation({ day: 0, hour: 22 }, 1, "ArrowDown", isAvailable)
-		).toBeUndefined();
-		expect(
-			resolveHourlyNavigation({ day: 0, hour: 22 }, 1, "ArrowUp", isAvailable)
-		).toEqual({ day: 0, hour: 21 });
-	});
-
-	it("初始焦点选择最后一个可用小时而不是未来小时", () => {
-		expect(
-			chooseInitialHourlyPosition([
-				{ day: 0, hour: 22, available: true },
-				{ day: 0, hour: 23, available: false },
-			])
-		).toEqual({ day: 0, hour: 22 });
+	it("Home/End 定位到可用小时，未知按键不改变焦点", () => {
+		expect(resolveHourNavigation(9, "Home", [3, 9, 22])).toBe(3);
+		expect(resolveHourNavigation(9, "End", [3, 9, 22])).toBe(22);
+		expect(resolveHourNavigation(9, "PageDown", [3, 9, 22])).toBeUndefined();
 	});
 });

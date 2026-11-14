@@ -698,6 +698,7 @@ export function GraphForm(props: {
 											/>
 										</div>
 									</div>
+									{formData.graphType !== "hourly" && <>
 									{formData.graphType ==
 									"month-track" ? null : (
 										<div className="form-item">
@@ -924,6 +925,7 @@ export function GraphForm(props: {
 											/>
 										</div>
 									</div>
+									</>}
 									<div className="form-item">
 										<span className="label">
 											{local.form_theme}
@@ -1071,10 +1073,22 @@ export function GraphForm(props: {
 									</div>
 									<div className="form-item">
 										<span className="label">
-											{isGoalSource ? local.form_goal_heat_levels : local.form_cell_style_rules}
+											{formData.graphType === "hourly" ? "柱体颜色" : isGoalSource ? local.form_goal_heat_levels : local.form_cell_style_rules}
 										</span>
 										<div className="form-vertical-content">
-											{isGoalSource ? (
+											{formData.graphType === "hourly" ? (
+												<ColorPicker
+													color={cellRules.slice(-1)[0]?.color}
+													defaultColor={TIME_HOURLY_RULES.slice(-1)[0].color}
+													onChange={(color) => {
+														if (!color) return;
+														setSelectedThemeId("custom");
+														setCellRules(rules => rules.map((rule, index) =>
+															index === rules.length - 1 ? {...rule, color} : rule
+														));
+													}}
+												/>
+											) : isGoalSource ? (
 												<GoalHeatScaleFormItem
 													heatScale={formData.heatScale}
 													onChange={(heatScale) => {

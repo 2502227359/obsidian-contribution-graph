@@ -172,8 +172,7 @@
 .contribution-graph .main .charts,
 .contribution-graph .main .charts.default,
 .contribution-graph .main .charts.month-track,
-.contribution-graph .main .charts.calendar,
-.contribution-graph .main .charts.hourly {
+.contribution-graph .main .charts.calendar {
 	background: var(--cg-surface-data);
 	border: 1px solid var(--cg-border);
 	border-radius: var(--cg-radius-small);
@@ -191,25 +190,20 @@
 	padding: 12px;
 }
 
-.contribution-graph .main .charts .column:first-child,
-.contribution-graph .main .charts.hourly .hourly-axis {
+.contribution-graph .main .charts .column:first-child {
 	background-color: var(--cg-surface-data);
 	box-shadow: 8px 0 12px -12px var(--cg-border-strong);
 }
 
 .contribution-graph .main .charts .month-indicator,
-.contribution-graph .main .charts .week-indicator,
-.contribution-graph .main .charts .hourly-date-label,
-.contribution-graph .main .charts .hourly-hour-label,
-.contribution-graph .main .charts .hourly-axis-title {
+.contribution-graph .main .charts .week-indicator {
 	font-size: 10px;
 	font-weight: 500;
 	letter-spacing: 0.01em;
 	color: var(--cg-text-muted);
 }
 
-.contribution-graph .main .charts .month-indicator,
-.contribution-graph .main .charts .hourly-date-label {
+.contribution-graph .main .charts .month-indicator {
 	background: var(--cg-surface-data);
 }
 
@@ -219,7 +213,7 @@
 		background-color var(--cg-motion-fast);
 }
 
-.contribution-graph .main .charts .cell[data-date]:not(.future):hover {
+.contribution-graph .main .charts:not(.hourly-profile) .cell[data-date]:not(.future):hover {
 	z-index: 2;
 	transform: none;
 	box-shadow: 0 0 0 2px color-mix(in srgb, var(--cg-blue) 42%, transparent);
@@ -235,7 +229,7 @@
 	box-shadow: inset 0 0 0 1px var(--cg-blue);
 }
 
-.contribution-graph .main .charts .cell[data-date].is-selected {
+.contribution-graph .main .charts:not(.hourly-profile) .cell[data-date].is-selected {
 	z-index: 3;
 	box-shadow: 0 0 0 1px var(--cg-surface-data), 0 0 0 3px var(--cg-blue);
 }
@@ -251,49 +245,6 @@
 
 .contribution-graph .main .charts .cell.partial {
 	background-blend-mode: normal;
-}
-
-/* 小时图保留 24 行，同时收窄日期列。 */
-
-.contribution-graph .main .charts.hourly {
-	gap: 0;
-	padding: 8px 10px 10px;
-	contain: inline-size;
-}
-
-.contribution-graph .main .charts.hourly .hourly-axis {
-	width: 42px;
-	min-width: 42px;
-	flex-basis: 42px;
-}
-
-.contribution-graph .main .charts.hourly .hourly-day-column {
-	width: max(24px, var(--cg-cell-size));
-	min-width: max(24px, var(--cg-cell-size));
-	margin-left: 4px;
-}
-
-.contribution-graph .main .charts.hourly .hourly-date-label {
-	min-width: max(24px, var(--cg-cell-size));
-	height: 22px;
-	margin-bottom: 4px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.contribution-graph .main .charts.hourly .hourly-hour-label,
-.contribution-graph .main .charts.hourly .hourly-cell {
-	margin-bottom: var(--cg-cell-gap);
-}
-
-.contribution-graph .main .charts.hourly .hourly-hour-label {
-	width: 42px;
-	min-width: 42px;
-	padding-right: 8px;
-}
-
-.contribution-graph .main .charts.hourly .hourly-cell {
-	border-radius: var(--cg-cell-radius, 3px);
 }
 
 /* 图例作为安静的页脚，可换行但不推动格子布局。 */
