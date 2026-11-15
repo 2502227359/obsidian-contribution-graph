@@ -14,19 +14,14 @@ import {
 } from "vitest";
 
 import { EditActivityService } from "../src/activity/EditActivityService";
+import { memoryVault } from "./helpers/memoryVault";
 
 interface FakePlugin {
 	loadData: ReturnType<typeof vi.fn>;
 	saveData: ReturnType<typeof vi.fn>;
 	manifest: { dir: string };
 	app: {
-		vault: {
-			adapter: {
-				read: ReturnType<typeof vi.fn>;
-				write: ReturnType<typeof vi.fn>;
-				list: ReturnType<typeof vi.fn>;
-			};
-		};
+		vault: ReturnType<typeof memoryVault>;
 	};
 	files: Map<string, string>;
 }
@@ -37,29 +32,15 @@ function clone<T>(value: T): T {
 
 function createPlugin(
 	initialData: unknown = null,
-	saveData = vi.fn(async () => undefined)
+	saveData = vi.fn(async () => undefined),
+	files = new Map<string, string>()
 ): FakePlugin {
-	const files = new Map<string, string>();
+	const vault = memoryVault(files, initialData);
 	return {
 		loadData: vi.fn(async () => clone(initialData)),
 		saveData,
 		manifest: { dir: ".obsidian/plugins/contribution-graph-local" },
-		app: {
-			vault: {
-				adapter: {
-					read: vi.fn(async (path: string) =>
-						files.get(path) ?? JSON.stringify(initialData)
-					),
-					write: vi.fn(async (path: string, content: string) => {
-						files.set(path, content);
-					}),
-					list: vi.fn(async () => ({
-						files: [...files.keys()],
-						folders: [],
-					})),
-				},
-			},
-		},
+		app: { vault },
 		files,
 	};
 }
@@ -158,13 +139,19 @@ describe("EditActivityService persistence and lifecycle", () => {
 		]);
 
 		await service.unload();
-		expect(plugin.saveData).toHaveBeenCalledTimes(1);
-		expect(plugin.saveData.mock.calls[0][0]).toMatchObject({
-			schemaVersion: 11,
-			dailyStats: {
-				"2026-07-31": {
-					addedChars: 1,
-					deletedChars: 0,
+		expect(plugin.saveData).not.toHaveBeenCalled();
+		const records = [...plugin.files.entries()]
+			.filter(([path]) => path.startsWith("Template/数据/学习统计/记录/") && path.endsWith(".json"))
+			.map(([, content]) => JSON.parse(content));
+		expect(records.length).toBeLessThanOrEqual(2);
+		expect(records.sort((a, b) => b.revision - a.revision)[0]).toMatchObject({
+			kind: "statistics",
+			data: {
+				dailyStats: {
+					"2026-07-31": {
+						addedChars: 1,
+						deletedChars: 0,
+					},
 				},
 			},
 		});
@@ -311,11 +298,48 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 	});
 
-	it("retries a failed save without losing the pending state", async () => {
+	it("retries a failed statistics file write without losing the pending state", async () => {
+		vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		plugin.app.vault.adapter.write.mockClear();
+		plugin.app.vault.adapter.write.mockRejectedValueOnce(new Error("disk unavailable"));
+
+		const document = Text.of([""]);
+		const changes = ChangeSet.of([{ from: 0, insert: "retry" }], document.length);
+		(service as unknown as {
+			recordChanges: (
+			document: Text,
+			changes: ChangeSet,
+			filePath: string,
+			cursorOffset: number
+		) => void;
+		}).recordChanges(document, changes, "Notes/Retry.md", 5);
+		await service.flush();
+		expect(plugin.app.vault.adapter.write).toHaveBeenCalledTimes(1);
+
+		await vi.advanceTimersByTimeAsync(5000);
+		await service.flush();
+		expect(plugin.app.vault.adapter.write).toHaveBeenCalledTimes(2);
+		expect(service.getDailyEditStats()[0]).toMatchObject({
+			addedChars: 5,
+			deletedChars: 0,
+		});
+		expect(plugin.saveData).toHaveBeenCalled();
+
+		await service.unload();
+	});
+
+	it("retries a failed settings save without losing the configuration", async () => {
 		vi.spyOn(console, "error").mockImplementation(() => undefined);
 		const saveData = vi
 			.fn()
-			.mockRejectedValueOnce(new Error("disk unavailable"))
+			.mockRejectedValueOnce(new Error("settings disk unavailable"))
 			.mockResolvedValue(undefined);
 		const plugin = createPlugin(null, saveData);
 		const service = new EditActivityService(
@@ -323,7 +347,8 @@ describe("EditActivityService persistence and lifecycle", () => {
 			() => new Date(2026, 6, 31, 16, 0, 0)
 		);
 		await service.initialize();
-
+		saveData.mockClear();
+		saveData.mockRejectedValueOnce(new Error("settings disk unavailable"));
 		await service.setTrackingEnabled(true);
 		expect(saveData).toHaveBeenCalledTimes(1);
 
@@ -331,7 +356,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		expect(saveData).toHaveBeenCalledTimes(2);
 		expect(saveData.mock.calls[1][0]).toMatchObject({
 			settings: { trackingEnabled: true },
-			trackingPeriods: [{ startDate: "2026-07-31" }],
+			storage: { formatVersion: 1, folder: "Template/数据/学习统计" },
 		});
 
 		await service.unload();
@@ -826,9 +851,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.initialize();
 		await service.importData(JSON.stringify(createStoredData(9)));
 		expect(service.getDailyEditStats()[0].addedChars).toBe(9);
-		const importBackup = [...plugin.files.keys()].find((path) =>
-			path.endsWith("-import.json")
-		);
+		const importBackup = await service.getLatestBackupPath();
 		expect(importBackup).toBeDefined();
 
 		const restoredPath = await service.restoreLatestBackup();

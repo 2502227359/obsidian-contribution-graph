@@ -15,6 +15,7 @@ import {
 	getSelectableVaultFolders,
 	VaultFolderSuggestModal,
 } from "./VaultFolderSuggestModal";
+import { isValidSaveIntervalSeconds } from "./types";
 
 export const SETTINGS_SECTION_KEYS = [
 	"time",
@@ -30,9 +31,15 @@ export function parseIdleTimeoutMinutes(value: string): number | null {
 		: null;
 }
 
+export function parseSaveIntervalSeconds(value: string): number | null {
+	const seconds = Number(value);
+	return isValidSaveIntervalSeconds(seconds) ? seconds : null;
+}
+
 export class EditActivitySettingTab extends PluginSettingTab {
 	private unsubscribeService?: () => void;
 	private timeStatusEl?: HTMLElement;
+	private saveStatusEl?: HTMLElement;
 
 	constructor(
 		app: App,
@@ -45,6 +52,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 	display(): void {
 		this.stopServiceListening();
 		this.timeStatusEl = undefined;
+		this.saveStatusEl = undefined;
 		const { containerEl } = this;
 		const local = Locals.get();
 		const settings = this.activityService.getSettings();
@@ -55,13 +63,14 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		this.createTimeSection(containerEl, settings);
 		this.createCharacterSection(containerEl, settings);
 		this.createScopeSection(containerEl, settings);
-		this.createDataSection(containerEl, local);
+		this.createDataSection(containerEl, local, settings);
 		this.startServiceListening();
 	}
 
 	hide(): void {
 		this.stopServiceListening();
 		this.timeStatusEl = undefined;
+		this.saveStatusEl = undefined;
 		super.hide();
 	}
 
@@ -84,7 +93,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		new Setting(section)
 			.setName("启用时长统计")
 			.setDesc(
-				"自动累计 Markdown 笔记的阅读和编辑时长，与字符统计独立。后台、弹窗和空闲时暂停；仅保存本机统计，不保存正文。"
+				"自动累计 Markdown 笔记的阅读和编辑时长，与字符统计独立。后台、弹窗和空闲时暂停；自动汇总同步到仓库的统计，不保存正文。"
 			)
 			.addToggle((toggle) =>
 				toggle
@@ -342,9 +351,15 @@ export class EditActivitySettingTab extends PluginSettingTab {
 
 	private createDataSection(
 		container: HTMLElement,
-		local: ReturnType<typeof Locals.get>
+		local: ReturnType<typeof Locals.get>,
+		settings: ReturnType<EditActivityService["getSettings"]>
 	): void {
 		const section = this.createSection(container, "data", local.settings_data_heading);
+		new Setting(section)
+			.setName("统计数据目录")
+			.setDesc(`${this.activityService.getStatisticsFolder()}。通过普通文件同步并按记录编号去重，所有图表显示汇总数据。备份位于其中的“备份”文件夹；插件配置只保留设置和主题。`);
+		this.createSaveStatus(section);
+		this.createSaveIntervalSetting(section, settings);
 		new Setting(section)
 			.setName(local.settings_export)
 			.setDesc(local.settings_export_description)
@@ -373,6 +388,84 @@ export class EditActivitySettingTab extends PluginSettingTab {
 			);
 		this.createRestoreSetting(section, local);
 		this.createClearSetting(section, local);
+	}
+
+	private createSaveStatus(container: HTMLElement): void {
+		this.saveStatusEl = container.createDiv({
+			cls: "cg-settings-save-status",
+			text: `保存状态：${this.activityService.getSaveStatus()}`,
+		});
+		this.saveStatusEl.setAttribute("aria-live", "polite");
+	}
+
+	private createSaveIntervalSetting(
+		container: HTMLElement,
+		settings: ReturnType<EditActivityService["getSettings"]>
+	): void {
+		let saveIntervalText: { setValue(value: string): unknown } | undefined;
+		const setting = new Setting(container)
+			.setName("统计自动保存间隔（秒）")
+			.setDesc(
+				"默认 60 秒。正常退出或进入后台时会立即保存；异常退出可能丢失尚未落盘的数据。"
+			)
+			.addText((text) => {
+				saveIntervalText = text;
+				text.setValue(String(settings.saveIntervalSeconds));
+				text.inputEl.type = "number";
+				text.inputEl.min = "15";
+				text.inputEl.max = "1800";
+				text.inputEl.step = "1";
+				text.inputEl.addEventListener("change", async () => {
+					await this.handleSaveIntervalChange(text);
+				});
+			});
+		for (const preset of this.getSaveIntervalPresets()) {
+			this.addSaveIntervalPreset(setting, preset, () => saveIntervalText);
+		}
+	}
+
+	private getSaveIntervalPresets(): Array<{ label: string; seconds: number }> {
+		return [
+			{ label: "30 秒", seconds: 30 },
+			{ label: "1 分钟", seconds: 60 },
+			{ label: "2 分钟", seconds: 120 },
+			{ label: "5 分钟", seconds: 300 },
+		];
+	}
+
+	private addSaveIntervalPreset(
+		setting: Setting,
+		preset: { label: string; seconds: number },
+		getText: () => { setValue(value: string): unknown } | undefined
+	): void {
+		setting.addButton((button) =>
+			button.setButtonText(preset.label).onClick(async () => {
+				try {
+					await this.activityService.setSaveIntervalSeconds(preset.seconds);
+					getText()?.setValue(String(preset.seconds));
+					this.updateSaveStatus();
+				} catch {
+					new Notice("保存间隔设置失败，原设置未变更。");
+				}
+			})
+		);
+	}
+
+	private async handleSaveIntervalChange(text: {
+		getValue(): string;
+		setValue(value: string): unknown;
+	}): Promise<void> {
+		const seconds = parseSaveIntervalSeconds(text.getValue());
+		if (seconds === null) {
+			this.resetSaveIntervalInput(text);
+			return;
+		}
+		try {
+			await this.activityService.setSaveIntervalSeconds(seconds);
+			this.updateSaveStatus();
+		} catch {
+			this.resetSaveIntervalInput(text);
+		}
 	}
 
 	private createImportInput(
@@ -501,10 +594,21 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		text.setValue(String(this.activityService.getSettings().idleTimeoutMinutes));
 	}
 
+	private resetSaveIntervalInput(text: { setValue(value: string): unknown }): void {
+		new Notice("请输入 15—1800 的整数秒，原设置未变更。");
+		text.setValue(String(this.activityService.getSettings().saveIntervalSeconds));
+	}
+
 	private updateTimeStatus(): void {
 		if (this.timeStatusEl) {
 			this.timeStatusEl.textContent =
 				this.activityService.getTimeTrackingStatus();
+		}
+	}
+
+	private updateSaveStatus(): void {
+		if (this.saveStatusEl) {
+			this.saveStatusEl.textContent = `保存状态：${this.activityService.getSaveStatus()}`;
 		}
 	}
 
@@ -519,6 +623,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 			) {
 				this.updateTimeStatus();
 			}
+			if (event.type === "SAVE_STATE") this.updateSaveStatus();
 		});
 	}
 

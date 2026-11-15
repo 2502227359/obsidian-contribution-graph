@@ -23,8 +23,10 @@ import { TimeActivityObserver } from "./time/TimeActivityObserver";
 export default class ContributionGraph extends Plugin {
 	activityService: EditActivityService;
 	private timeObserver: TimeActivityObserver;
+	private shuttingDown = false;
 
 	async onload() {
+		this.shuttingDown = false;
 		this.activityService = new EditActivityService(this);
 		await this.activityService.initialize();
 		this.timeObserver = new TimeActivityObserver(this, {
@@ -33,7 +35,7 @@ export default class ContributionGraph extends Plugin {
 			checkpoint: () => this.activityService.checkpointTimeActivity(),
 			status: () => this.activityService.getTimeTrackingStatus(),
 		});
-		this.app.workspace.onLayoutReady(() => this.timeObserver.start());
+		this.app.workspace.onLayoutReady(() => { if (!this.shuttingDown) this.timeObserver.start(); });
 		this.registerEditorExtension(
 			this.activityService.createEditorExtension()
 		);
@@ -53,6 +55,7 @@ export default class ContributionGraph extends Plugin {
 	}
 
 	async onunload() {
+		this.shuttingDown = true;
 		this.timeObserver?.stop();
 		// @ts-ignore
 		window.renderContributionGraph = undefined;
@@ -62,6 +65,11 @@ export default class ContributionGraph extends Plugin {
 	}
 
 	registerAppResumeEvents() {
+		this.registerEvent(this.app.workspace.on("quit", tasks => {
+			this.shuttingDown = true;
+			this.timeObserver?.stop();
+			tasks.addPromise(this.activityService.unload());
+		}));
 		this.registerDomEvent(window, "focus", () => {
 			this.activityService.handleAppResume();
 		});

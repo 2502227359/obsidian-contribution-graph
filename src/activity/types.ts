@@ -11,6 +11,7 @@ import { StoredTimeActivity } from "../time/types";
 export interface EditActivitySettings {
 	timeTrackingEnabled: boolean;
 	idleTimeoutMinutes: number;
+	saveIntervalSeconds: number;
 	trackingEnabled: boolean;
 	excludeWhitespace: boolean;
 	excludeMarkdownFormatting: boolean;
@@ -59,6 +60,7 @@ export interface EditActivityStore {
 export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 	timeTrackingEnabled: false,
 	idleTimeoutMinutes: 5,
+	saveIntervalSeconds: 60,
 	trackingEnabled: false,
 	excludeWhitespace: true,
 	excludeMarkdownFormatting: false,
@@ -66,6 +68,10 @@ export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 	strictUserInputOnly: true,
 	countPastedText: true,
 };
+
+export function isValidSaveIntervalSeconds(value: unknown): value is number {
+	return typeof value === "number" && Number.isSafeInteger(value) && value >= 15 && value <= 1800;
+}
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
 	schemaVersion: 11,

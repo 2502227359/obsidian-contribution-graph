@@ -65,6 +65,9 @@ vi.mock("obsidian", () => {
 				if (selector === ".cg-settings-status") {
 					return element.classes.has("cg-settings-status");
 				}
+				if (selector === ".cg-settings-save-status") {
+					return element.classes.has("cg-settings-save-status");
+				}
 				return false;
 			};
 			const found: FakeElement[] = [];
@@ -81,6 +84,10 @@ vi.mock("obsidian", () => {
 		readonly element = new FakeElement("div");
 		name = "";
 		toggle?: { value: boolean; handler?: (value: boolean) => Promise<void> };
+		buttons: Array<{
+			text: string;
+			handler?: () => void | Promise<void>;
+		}> = [];
 
 		constructor(container: FakeElement) {
 			this.element._setting = this;
@@ -136,12 +143,22 @@ vi.mock("obsidian", () => {
 			return this;
 		}
 
-		addButton(callback: (button: { setButtonText(text: string): any; setDisabled(disabled: boolean): any; onClick(handler: () => void): any }) => void): this {
+		addButton(callback: (button: { setButtonText(text: string): any; setDisabled(disabled: boolean): any; onClick(handler: () => void | Promise<void>): any }) => void): this {
+			const record: { text: string; handler?: () => void | Promise<void> } = {
+				text: "",
+			};
 			const button = {
 				setWarning: () => button,
-				setButtonText: (_text: string) => button,
+				setButtonText: (text: string) => {
+					record.text = text;
+					if (!this.buttons.includes(record)) this.buttons.push(record);
+					return button;
+				},
 				setDisabled: (_disabled: boolean) => button,
-				onClick: (_handler: () => void) => button,
+				onClick: (handler: () => void | Promise<void>) => {
+					record.handler = handler;
+					return button;
+				},
 			};
 			callback(button);
 			return this;
@@ -184,6 +201,7 @@ vi.mock("obsidian", () => {
 import {
 	EditActivitySettingTab,
 	parseIdleTimeoutMinutes,
+	parseSaveIntervalSeconds,
 	SETTINGS_SECTION_KEYS,
 } from "../src/activity/EditActivitySettingTab";
 
@@ -203,6 +221,7 @@ function createService() {
 	let settings = {
 		timeTrackingEnabled: false,
 		idleTimeoutMinutes: 5,
+		saveIntervalSeconds: 60,
 		trackingEnabled: false,
 		excludeWhitespace: true,
 		excludeMarkdownFormatting: false,
@@ -211,10 +230,13 @@ function createService() {
 		countPastedText: true,
 	};
 	let status = "时长统计：未启用";
+	let saveStatus = "已保存";
 	const listeners = new Set<(event: { type: string }) => void>();
 	const service = {
 		getSettings: vi.fn(() => ({ ...settings, trackedFolders: [...settings.trackedFolders] })),
+		getStatisticsFolder: vi.fn(() => "Template/数据/学习统计"),
 		getTimeTrackingStatus: vi.fn(() => status),
+		getSaveStatus: vi.fn(() => saveStatus),
 		subscribe: vi.fn((listener: (event: { type: string }) => void) => {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -226,6 +248,9 @@ function createService() {
 		}),
 		setIdleTimeoutMinutes: vi.fn(async (minutes: number) => {
 			settings = { ...settings, idleTimeoutMinutes: minutes };
+		}),
+		setSaveIntervalSeconds: vi.fn(async (seconds: number) => {
+			settings = { ...settings, saveIntervalSeconds: seconds };
 		}),
 		setTrackingEnabled: vi.fn(async (enabled: boolean) => {
 			settings = { ...settings, trackingEnabled: enabled };
@@ -243,7 +268,12 @@ function createService() {
 			for (const listener of listeners) listener(event);
 		},
 	};
-	return { service, settings: () => settings, status: (value: string) => (status = value) };
+	return {
+		service,
+		settings: () => settings,
+		status: (value: string) => (status = value),
+		saveStatus: (value: string) => (saveStatus = value),
+	};
 }
 
 describe("EditActivitySettingTab layout", () => {
@@ -265,6 +295,15 @@ describe("EditActivitySettingTab layout", () => {
 		expect(parseIdleTimeoutMinutes("10081")).toBeNull();
 	});
 
+	it("validates the adjustable save interval", () => {
+		expect(parseSaveIntervalSeconds("15")).toBe(15);
+		expect(parseSaveIntervalSeconds("60")).toBe(60);
+		expect(parseSaveIntervalSeconds("1800")).toBe(1800);
+		expect(parseSaveIntervalSeconds("14")).toBeNull();
+		expect(parseSaveIntervalSeconds("1801")).toBeNull();
+		expect(parseSaveIntervalSeconds("1.5")).toBeNull();
+	});
+
 	it("renders the public display contract and keeps time and character toggles independent", async () => {
 		Object.defineProperty(globalThis, "window", {
 			value: globalThis,
@@ -274,7 +313,7 @@ describe("EditActivitySettingTab layout", () => {
 			value: { getItem: () => "zh" },
 			configurable: true,
 		});
-		const { service, status } = createService();
+		const { service, status, saveStatus } = createService();
 		const app = {
 			vault: {
 				getAllLoadedFiles: () => [],
@@ -296,12 +335,27 @@ describe("EditActivitySettingTab layout", () => {
 		expect(container.querySelectorAll(".cg-settings-status")[0].textContent).toBe(
 			"时长统计：未启用"
 		);
+		const saveStatusElement = container.querySelectorAll(
+			".cg-settings-save-status"
+		)[0];
+		expect(saveStatusElement.textContent).toBe(
+			"保存状态：已保存"
+		);
 		expect(service.subscribe).toHaveBeenCalledTimes(1);
 
 		status("时长统计：计时中");
 		service.emit({ type: "TIME_STATS" });
 		expect(container.querySelectorAll(".cg-settings-status")[0].textContent).toBe(
 			"时长统计：计时中"
+		);
+
+		saveStatus("正在保存");
+		service.emit({ type: "SAVE_STATE" });
+		expect(container.querySelectorAll(".cg-settings-save-status")[0]).toBe(
+			saveStatusElement
+		);
+		expect(saveStatusElement.textContent).toBe(
+			"保存状态：正在保存"
 		);
 
 		const idleSetting = findSetting(container, "空闲阈值（分钟）");
@@ -312,6 +366,25 @@ describe("EditActivitySettingTab layout", () => {
 		await idleSetting.element.listeners.get("change")!();
 		expect(service.setIdleTimeoutMinutes).toHaveBeenCalledTimes(1);
 		expect(idleSetting.element.value).toBe("12");
+
+		const saveIntervalSetting = findSetting(
+			container,
+			"统计自动保存间隔（秒）"
+		);
+		expect(saveIntervalSetting.element.value).toBe("60");
+		saveIntervalSetting.element.value = "120";
+		await saveIntervalSetting.element.listeners.get("change")!();
+		expect(service.setSaveIntervalSeconds).toHaveBeenCalledWith(120);
+		saveIntervalSetting.element.value = "14";
+		await saveIntervalSetting.element.listeners.get("change")!();
+		expect(service.setSaveIntervalSeconds).toHaveBeenCalledTimes(1);
+		expect(saveIntervalSetting.element.value).toBe("120");
+		const twoMinutePreset = saveIntervalSetting.buttons.find(
+			(button: { text: string }) => button.text === "2 分钟"
+		);
+		expect(twoMinutePreset).toBeDefined();
+		await twoMinutePreset!.handler!();
+		expect(service.setSaveIntervalSeconds).toHaveBeenLastCalledWith(120);
 
 		const timeSetting = findSetting(container, "启用时长统计");
 		await timeSetting.toggle.handler!(true);
@@ -325,9 +398,14 @@ describe("EditActivitySettingTab layout", () => {
 
 		const detachedStatus = container.querySelectorAll(".cg-settings-status")[0];
 		const statusBeforeHide = detachedStatus.textContent;
+		const detachedSaveStatus = container.querySelectorAll(".cg-settings-save-status")[0];
+		const saveStatusBeforeHide = detachedSaveStatus.textContent;
 		tab.hide();
 		status("时长统计：空闲暂停");
+		saveStatus("保存失败，待重试");
 		service.emit({ type: "TIME_STATS" });
+		service.emit({ type: "SAVE_STATE" });
 		expect(detachedStatus.textContent).toBe(statusBeforeHide);
+		expect(detachedSaveStatus.textContent).toBe(saveStatusBeforeHide);
 	});
 });

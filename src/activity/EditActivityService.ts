@@ -32,6 +32,7 @@ import {
 	EditActivityStore,
 	EMPTY_EDIT_ACTIVITY_STORE,
 	getCountingPolicy,
+	isValidSaveIntervalSeconds,
 	migrateDocumentPaths,
 	toDailyEditStats,
 } from "./types";
@@ -43,6 +44,9 @@ import {
 import { TimeTracker } from "../time/timeTracker";
 import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths, TimeActivityKey } from "../time/timeData";
 import { TimeSpan, TimeStatsQuery } from "../time/types";
+import { canonicalStatistics, DEFAULT_STATISTICS_FOLDER, StatisticsRepository } from "./StatisticsRepository";
+import { emptyStatistics, StatisticsData, statisticsFrom } from "./statisticsModel";
+import { VaultStatisticsFiles } from "./VaultStatisticsFiles";
 
 interface CompositionState {
 	startDocument: Text;
@@ -76,14 +80,13 @@ export interface DailyEditStatsQuery {
 }
 
 export interface EditActivityChangeEvent {
-	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT" | "TIME_STATS";
+	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT" | "TIME_STATS" | "SAVE_STATE";
 	source?: "EDIT_ACTIVITY" | "TIME_ACTIVITY";
 	date?: string;
 	filePath?: string;
 	timeKeys?: TimeActivityKey[];
 }
 
-const SAVE_DEBOUNCE_MS = 2000;
 const SAVE_RETRY_MS = 5000;
 const MAX_SAVE_RETRIES = 3;
 const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
@@ -121,6 +124,20 @@ export class EditActivityService {
 	private readonly now: () => Date;
 	private readonly timeTracker: TimeTracker;
 	private lastTimePath?: string;
+	private pendingSince?: number;
+	private pendingWrites = 0;
+	private saveStatus = "已保存";
+	private unloadPromise?: Promise<void>;
+	private finalSnapshotSavedSynchronously = false;
+	private readonly monotonic: () => number;
+	private statistics: StatisticsRepository;
+	private statisticsFiles: VaultStatisticsFiles;
+	private stopStatisticsListening?: () => void;
+	private statisticsRefreshTimer: number | null = null;
+	private statisticsRefreshQueue: Promise<void> = Promise.resolve();
+	private statisticsFailureNotified = false;
+	private savedConfiguration = "";
+	private readCache?: { local: number; remote: number; data: StatisticsData };
 
 	constructor(
 		private readonly plugin: Plugin,
@@ -128,6 +145,7 @@ export class EditActivityService {
 		monotonic: () => number = () => performance.now()
 	) {
 		this.now = now;
+		this.monotonic = monotonic;
 		this.timeTracker = new TimeTracker(span => this.recordTimeSpan(span), {
 			wall: () => this.now().getTime(), monotonic,
 		});
@@ -141,7 +159,7 @@ export class EditActivityService {
 			this.store =
 				raw === null || raw === undefined
 					? this.createEmptyStore()
-					: this.normalizeStore(raw, true);
+					: this.normalizeStore(this.withConfigurationDefaults(raw), true);
 		} catch (error) {
 			console.error("Invalid edit activity data", error);
 			const backupPath = await this.backupCorruptData(raw);
@@ -156,6 +174,7 @@ export class EditActivityService {
 				)
 			);
 		}
+		await this.initializeStatistics(raw);
 		const schemaVersion = (raw as { schemaVersion?: unknown } | null)
 			?.schemaVersion;
 		let migrated =
@@ -176,9 +195,146 @@ export class EditActivityService {
 		this.timeTracker.setIdleTimeout(this.store.settings.idleTimeoutMinutes);
 		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
 		this.scheduleMidnightRefresh();
+		await this.flush();
+	}
+
+
+	getSaveStatus(): string {
+		if (this.finalSnapshotSavedSynchronously) return "已保存";
+		if (this.saveFailureNotified && this.dirty) return "保存失败，待重试";
+		if (this.pendingWrites > 0) return "正在保存";
+		return this.dirty || this.pendingLineViews.size > 0 || this.compositionViews.size > 0 ? "有待保存数据" : "已保存";
+	}
+
+	async setSaveIntervalSeconds(seconds: number): Promise<void> {
+		if (!isValidSaveIntervalSeconds(seconds)) throw new Error("保存间隔必须为 15—1800 的整数秒");
+		if (seconds === this.store.settings.saveIntervalSeconds) return;
+		this.store.settings.saveIntervalSeconds = seconds;
+		this.markDirty();
+		await this.flush();
+	}
+
+	getStatisticsFolder(): string { return this.statisticsFiles.folder; }
+
+	private withConfigurationDefaults(raw: unknown): unknown {
+		return (raw as { storage?: unknown } | null)?.storage
+			? { ...this.createEmptyStore(), ...(raw as object) } : raw;
+	}
+
+	private async initializeStatistics(raw: unknown): Promise<void> {
+		const storage = (raw as { storage?: { formatVersion: number; folder: string } } | null)?.storage;
+		if (storage && storage.formatVersion !== 1) throw new Error("不支持的普通统计存储版本");
+		this.statisticsFiles = new VaultStatisticsFiles(this.plugin.app.vault, storage?.folder || DEFAULT_STATISTICS_FOLDER);
+		this.statistics = new StatisticsRepository(this.statisticsFiles, data => this.validateStatistics(data), () => this.now().getTime());
+		const legacy = raw && !storage ? statisticsFrom(this.store) : undefined;
+		if (legacy) await this.statisticsFiles.write(`备份/data.backup-${this.now().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID()}-migration.json`, JSON.stringify(raw, null, 2));
+		await this.statistics.initialize(legacy);
+		if (storage && !(await this.statisticsFiles.list()).some(path => path.startsWith("记录/") && path.endsWith(".json"))) {
+			new Notice("统计目录尚无记录，历史文件可能尚未同步完成。请核对同步状态或从备份恢复，当前空视图不代表历史已清空。", 12000);
+		}
+		Object.assign(this.store, emptyStatistics());
+		if (storage) {
+			this.savedConfiguration = canonicalStatistics(raw);
+			if (this.savedConfiguration !== canonicalStatistics(this.configurationSnapshot(this.store))) this.markDirty();
+		} else this.markDirty();
+		this.stopStatisticsListening = this.statisticsFiles.subscribe(() => this.scheduleStatisticsRefresh());
+	}
+
+	private validateStatistics(data: unknown): StatisticsData {
+		const candidate = data as StatisticsData;
+		if (!candidate || !candidate.dailyStats || typeof candidate.dailyStats !== "object" || Array.isArray(candidate.dailyStats) ||
+			!candidate.timeActivity || !candidate.timeActivity.buckets || typeof candidate.timeActivity.buckets !== "object" ||
+			Array.isArray(candidate.timeActivity.buckets) || !Array.isArray(candidate.timeActivity.periods) || !Array.isArray(candidate.timeActivity.policyChanges) ||
+			!Array.isArray(candidate.trackingPeriods) || !Array.isArray(candidate.collectionScopePeriods) || !Array.isArray(candidate.countingPolicyPeriods)) {
+			throw new Error("统计记录缺少必要字段");
+		}
+		return statisticsFrom(this.normalizeStore({ ...this.createEmptyStore(), ...candidate }, true));
+	}
+
+	private configurationSnapshot(store: EditActivityStore) {
+		return { schemaVersion: 11, settings: store.settings, graphThemes: store.graphThemes,
+			storage: { formatVersion: 1, folder: this.statisticsFiles.folder } };
+	}
+
+	private async persistSnapshot(snapshot: EditActivityStore, generation: string): Promise<void> {
+		await this.statistics.save(snapshot, generation);
+		if (this.finalSnapshotSavedSynchronously) return;
+		const configuration = this.configurationSnapshot(snapshot);
+		const serialized = canonicalStatistics(configuration);
+		if (serialized === this.savedConfiguration) return;
+		await this.plugin.saveData(configuration);
+		this.savedConfiguration = serialized;
+	}
+
+	private readStatistics(): StatisticsData {
+		if (!this.statistics) return this.store;
+		if (!this.readCache || this.readCache.local !== this.mutationVersion || this.readCache.remote !== this.statistics.version) {
+			this.readCache = { local: this.mutationVersion, remote: this.statistics.version, data: this.statistics.read(this.store) };
+		}
+		return this.readCache.data;
+	}
+
+	private scheduleStatisticsRefresh(): void {
+		if (this.unloading || this.statisticsRefreshTimer !== null) return;
+		this.statisticsRefreshTimer = window.setTimeout(() => {
+			this.statisticsRefreshTimer = null;
+			this.statisticsRefreshQueue = this.statisticsRefreshQueue.then(() => this.refreshStatistics());
+		}, 150);
+	}
+
+	private async refreshStatistics(): Promise<void> {
+		try {
+			const before = this.readStatistics();
+			const replaced = await this.statistics.refresh(async () => {
+				this.pauseTimeActivity(); this.flushAllPendingEdits();
+				await this.flush();
+				if (this.dirty) throw new Error("本机待保存统计尚未落盘，暂不应用远端替换");
+			});
+			if (replaced) this.adoptReplacedStatistics();
+			const after = this.readStatistics();
+			this.notifyStatisticsChanges(before, after);
+			this.statisticsFailureNotified = false;
+		} catch (error) {
+			console.error("普通目录统计同步失败", error);
+			if (!this.statisticsFailureNotified) new Notice(`统计同步异常，已保留上次有效数据：${String(error)}`);
+			this.statisticsFailureNotified = true;
+		}
+	}
+
+	private adoptReplacedStatistics(): void {
+		this.pauseTimeActivity();
+		this.pendingLineEdits = new WeakMap(); this.pendingLineViews.clear();
+		this.resetTrustedInputState();
+		Object.assign(this.store, emptyStatistics());
+		if (this.store.settings.trackingEnabled) {
+			this.ensureOpenTrackingPeriod(); this.ensureOpenCollectionScopePeriod(); this.ensureOpenCountingPolicyPeriod();
+		}
+		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
+		this.invalidateStatsCache(); this.markDirty(); this.scheduleSave();
+	}
+
+	private notifyStatisticsChanges(before: StatisticsData, after: StatisticsData): void {
+		const metadata = (data: StatisticsData) => ({ tracking: data.trackingPeriods, scope: data.collectionScopePeriods, policy: data.countingPolicyPeriods });
+		if (canonicalStatistics(metadata(before)) !== canonicalStatistics(metadata(after))) {
+			this.invalidateStatsCache(); this.emitChange({ type: "COVERAGE", source: "EDIT_ACTIVITY" });
+		}
+		for (const date of new Set([...Object.keys(before.dailyStats), ...Object.keys(after.dailyStats)])) {
+			if (canonicalStatistics(before.dailyStats[date]) === canonicalStatistics(after.dailyStats[date])) continue;
+			this.invalidateStatsCache(date); this.emitChange({ type: "STATS", source: "EDIT_ACTIVITY", date });
+		}
+		const timeKeys: TimeActivityKey[] = [];
+		for (const key of new Set([...Object.keys(before.timeActivity.buckets), ...Object.keys(after.timeActivity.buckets)])) {
+			if (canonicalStatistics(before.timeActivity.buckets[key]) === canonicalStatistics(after.timeActivity.buckets[key])) continue;
+			const bucket = after.timeActivity.buckets[key] || before.timeActivity.buckets[key];
+			timeKeys.push({ date: bucket.date, hour: bucket.hour });
+		}
+		const coverageChanged = canonicalStatistics(before.timeActivity.periods) !== canonicalStatistics(after.timeActivity.periods) ||
+			canonicalStatistics(before.timeActivity.policyChanges) !== canonicalStatistics(after.timeActivity.policyChanges);
+		if (timeKeys.length || coverageChanged) this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", ...(coverageChanged ? {} : { timeKeys }) });
 	}
 
 	recordTimeActivity(path: string): void {
+		if (this.unloading) return;
 		this.lastTimePath = path;
 		if (!this.store.settings.timeTrackingEnabled || !isFileInTrackedFolders(path, this.store.settings.trackedFolders)) {
 			this.timeTracker.pause();
@@ -189,7 +345,6 @@ export class EditActivityService {
 
 	checkpointTimeActivity(): void {
 		this.timeTracker.checkpoint();
-		if (this.store.settings.timeTrackingEnabled) void this.flush();
 	}
 
 	pauseTimeActivity(): void {
@@ -226,16 +381,16 @@ export class EditActivityService {
 	}
 
 	getDailyTimeStats(query: TimeStatsQuery = {}) {
-		return queryTimeStats(this.store.timeActivity, query, this.now().getTime(), false);
+		return queryTimeStats(this.readStatistics().timeActivity, query, this.now().getTime(), false);
 	}
 
 	getHourlyTimeStats(query: TimeStatsQuery = {}) {
-		return queryTimeStats(this.store.timeActivity, query, this.now().getTime(), true);
+		return queryTimeStats(this.readStatistics().timeActivity, query, this.now().getTime(), true);
 	}
 
 	getTimeCellInfo(start: number, end: number, folders: string[] = []) {
 		const now = this.now().getTime();
-		return { trackingState: getTimeTrackingState(this.store.timeActivity, start, end, folders, now), future: start > now };
+		return { trackingState: getTimeTrackingState(this.readStatistics().timeActivity, start, end, folders, now), future: start > now };
 	}
 
 	private recordTimeSpan(span: TimeSpan): void {
@@ -355,18 +510,18 @@ export class EditActivityService {
 	}
 
 	getTrackingPeriods(): TrackingPeriod[] {
-		return this.store.trackingPeriods.map((period) => ({ ...period }));
+		return this.readStatistics().trackingPeriods.map((period) => ({ ...period }));
 	}
 
 	getCollectionScopePeriods(): CollectionScopePeriod[] {
-		return this.store.collectionScopePeriods.map((period) => ({
+		return this.readStatistics().collectionScopePeriods.map((period) => ({
 			...period,
 			folders: [...period.folders],
 		}));
 	}
 
 	getDailyEditStats(query: DailyEditStatsQuery = {}): DailyEditStats[] {
-		return Object.keys(this.store.dailyStats)
+		return Object.keys(this.readStatistics().dailyStats)
 			.filter((date) => {
 				if (query.fromDate && date < query.fromDate) {
 					return false;
@@ -392,6 +547,7 @@ export class EditActivityService {
 		isFolder: boolean
 	): void {
 		this.pauseTimeActivity();
+		const remoteChanged = this.statistics.rename(oldPath, newPath, isFolder);
 		const timeChanged = renameTimePaths(this.store.timeActivity, oldPath, newPath, isFolder);
 		this.flushAllPendingEdits();
 		const changedDates = migrateDocumentPaths(
@@ -432,13 +588,11 @@ export class EditActivityService {
 		if (
 			changedDates.length === 0 &&
 			!trackedFoldersChanged &&
-			!scopeFoldersChanged && !timeChanged
+			!scopeFoldersChanged && !timeChanged && !remoteChanged
 		) {
 			return;
 		}
-		for (const date of changedDates) {
-			this.invalidateStatsCache(date);
-		}
+		this.invalidateStatsCache();
 		this.markDirty();
 		this.emitChange({ type: "IMPORT" });
 		this.scheduleSave();
@@ -554,7 +708,7 @@ export class EditActivityService {
 
 	exportData(): string {
 		this.checkpointTimeActivity();
-		return JSON.stringify(this.store, null, 2);
+		return JSON.stringify({ ...this.store, ...this.readStatistics() }, null, 2);
 	}
 
 	async importData(serialized: string): Promise<void> {
@@ -566,6 +720,8 @@ export class EditActivityService {
 		const importedStore = this.normalizeStore(parsed, true);
 		this.pauseTimeActivity();
 		await this.createAutomaticBackup("import");
+		await this.statistics.replace(importedStore);
+		Object.assign(importedStore, emptyStatistics());
 		this.store = importedStore;
 		this.resetTimeTrackingAfterReplacement();
 		this.resetTrustedInputState();
@@ -584,6 +740,7 @@ export class EditActivityService {
 		this.pauseTimeActivity();
 		this.flushAllPendingEdits();
 		await this.createAutomaticBackup("clear");
+		await this.statistics.replace(emptyStatistics());
 		this.store.timeActivity = createEmptyTimeActivity();
 		this.resetTimeTrackingAfterReplacement();
 		const trackingEnabled = this.store.settings.trackingEnabled;
@@ -616,27 +773,15 @@ export class EditActivityService {
 	}
 
 	async getLatestBackupPath(): Promise<string | undefined> {
-		const pluginDir = this.plugin.manifest.dir;
-		if (!pluginDir) {
-			return undefined;
-		}
 		try {
-			const listing = await this.plugin.app.vault.adapter.list(pluginDir);
-			return listing.files
-				.filter((path) => {
-					const name = path.split("/").pop() || "";
-					return (
-						name.startsWith(AUTOMATIC_BACKUP_PREFIX) &&
-						name.endsWith(".json")
-					);
-				})
-				.sort((a, b) => b.localeCompare(a))[0];
-		} catch (error) {
-			throw new EditActivityBackupError(
-				"Failed to list edit activity backups",
-				error
-			);
-		}
+			const current = (await this.statisticsFiles.list()).filter(path => path.startsWith("备份/") && path.split("/").pop()!.startsWith(AUTOMATIC_BACKUP_PREFIX))
+				.map(path => `${this.statisticsFiles.folder}/${path}`);
+			const pluginDir = this.plugin.manifest.dir;
+			const old = pluginDir ? (await this.plugin.app.vault.adapter.list(pluginDir)).files : [];
+			const backups = [...current, ...old].filter(path => path.split("/").pop()!.startsWith(AUTOMATIC_BACKUP_PREFIX) && path.endsWith(".json"));
+			const automatic = backups.filter(path => !path.endsWith("-migration.json"));
+			return (automatic.length ? automatic : backups).sort((a, b) => b.split("/").pop()!.localeCompare(a.split("/").pop()!))[0];
+		} catch (error) { throw new EditActivityBackupError("读取统计备份失败", error); }
 	}
 
 	async restoreLatestBackup(): Promise<string | undefined> {
@@ -664,6 +809,8 @@ export class EditActivityService {
 		}
 
 		await this.createAutomaticBackup("restore");
+		await this.statistics.replace(restoredStore);
+		Object.assign(restoredStore, emptyStatistics());
 		this.store = restoredStore;
 		this.resetTimeTrackingAfterReplacement();
 		this.resetTrustedInputState();
@@ -680,17 +827,19 @@ export class EditActivityService {
 	}
 
 	handleAppResume(): void {
+		if (this.unloading) return;
 		this.scheduleMidnightRefresh();
 		if (this.captureTemporalState()) {
 			this.emitChange({ type: "TEMPORAL" });
 		}
-		void this.flush();
+		if (this.dirty) this.scheduleSave();
 	}
 
-	handleAppSuspend(): void {
+	handleAppSuspend(): Promise<void> {
+		if (this.unloading) return this.unloadPromise || this.flush();
 		this.pauseTimeActivity();
 		this.flushAllPendingEdits();
-		void this.flush();
+		return this.flush();
 	}
 
 	async flush(): Promise<void> {
@@ -707,51 +856,99 @@ export class EditActivityService {
 
 		const snapshot = JSON.parse(JSON.stringify(this.store));
 		const snapshotVersion = this.mutationVersion;
+		this.pendingSince = undefined;
+		const generation = this.statistics.generationId;
 		this.dirty = false;
+		this.pendingWrites++;
+		this.notifySaveStatus();
 		const write = this.saveQueue
 			.catch(() => undefined)
-			.then(() => this.plugin.saveData(snapshot));
+			.then(() => this.persistSnapshot(snapshot, generation));
 		this.saveQueue = write;
 		try {
 			await write;
 			this.saveRetryCount = 0;
 			this.saveFailureNotified = false;
 		} catch (error) {
-			if (this.mutationVersion === snapshotVersion) {
-				this.dirty = true;
-			}
-			console.error("Failed to save edit activity data", error);
-			if (!this.saveFailureNotified) {
-				this.saveFailureNotified = true;
-				new Notice(Locals.get().settings_save_failed);
-			}
-			if (
-				!this.unloading &&
-				this.saveRetryCount < MAX_SAVE_RETRIES
-			) {
-				this.saveRetryCount++;
-				this.scheduleSave(SAVE_RETRY_MS);
-			}
+			this.handleSaveFailure(error, snapshotVersion);
+		} finally {
+			this.pendingWrites--;
+			this.notifySaveStatus();
 		}
 	}
 
-	async unload(): Promise<void> {
+	private handleSaveFailure(error: unknown, snapshotVersion: number): void {
+		if (this.finalSnapshotSavedSynchronously) return;
+		if (this.mutationVersion === snapshotVersion) {
+			this.dirty = true;
+			this.pendingSince = this.monotonic();
+		}
+		console.error("Failed to save edit activity data", error);
+		if (!this.saveFailureNotified) {
+			this.saveFailureNotified = true;
+			new Notice(Locals.get().settings_save_failed);
+		}
+		if (
+			!this.unloading &&
+			this.saveRetryCount < MAX_SAVE_RETRIES
+		) {
+			this.saveRetryCount++;
+			this.scheduleSave(SAVE_RETRY_MS);
+		}
+	}
+
+	unload(): Promise<void> {
+		if (!this.unloadPromise) this.unloadPromise = this.finishUnloading();
+		return this.unloadPromise;
+	}
+
+	private async finishUnloading(): Promise<void> {
 		this.unloading = true;
+		this.stopStatisticsListening?.();
+		if (this.statisticsRefreshTimer !== null) window.clearTimeout(this.statisticsRefreshTimer);
 		this.pauseTimeActivity();
+		this.flushAllPendingEdits();
+		this.closeTimeCoverage();
+		if (this.saveFinalSnapshotSynchronously()) {
+			if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+			if (this.midnightTimer !== null) window.clearTimeout(this.midnightTimer);
+			this.listeners.clear();
+			return;
+		}
+		await this.statisticsRefreshQueue;
 		this.closeTimeCoverage();
 		if (this.store.settings.timeTrackingEnabled) this.markDirty();
 		if (this.midnightTimer !== null) {
 			window.clearTimeout(this.midnightTimer);
 			this.midnightTimer = null;
 		}
-		this.flushAllPendingEdits();
 		this.resetTrustedInputState();
 		await this.flush();
+		for (let attempt = 0; this.dirty && attempt < MAX_SAVE_RETRIES; attempt++) await this.flush();
 		this.listeners.clear();
 	}
 
+	private saveFinalSnapshotSynchronously(): boolean {
+		try {
+			if (!this.statistics.saveSync(this.store)) return false;
+			const configuration = this.configurationSnapshot(this.store);
+			const serialized = canonicalStatistics(configuration);
+			if (serialized !== this.savedConfiguration) {
+				if (!this.statisticsFiles.writeConfigurationSync(this.plugin.manifest.dir!, JSON.stringify(configuration, null, 2))) return false;
+				this.savedConfiguration = serialized;
+			}
+			this.finalSnapshotSavedSynchronously = true;
+			this.dirty = false;
+			this.resetTrustedInputState();
+			return true;
+		} catch (error) {
+			console.error("退出同步检查点保存失败，继续尝试异步保存", error);
+			return false;
+		}
+	}
+
 	private handleEditorUpdate(update: ViewUpdate): void {
-		if (!this.store.settings.trackingEnabled) {
+		if (this.unloading || !this.store.settings.trackingEnabled) {
 			return;
 		}
 		if (!update.docChanged) {
@@ -960,6 +1157,7 @@ export class EditActivityService {
 				date,
 			});
 			this.compositionViews.add(view);
+			this.notifySaveStatus();
 			return;
 		}
 
@@ -984,6 +1182,7 @@ export class EditActivityService {
 			composition.cursorOffset,
 			composition.date
 		);
+		this.notifySaveStatus();
 	}
 
 	private queueOrRecordChanges(
@@ -1042,6 +1241,7 @@ export class EditActivityService {
 			this.pendingLineViews.add(view);
 		}
 
+		this.notifySaveStatus();
 		if (this.changesLineStructure(startState.doc, changes)) {
 			this.flushLineEdit(view);
 		}
@@ -1090,6 +1290,7 @@ export class EditActivityService {
 			pending.endState,
 			pending.date
 		);
+		this.notifySaveStatus();
 	}
 
 	private flushPendingEdits(view: EditorView): void {
@@ -1162,17 +1363,18 @@ export class EditActivityService {
 		this.scheduleSave();
 	}
 
-	private scheduleSave(delay = SAVE_DEBOUNCE_MS): void {
-		if (this.unloading) {
-			return;
-		}
+	private scheduleSave(delay?: number): void {
+		if (this.unloading) return;
 		if (this.saveTimer !== null) {
+			if (delay === undefined) return;
 			window.clearTimeout(this.saveTimer);
 		}
+		const elapsed = this.pendingSince === undefined ? 0 : Math.max(0, this.monotonic() - this.pendingSince);
+		const wait = delay ?? Math.max(0, this.store.settings.saveIntervalSeconds * 1000 - elapsed);
 		this.saveTimer = window.setTimeout(() => {
 			this.saveTimer = null;
 			void this.flush();
-		}, delay);
+		}, wait);
 	}
 
 	private scheduleMidnightRefresh(): void {
@@ -1193,6 +1395,7 @@ export class EditActivityService {
 	}
 
 	private emitChange(event: EditActivityChangeEvent): void {
+		if (this.unloading) return;
 		for (const listener of this.listeners) {
 			try {
 				listener(event);
@@ -1333,7 +1536,7 @@ export class EditActivityService {
 		if (!stats) {
 			const converted = toDailyEditStats(
 				date,
-				this.store.dailyStats[date]
+				this.readStatistics().dailyStats[date]
 			);
 			converted.countingPolicyChanged =
 				this.hasMultipleCountingPolicies(date);
@@ -1381,7 +1584,7 @@ export class EditActivityService {
 		const dayStart = new Date(year, month - 1, day).getTime();
 		const nextDay = new Date(year, month - 1, day + 1).getTime();
 		const policies = new Set<string>();
-		for (const period of this.store.countingPolicyPeriods) {
+		for (const period of this.readStatistics().countingPolicyPeriods) {
 			const startedAt = Date.parse(period.startedAt);
 			const endedAt = period.endedAt
 				? Date.parse(period.endedAt)
@@ -1413,8 +1616,17 @@ export class EditActivityService {
 	}
 
 	private markDirty(): void {
+		if (!this.dirty) this.pendingSince = this.monotonic();
 		this.dirty = true;
 		this.mutationVersion++;
+		this.notifySaveStatus();
+	}
+
+	private notifySaveStatus(): void {
+		const status = this.getSaveStatus();
+		if (status === this.saveStatus) return;
+		this.saveStatus = status;
+		this.emitChange({ type: "SAVE_STATE" });
 	}
 
 	private getMarkdownFilePath(transaction: Transaction): string | undefined {
@@ -1756,11 +1968,15 @@ export class EditActivityService {
 			(candidate.settings?.idleTimeoutMinutes || 0) <= 0 ||
 			(candidate.settings?.idleTimeoutMinutes || 0) > 10080
 		)) throw new Error("时长统计设置无效");
+		if (strict && candidate.settings?.saveIntervalSeconds !== undefined && !isValidSaveIntervalSeconds(candidate.settings.saveIntervalSeconds)) {
+			throw new Error("统计保存间隔无效");
+		}
 		return {
 			schemaVersion: 11,
 			timeActivity: normalizeTimeActivity(candidate.timeActivity, strict && numericSchemaVersion >= 11),
 			settings: {
 				timeTrackingEnabled: candidate.settings?.timeTrackingEnabled === true,
+				saveIntervalSeconds: isValidSaveIntervalSeconds(candidate.settings?.saveIntervalSeconds) ? candidate.settings!.saveIntervalSeconds : 60,
 				idleTimeoutMinutes: Number.isSafeInteger(candidate.settings?.idleTimeoutMinutes) && candidate.settings!.idleTimeoutMinutes > 0 && candidate.settings!.idleTimeoutMinutes <= 10080 ? candidate.settings!.idleTimeoutMinutes : 5,
 				trackingEnabled:
 					candidate.settings?.trackingEnabled === true,
@@ -1954,11 +2170,10 @@ export class EditActivityService {
 			const timestamp = new Date()
 				.toISOString()
 				.replace(/[:.]/g, "-");
-			const backupPath = `${pluginDir}/data.corrupt-${timestamp}.json`;
-			await this.plugin.app.vault.adapter.write(
-				backupPath,
-				serialized
-			);
+			const relative = `备份/data.corrupt-${timestamp}.json`;
+			const files = new VaultStatisticsFiles(this.plugin.app.vault, DEFAULT_STATISTICS_FOLDER);
+			await files.write(relative, serialized);
+			const backupPath = `${files.folder}/${relative}`;
 			return backupPath;
 		} catch (error) {
 			console.error("Failed to back up corrupt edit activity data", error);
@@ -1979,12 +2194,10 @@ export class EditActivityService {
 			.toISOString()
 			.replace(/[:.]/g, "-");
 		const sequence = String(this.backupSequence++).padStart(4, "0");
-		const backupPath = `${pluginDir}/${AUTOMATIC_BACKUP_PREFIX}${timestamp}-${sequence}-${reason}.json`;
+		const relative = `备份/${AUTOMATIC_BACKUP_PREFIX}${timestamp}-${sequence}-${crypto.randomUUID()}-${reason}.json`;
+		const backupPath = `${this.statisticsFiles.folder}/${relative}`;
 		try {
-			await this.plugin.app.vault.adapter.write(
-				backupPath,
-				JSON.stringify(this.store, null, 2)
-			);
+			await this.statisticsFiles.write(relative, JSON.stringify({ ...this.store, ...this.readStatistics() }, null, 2));
 			return backupPath;
 		} catch (error) {
 			console.error("Failed to back up edit activity data", error);

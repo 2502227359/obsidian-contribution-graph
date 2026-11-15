@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditActivityService } from "../src/activity/EditActivityService";
+import { memoryVault } from "./helpers/memoryVault";
 
 describe("时长统计的保存与查询", () => {
 	let wall: number;
@@ -13,10 +14,14 @@ describe("时长统计的保存与查询", () => {
 		Object.defineProperty(globalThis, "window", { configurable: true, value: {
 			setTimeout, clearTimeout, localStorage: { getItem: () => "zh" },
 		} });
-		plugin = { loadData: vi.fn(async () => null), saveData: vi.fn(async () => undefined),
-			manifest: { dir: ".obsidian/plugins/test" }, app: { vault: { adapter: {
-				write: vi.fn(async () => undefined), list: vi.fn(async () => ({ files: [] })),
-			} } } };
+		const files = new Map<string, string>();
+		plugin = {
+			loadData: vi.fn(async () => null),
+			saveData: vi.fn(async () => undefined),
+			manifest: { dir: ".obsidian/plugins/test" },
+			app: { vault: memoryVault(files) },
+			files,
+		};
 		service = new EditActivityService(plugin, () => new Date(wall), () => mono);
 		await service.initialize();
 	});
@@ -36,13 +41,20 @@ describe("时长统计的保存与查询", () => {
 		expect(service.getHourlyTimeStats().map(item => item.seconds)).toEqual([30, 30]);
 		expect(service.getDailyEditStats()).toEqual([]);
 		await service.flush();
-		const saved = plugin.saveData.mock.calls.at(-1)[0];
-		expect(saved.timeActivity.buckets).toBeDefined();
-		expect(saved.settings.timeTrackingEnabled).toBe(true);
+		expect(plugin.saveData).toHaveBeenCalled();
+		const records = [...plugin.files.entries()]
+			.filter(([path]) => path.startsWith("Template/数据/学习统计/记录/") && path.endsWith(".json"))
+			.map(([, content]) => JSON.parse(content));
+		expect(records.at(-1)).toMatchObject({
+			kind: "statistics",
+			data: {
+				timeActivity: { buckets: expect.any(Object) },
+			},
+		});
 	});
 	it("时长变化事件携带实际跨小时和跨午夜键", async () => {
 		const events: any[] = [];
-		service.subscribe(event => events.push(event));
+		service.subscribe(event => { if (event.type !== "SAVE_STATE") events.push(event); });
 		await service.setTimeTrackingEnabled(true);
 		service.recordTimeActivity("笔记/甲.md");
 		advance(60);
@@ -57,7 +69,7 @@ describe("时长统计的保存与查询", () => {
 	});
 	it("统计设置事件标记来源，空时长不会广播变化", async () => {
 		const events: any[] = [];
-		service.subscribe(event => events.push(event));
+		service.subscribe(event => { if (event.type !== "SAVE_STATE") events.push(event); });
 		await service.setTrackingEnabled(true);
 		await service.setTrackingEnabled(false);
 		expect(events.at(-1)).toMatchObject({ type: "COVERAGE", source: "EDIT_ACTIVITY" });
@@ -101,7 +113,7 @@ describe("时长统计的保存与查询", () => {
 		advance(30);
 		expect(service.getDailyTimeStats()[0].seconds).toBe(30);
 	});
-	it("持续操作期间的心跳也会保存，不被输入防抖无限推迟", async () => {
+	it("持续操作期间心跳只结算，定时保存不被新输入推迟", async () => {
 		await service.setTimeTrackingEnabled(true);
 		service.recordTimeActivity("笔记/甲.md");
 		for (let i = 0; i < 15; i++) {
@@ -110,7 +122,11 @@ describe("时长统计的保存与查询", () => {
 		}
 		service.checkpointTimeActivity();
 		await vi.advanceTimersByTimeAsync(0);
-		const saved = plugin.saveData.mock.calls.at(-1)[0];
-		expect(Object.keys(saved.timeActivity.buckets).length).toBeGreaterThan(0);
+		expect(service.getDailyTimeStats()[0].seconds).toBe(15);
+		await vi.advanceTimersByTimeAsync(60000);
+		const records = [...plugin.files.values()]
+			.filter(content => content.includes('"kind": "statistics"'))
+			.map(content => JSON.parse(content));
+		expect(Object.keys(records.at(-1).data.timeActivity.buckets).length).toBeGreaterThan(0);
 	});
 });
