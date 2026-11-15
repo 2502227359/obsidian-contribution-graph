@@ -24,7 +24,10 @@ export interface GraphRender {
 	graphType(): string;
 }
 
+interface CellBinding { cell: ContributionCellData; config: ContributionGraphConfig; activity?: HTMLElement; }
+
 export abstract class BaseGraphRender implements GraphRender {
+	private readonly cellBindings = new WeakMap<HTMLElement, CellBinding>();
 	constructor() { }
 
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void {
@@ -111,9 +114,11 @@ export abstract class BaseGraphRender implements GraphRender {
 		const metricEl = createDiv({ cls: "cg-metric", parent });
 		const valueEl = createDiv({ cls: "cg-metric-value", parent: metricEl, attr: { "aria-label": metric.text } });
 		renderMetricParts(valueEl, metric.parts);
+		valueEl.dataset.metricSignature = metricSignature(metric.parts);
 		createDiv({ cls: "cg-metric-caption", parent: metricEl, text: metric.caption });
 		const legend = createDiv({ cls: "graph-legend", parent });
 		this.renderCellRuleIndicator(graphConfig, legend, contributionData);
+		legend.dataset.renderSignature = legendSignature(graphConfig, contributionData, this.getCellRules(graphConfig));
 		return header;
 	}
 
@@ -272,6 +277,7 @@ export abstract class BaseGraphRender implements GraphRender {
 				?.querySelector<HTMLElement>(".cell.is-selected");
 			this.clearSelectedCell(contaienr.closest(".main"));
 			contaienr.empty();
+			graphConfig.selectedActivityDate = undefined;
 			graphConfig.onActivityClose?.();
 			selectedCell?.focus();
 		};
@@ -371,6 +377,7 @@ export abstract class BaseGraphRender implements GraphRender {
 					items.length.toString()
 				)
 		);
+		list.dataset.activityVisibleCount = String(Math.min(size, items.length));
 		renderActivityItem(items.slice(0, size), list, graphConfig);
 
 		const navigation = createDiv({
@@ -378,31 +385,7 @@ export abstract class BaseGraphRender implements GraphRender {
 			parent: content,
 		});
 
-		let page = 1;
-		if (items.length > size) {
-			const loadMore = createEl("a", {
-				text: Locals.get().click_to_load_more,
-				href: "#",
-				parent: navigation,
-			});
-			loadMore.onclick = (event) => {
-				event.preventDefault();
-				const previousScrollHeight = list.scrollHeight;
-				page++;
-				renderActivityItem(
-					items.slice((page - 1) * size, page * size),
-					list,
-					graphConfig
-				);
-				list.scrollTo({
-					top: Math.max(0, previousScrollHeight - 16),
-					behavior: "smooth",
-				});
-				if (page * size >= items.length) {
-					loadMore.remove();
-				}
-			};
-		}
+		this.patchActivityNavigation(contaienr, navigation, list, items, graphConfig);
 	}
 
 	private renderTimeActivitySummary(config: ContributionGraphConfig, cell: ContributionCellData, parent: HTMLElement): void {
@@ -718,56 +701,39 @@ export abstract class BaseGraphRender implements GraphRender {
 		cellEl.setAttribute("data-date", contributionItem.date.toString());
 	}
 
-	bindCellClickEvent(
-		cellEl: HTMLElement,
-		contributionItem: ContributionCellData,
-		graphConfig: ContributionGraphConfig,
-		activityContainer?: HTMLElement
-	) {
-		if (contributionItem.future) {
-			if (cellEl instanceof HTMLButtonElement) {
-				cellEl.disabled = true;
-			}
+	bindCellClickEvent(cellEl: HTMLElement, contributionItem: ContributionCellData, graphConfig: ContributionGraphConfig, activityContainer?: HTMLElement): void {
+		const existing = this.cellBindings.get(cellEl);
+		if (existing) {
+			Object.assign(existing, {cell: contributionItem, config: graphConfig, activity: activityContainer});
 			return;
 		}
+		const binding = {cell: contributionItem, config: graphConfig, activity: activityContainer};
+		this.cellBindings.set(cellEl, binding);
 		if (cellEl instanceof HTMLButtonElement) {
 			cellEl.type = "button";
+			cellEl.disabled = Boolean(contributionItem.future);
 		} else {
 			cellEl.setAttribute("role", "button");
 			cellEl.tabIndex = 0;
-			cellEl.onkeydown = (event: KeyboardEvent) => {
-				if (event.key === "Enter" || event.key === " ") {
-					event.preventDefault();
-					cellEl.click();
-				}
+			cellEl.onkeydown = event => {
+				if (event.key === "Enter" || event.key === " ") { event.preventDefault(); cellEl.click(); }
 			};
 		}
-		this.applySelectedCellState(
-			cellEl,
-			contributionItem,
-			graphConfig.selectedActivityDate
-		);
-		cellEl.onclick = (event: MouseEvent) => {
-			if (graphConfig.onCellClick) {
-				graphConfig.onCellClick(contributionItem, event);
-			}
-			this.clearSelectedCell(cellEl.closest(".main"));
-			cellEl
-				.closest(".charts")
-				?.querySelectorAll<HTMLButtonElement>("button.cell")
-				.forEach((cell) => (cell.tabIndex = -1));
-			cellEl.tabIndex = 0;
-			cellEl.classList.add("is-selected");
-			cellEl.setAttribute("aria-pressed", "true");
+		this.applySelectedCellState(cellEl, contributionItem, graphConfig.selectedActivityDate);
+		cellEl.onclick = event => this.handleCellClick(cellEl, binding, event);
+	}
 
-			if (activityContainer) {
-				this.renderActivity(
-					graphConfig,
-					contributionItem,
-					activityContainer
-				);
-			}
-		};
+	private handleCellClick(cellEl: HTMLElement, binding: CellBinding, event: MouseEvent): void {
+		const {cell, config, activity} = binding;
+		if (cell.future) return;
+		config.selectedActivityDate = this.getCellKey(cell);
+		config.onCellClick?.(cell, event);
+		this.clearSelectedCell(cellEl.closest(".main"));
+		cellEl.closest(".charts")?.querySelectorAll<HTMLButtonElement>("button.cell").forEach(node => node.tabIndex = -1);
+		cellEl.tabIndex = 0;
+		cellEl.classList.add("is-selected");
+		cellEl.setAttribute("aria-pressed", "true");
+		if (activity) this.renderActivity(config, cell, activity);
 	}
 
 	setupCellKeyboardNavigation(chartsEl: HTMLElement): void {
@@ -870,6 +836,322 @@ export abstract class BaseGraphRender implements GraphRender {
 			: `${contributionItem.value} contributions on ${contributionItem.date}.`;
 		cellEl.ariaLabel = summary;
 	}
+
+	/** 原位更新一个字数格子，保留其 DOM 节点。 */
+	patchContributionCell(
+		cellEl: HTMLElement,
+		contributionItem: ContributionCellData,
+		graphConfig: ContributionGraphConfig,
+		activityContainer?: HTMLElement
+	): void {
+		const template = cellEl.ownerDocument.createElement("button");
+		template.className = contributionItem.value === 0 ? "cell empty" : "cell";
+		this.applyCellGlobalStyle(template, graphConfig);
+		this.applyCellStyleRule(template, contributionItem, this.getCellRules(graphConfig), graphConfig,
+			contributionItem.value === 0 ? undefined : () => this.getCellRules(graphConfig)[0]);
+		this.bindCellAttribute(template, contributionItem);
+		this.bindCellTips(template, contributionItem);
+		template.disabled = Boolean(contributionItem.future);
+		const selected = cellEl.classList.contains("is-selected") && !contributionItem.future;
+		template.classList.toggle("is-selected", selected);
+		template.setAttribute("aria-pressed", String(selected));
+		for (const name of ["class", "style", "aria-label", "disabled", "data-year", "data-month", "data-date", "aria-pressed"]) {
+			const value = template.getAttribute(name);
+			if (value === cellEl.getAttribute(name)) continue;
+			if (value === null) cellEl.removeAttribute(name); else cellEl.setAttribute(name, value);
+		}
+		if (cellEl.textContent !== template.textContent) cellEl.textContent = template.textContent;
+		this.bindCellClickEvent(cellEl, contributionItem, graphConfig, activityContainer);
+	}
+
+	/** 数据变化后原位更新稳定的页眉与详情节点。 */
+	patchContributionSummary(
+		main: HTMLElement,
+		graphConfig: ContributionGraphConfig,
+		cells: ContributionCellData[],
+		activityContainer: HTMLElement,
+		metricOverride?: ReturnType<typeof getGraphMetric>
+	): void {
+		const metric = metricOverride || getGraphMetric(graphConfig, cells);
+		const metricValue = main.querySelector<HTMLElement>(".cg-metric-value");
+		const metricKey = metricSignature(metric.parts);
+		if (metricValue && metricValue.dataset.metricSignature !== metricKey) {
+			patchMetricParts(metricValue, metric.parts);
+			metricValue.dataset.metricSignature = metricKey;
+			metricValue.ariaLabel = metric.text;
+		}
+		const caption = main.querySelector<HTMLElement>(".cg-metric-caption");
+		if (caption && caption.textContent !== metric.caption) caption.textContent = metric.caption;
+		const subtitle = main.querySelector<HTMLElement>(".graph-subtitle");
+		const context = getGraphContext(graphConfig, cells);
+		if (subtitle && subtitle.textContent !== context) subtitle.textContent = context;
+		const legend = main.querySelector<HTMLElement>(".graph-legend");
+		const legendKey = legendSignature(graphConfig, cells, this.getCellRules(graphConfig));
+		if (legend && legend.dataset.renderSignature !== legendKey) {
+			legend.replaceChildren();
+			this.renderCellRuleIndicator(graphConfig, legend, cells);
+			legend.dataset.renderSignature = legendKey;
+		}
+		if (graphConfig.selectedActivityDate) {
+			const selected = cells.find(cell => this.getCellKey(cell) === graphConfig.selectedActivityDate);
+			if (selected) this.patchActivity(graphConfig, selected, activityContainer);
+		}
+	}
+
+	patchActivity(
+		graphConfig: ContributionGraphConfig,
+		cellData: ContributionCellData,
+		container: HTMLElement
+	): void {
+		const summary = container.querySelector<HTMLElement>(".activity-summary");
+		if (!summary) {
+			this.renderActivity(graphConfig, cellData, container);
+			return;
+		}
+		if (graphConfig.timeTracking) {
+			const heading = summary.querySelector<HTMLElement>(".cg-detail-heading");
+			const headingText = getDetailHeading(cellData);
+			if (heading && heading.textContent !== headingText) heading.textContent = headingText;
+			const value = summary.querySelector<HTMLElement>(".cg-detail-value");
+			if (value) {
+				if (cellData.trackingState === "UNTRACKED" || cellData.tracked === false) {
+					if (value.textContent !== "未采集") value.textContent = "未采集";
+					delete value.dataset.metricSignature;
+				} else {
+					const parts = durationParts(cellData.timeStats?.seconds ?? cellData.value * 60);
+					if (value.dataset.metricSignature !== metricSignature(parts) || value.children.length !== parts.length * 2) {
+						patchMetricParts(value, parts);
+						value.dataset.metricSignature = metricSignature(parts);
+					}
+				}
+			}
+			const meta = summary.querySelector<HTMLElement>(".cg-detail-meta");
+			const goal = graphConfig.heatScale?.goal;
+			const metaText = goal && cellData.hour === undefined ? `每日目标 ${goal} 分钟 · 已完成 ${Math.round(cellData.value / goal * 100)}%` : "阅读与编辑的活跃使用时长";
+			if (meta && meta.textContent !== metaText) meta.textContent = metaText;
+		} else {
+			const date = summary.querySelector<HTMLElement>(".activity-date");
+			if (date && date.textContent !== cellData.date) date.textContent = cellData.date;
+			this.patchEditSummary(summary, cellData, graphConfig);
+		}
+		this.patchActivityWarnings(summary, cellData, graphConfig);
+		this.patchActivityItems(container, cellData.items || [], graphConfig);
+	}
+
+	private patchEditSummary(
+		summary: HTMLElement,
+		cellData: ContributionCellData,
+		graphConfig: ContributionGraphConfig
+	): void {
+		const untracked = cellData.trackingState === "UNTRACKED" || cellData.tracked === false;
+		if (untracked) { summary.querySelector(".activity-stats")?.remove(); return; }
+		if (!summary.querySelector(".activity-stats")) {
+			const draft = summary.ownerDocument.createElement("div");
+			this.renderEditActivitySummary(graphConfig, cellData, draft, cellData.summary || "");
+			const stats = draft.querySelector(".activity-stats");
+			if (stats) summary.insertBefore(stats, summary.querySelector(".activity-warnings"));
+		}
+		const stats = cellData.editStats || {addedChars: 0, deletedChars: 0, changedChars: 0};
+		const values: Record<string, string> = {
+			added: stats.addedChars.toLocaleString(),
+			deleted: stats.deletedChars.toLocaleString(),
+			changed: stats.changedChars.toLocaleString(),
+			goal: `${Math.round((cellData.value / Math.max(1, graphConfig.heatScale?.goal || 1000)) * 100)}%`,
+		};
+		for (const [name, value] of Object.entries(values)) {
+			const node = summary.querySelector<HTMLElement>(`.activity-stat.${name} .activity-stat-value`);
+			if (node && node.textContent !== value) node.textContent = value;
+		}
+	}
+
+	private patchActivityWarnings(
+		summary: HTMLElement,
+		cellData: ContributionCellData,
+		graphConfig: ContributionGraphConfig
+	): void {
+		const messages: string[] = [];
+		const untracked = cellData.trackingState === "UNTRACKED" || cellData.tracked === false;
+		if (graphConfig.timeTracking) {
+			if (untracked) messages.push("该时段未采集数据，不代表没有活动。");
+			if (cellData.trackingState === "PARTIAL") messages.push("该时段仅部分时间处于采集范围内。");
+			if (cellData.timeStats?.policyChanged) messages.push("当日调整过空闲阈值，记录按各时段规则累计。");
+		} else {
+			if (untracked) messages.push(Locals.get().graph_untracked_on.replace("{date}", cellData.date));
+			if (cellData.trackingState === "PARTIAL") messages.push(Locals.get().graph_partially_tracked_on.replace("{date}", cellData.date));
+			if (cellData.editStats?.countingPolicyChanged) messages.push(Locals.get().graph_counting_policy_changed);
+			const legacyWarning = Locals.get().graph_folder_legacy_excluded;
+			if (cellData.summary?.includes(legacyWarning)) messages.push(legacyWarning);
+		}
+		let warning = summary.querySelector<HTMLElement>(".activity-warnings");
+		if (!warning && messages.length > 0) warning = createDiv({cls: "activity-warnings", parent: summary});
+		if (!warning) return;
+		const signature = messages.join("\n");
+		if (graphConfig.timeTracking) {
+			const text = messages.join(" ");
+			if (warning.textContent !== text || warning.childElementCount) warning.textContent = text;
+		} else if (warning.dataset.signature !== signature) {
+			warning.replaceChildren(...messages.map(message => createDiv({text: message})));
+			warning.dataset.signature = signature;
+		}
+		const hidden = messages.length === 0;
+		if (warning.hidden !== hidden) warning.hidden = hidden;
+	}
+
+	private patchActivityItems(
+		container: HTMLElement,
+		items: ContributionItem[],
+		graphConfig: ContributionGraphConfig,
+		requestedCount?: number
+	): void {
+		let content = container.querySelector<HTMLElement>(".activity-content");
+		if (!items.length) {
+			content?.remove();
+			return;
+		}
+		if (!content) content = createDiv({cls: "activity-content", parent: container});
+		let list = content.querySelector<HTMLElement>(".activity-list");
+		if (!list) {
+			list = createDiv({cls: "activity-list", parent: content, attr: {role: "list", tabindex: "0"}});
+		}
+		const oldRows = Array.from(list.querySelectorAll<HTMLElement>(".activity-item"));
+		const currentCount = Number(list.dataset.activityVisibleCount || oldRows.length);
+		const targetCount = Math.max(10, requestedCount ?? currentCount);
+		const scrollTop = list.scrollTop;
+		const focused = list.ownerDocument.activeElement as HTMLElement | null;
+		const rowsByKey = new Map<string, HTMLElement[]>();
+		for (const row of oldRows) {
+			const key = row.dataset.activityKey || row.querySelector<HTMLElement>(".label")?.getAttribute("title") || "";
+			const rows = rowsByKey.get(key) || [];
+			rows.push(row);
+			rowsByKey.set(key, rows);
+		}
+		const visibleItems = items.slice(0, targetCount);
+		for (const [index, item] of visibleItems.entries()) {
+			const rows = rowsByKey.get(item.label) || [];
+			const row = rows.shift() || createActivityItem(item, list, graphConfig);
+			this.patchActivityRow(row, item, graphConfig);
+			const current = list.children[index] as HTMLElement | undefined;
+			if (current !== row) list.insertBefore(row, current || null);
+		}
+		for (const rows of rowsByKey.values()) rows.forEach(row => row.remove());
+		if (list.dataset.activityVisibleCount !== String(targetCount)) list.dataset.activityVisibleCount = String(targetCount);
+		const label = Locals.get().graph_edit_activity_document_history.replace("{count}", String(items.length));
+		if (list.getAttribute("aria-label") !== label) list.setAttribute("aria-label", label);
+		let navigation = content.querySelector<HTMLElement>(".activity-navigation");
+		if (!navigation) navigation = createDiv({cls: "activity-navigation", parent: content});
+		this.patchActivityNavigation(container, navigation, list, items, graphConfig);
+		list.scrollTop = scrollTop;
+		if (focused && list.contains(focused)) focused.focus({preventScroll: true});
+	}
+
+	private patchActivityNavigation(
+		container: HTMLElement,
+		navigation: HTMLElement,
+		list: HTMLElement,
+		items: ContributionItem[],
+		graphConfig: ContributionGraphConfig
+	): void {
+		const visibleCount = Number(list.dataset.activityVisibleCount || list.querySelectorAll(".activity-item").length);
+		let loadMore = navigation.querySelector<HTMLAnchorElement>(".activity-load-more");
+		if (visibleCount >= items.length) {
+			loadMore?.remove();
+			return;
+		}
+		if (!loadMore) {
+			loadMore = createEl("a", {text: Locals.get().click_to_load_more, href: "#", parent: navigation});
+			loadMore.classList.add("activity-load-more");
+		}
+		loadMore.onclick = event => {
+			event.preventDefault();
+			const previousScrollHeight = list.scrollHeight;
+			this.patchActivityItems(container, items, graphConfig, visibleCount + 10);
+			list.scrollTo({top: Math.max(0, previousScrollHeight - 16), behavior: "smooth"});
+		};
+	}
+
+	private patchActivityRow(row: HTMLElement, item: ContributionItem, graphConfig: ContributionGraphConfig): void {
+		if (row.dataset.activityKey !== item.label) row.dataset.activityKey = item.label;
+		const presentation = getDocumentPresentation(item, Boolean(graphConfig.timeTracking), graphConfig.valueUnit);
+		const main = row.querySelector<HTMLElement>(".cg-document-main")!;
+		const name = patchActivityLabel(main, item);
+		if (name.textContent !== presentation.name) name.textContent = presentation.name;
+		patchOptionalText(main, "cg-document-path", presentation.path);
+		patchOptionalText(main, "cg-document-description", presentation.detail, "description");
+		const value = row.querySelector<HTMLElement>(".cg-document-value");
+		if (value && value.textContent !== presentation.value) value.textContent = presentation.value;
+	}
+
+}
+
+function patchOptionalText(parent: HTMLElement, cls: string, text?: string, extra = ""): void {
+	let node = parent.querySelector<HTMLElement>(`.${cls}`);
+	if (!text) { node?.remove(); return; }
+	if (!node) node = createSpan({cls: `${cls} ${extra}`.trim(), parent});
+	if (node.textContent !== text) node.textContent = text;
+}
+
+function patchActivityLabel(parent: HTMLElement, item: ContributionItem): HTMLElement {
+	let label = parent.querySelector<HTMLElement>(".label")!;
+	const tag = item.link || item.open ? "A" : "SPAN";
+	if (label.tagName !== tag) {
+		const focused = label === label.ownerDocument.activeElement;
+		const replacement = createActivityLabel(item, parent);
+		replacement.classList.add("cg-document-name");
+		label.replaceWith(replacement);
+		label = replacement;
+		if (focused) label.focus({preventScroll: true});
+	}
+	const cls = `label ${item.link?.className || ""} cg-document-name`.replace(/\s+/g, " ").trim();
+	if (label.className !== cls) label.className = cls;
+	const attributes: Record<string, string | undefined> = {"aria-label": item.label, title: item.label,
+		"data-href": item.link ? item.link.href || "#" : undefined, href: item.link ? item.link.href || "#" : item.open ? "#" : undefined,
+		target: item.link ? item.link.target || "_blank" : undefined, rel: item.link ? item.link.rel || "noopener" : undefined};
+	for (const [name, value] of Object.entries(attributes)) {
+		if (label.getAttribute(name) === (value ?? null)) continue;
+		if (value === undefined) label.removeAttribute(name); else label.setAttribute(name, value);
+	}
+	label.onclick = event => { if (item.open) { event.preventDefault(); void item.open(event); } };
+	return label;
+}
+
+function metricSignature(parts: { value: string; unit: string }[]): string {
+	return JSON.stringify(parts);
+}
+
+function legendSignature(
+	config: ContributionGraphConfig,
+	cells: ContributionCellData[],
+	rules: CellStyleRule[]
+): string {
+	return JSON.stringify({
+		show: config.showCellRuleIndicators,
+		rules,
+		heatScale: config.heatScale,
+		states: {
+			untracked: cells.some(cell => cell.trackingState === "UNTRACKED" || cell.tracked === false),
+			partial: cells.some(cell => cell.trackingState === "PARTIAL"),
+			future: cells.some(cell => cell.future),
+		},
+	});
+}
+
+function patchMetricParts(parent: HTMLElement, parts: { value: string; unit: string }[]): void {
+	parts.forEach((part, index) => {
+		const numberIndex = index * 2;
+		let number = parent.children[numberIndex] as HTMLElement | undefined;
+		if (!number || !number.classList.contains("cg-metric-number")) {
+			number = createSpan({cls: "cg-metric-number"});
+			parent.insertBefore(number, parent.children[numberIndex] || null);
+		}
+		if (number.textContent !== part.value) number.textContent = part.value;
+		let unit = parent.children[numberIndex + 1] as HTMLElement | undefined;
+		if (!unit || !unit.classList.contains("cg-metric-unit")) {
+			unit = createSpan({cls: "cg-metric-unit"});
+			parent.insertBefore(unit, parent.children[numberIndex + 1] || null);
+		}
+		if (unit.textContent !== part.unit) unit.textContent = part.unit;
+	});
+	while (parent.children.length > parts.length * 2) parent.lastElementChild?.remove();
 }
 
 function renderMetricParts(parent: HTMLElement, parts: { value: string; unit: string }[]): void {
@@ -880,17 +1162,21 @@ function renderMetricParts(parent: HTMLElement, parts: { value: string; unit: st
 }
 
 function renderActivityItem(items: ContributionItem[], listMain: HTMLElement, config: ContributionGraphConfig): void {
-	for (const item of items.slice(0, 10)) {
-		const listItem = createDiv({ cls: "activity-item", parent: listMain, attr: { role: "listitem" } });
-		const main = createDiv({ cls: "cg-document-main", parent: listItem });
-		const presentation = getDocumentPresentation(item, Boolean(config.timeTracking), config.valueUnit);
-		const label = createActivityLabel(item, main);
-		label.classList.add("cg-document-name");
-		label.textContent = presentation.name;
-		if (presentation.path) createSpan({ cls: "cg-document-path", parent: main, text: presentation.path });
-		if (presentation.detail) createSpan({ cls: "description cg-document-description", parent: main, text: presentation.detail });
-		createSpan({ cls: "cg-document-value", parent: listItem, text: presentation.value });
-	}
+	for (const item of items.slice(0, 10)) createActivityItem(item, listMain, config);
+}
+
+function createActivityItem(item: ContributionItem, listMain: HTMLElement, config: ContributionGraphConfig): HTMLElement {
+	const listItem = createDiv({ cls: "activity-item", parent: listMain, attr: { role: "listitem" } });
+	listItem.dataset.activityKey = item.label;
+	const main = createDiv({ cls: "cg-document-main", parent: listItem });
+	const presentation = getDocumentPresentation(item, Boolean(config.timeTracking), config.valueUnit);
+	const label = createActivityLabel(item, main);
+	label.classList.add("cg-document-name");
+	label.textContent = presentation.name;
+	if (presentation.path) createSpan({ cls: "cg-document-path", parent: main, text: presentation.path });
+	if (presentation.detail) createSpan({ cls: "description cg-document-description", parent: main, text: presentation.detail });
+	createSpan({ cls: "cg-document-value", parent: listItem, text: presentation.value });
+	return listItem;
 }
 
 function createActivityLabel(item: ContributionItem, parent: HTMLElement): HTMLElement {
@@ -905,6 +1191,7 @@ function createActivityLabel(item: ContributionItem, parent: HTMLElement): HTMLE
 		label.setAttribute("target", item.link.target || "_blank");
 		label.setAttribute("rel", item.link.rel || "noopener");
 	}
+	else if (item.open) label.setAttribute("href", "#");
 	label.onclick = event => {
 		if (!item.open) return;
 		event.preventDefault();

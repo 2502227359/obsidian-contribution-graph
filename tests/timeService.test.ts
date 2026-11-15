@@ -40,6 +40,33 @@ describe("时长统计的保存与查询", () => {
 		expect(saved.timeActivity.buckets).toBeDefined();
 		expect(saved.settings.timeTrackingEnabled).toBe(true);
 	});
+	it("时长变化事件携带实际跨小时和跨午夜键", async () => {
+		const events: any[] = [];
+		service.subscribe(event => events.push(event));
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md");
+		advance(60);
+		service.pauseTimeActivity();
+		const timeKeys = events.filter(event => event.type === "TIME_STATS" && event.timeKeys)
+			.flatMap(event => event.timeKeys)
+			.filter((key, index, keys) => keys.findIndex(item => item.date === key.date && item.hour === key.hour) === index);
+		expect(timeKeys).toEqual([
+			{date: "2026-11-14", hour: 9},
+			{date: "2026-11-14", hour: 10},
+		]);
+	});
+	it("统计设置事件标记来源，空时长不会广播变化", async () => {
+		const events: any[] = [];
+		service.subscribe(event => events.push(event));
+		await service.setTrackingEnabled(true);
+		await service.setTrackingEnabled(false);
+		expect(events.at(-1)).toMatchObject({ type: "COVERAGE", source: "EDIT_ACTIVITY" });
+		await service.setTimeTrackingEnabled(true);
+		expect(events.at(-1)).toMatchObject({ type: "TIME_STATS", source: "TIME_ACTIVITY" });
+		const before = events.length;
+		(service as any).recordTimeSpan({ path: "笔记/甲.md", start: 0, end: 0, seconds: 0 });
+		expect(events).toHaveLength(before);
+	});
 	it("默认五分钟到期停止，设置修改只作用于之后", async () => {
 		await service.setTimeTrackingEnabled(true);
 		service.recordTimeActivity("笔记/甲.md");

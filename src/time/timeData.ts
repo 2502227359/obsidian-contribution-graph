@@ -18,6 +18,11 @@ import {
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const MAX_IDLE_TIMEOUT_MINUTES = 10080;
 
+export interface TimeActivityKey {
+	date: string;
+	hour: number;
+}
+
 export function createEmptyTimeActivity(): StoredTimeActivity {
 	return {
 		buckets: Object.create(null),
@@ -26,13 +31,14 @@ export function createEmptyTimeActivity(): StoredTimeActivity {
 	};
 }
 
-export function addTimeSpan(data: StoredTimeActivity, span: TimeSpan): void {
+export function addTimeSpan(data: StoredTimeActivity, span: TimeSpan): TimeActivityKey[] {
 	if (!isValidTimeSpan(span) || span.seconds === 0) {
-		return;
+		return [];
 	}
 	const totalMilliseconds = span.end - span.start;
 	let remainingSeconds = span.seconds;
 	let cursor = span.start;
+	const changed = new Map<string, TimeActivityKey>();
 	while (cursor < span.end) {
 		const cursorDate = new Date(cursor);
 		const end = getSpanSegmentEnd(cursorDate, cursor, span.end);
@@ -41,9 +47,12 @@ export function addTimeSpan(data: StoredTimeActivity, span: TimeSpan): void {
 				? remainingSeconds
 				: (span.seconds * (end - cursor)) / totalMilliseconds;
 		remainingSeconds -= seconds;
+		const key = { date: formatDate(cursorDate), hour: cursorDate.getHours() };
+		changed.set(`${key.date}T${String(key.hour).padStart(2, "0")}`, key);
 		addBucketSeconds(data, cursorDate, span.path, seconds);
 		cursor = end;
 	}
+	return [...changed.values()];
 }
 
 export function queryTimeStats(

@@ -41,7 +41,7 @@ import {
 	TrustedInputIntent,
 } from "./trustedInput";
 import { TimeTracker } from "../time/timeTracker";
-import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths } from "../time/timeData";
+import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths, TimeActivityKey } from "../time/timeData";
 import { TimeSpan, TimeStatsQuery } from "../time/types";
 
 interface CompositionState {
@@ -77,8 +77,10 @@ export interface DailyEditStatsQuery {
 
 export interface EditActivityChangeEvent {
 	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT" | "TIME_STATS";
+	source?: "EDIT_ACTIVITY" | "TIME_ACTIVITY";
 	date?: string;
 	filePath?: string;
+	timeKeys?: TimeActivityKey[];
 }
 
 const SAVE_DEBOUNCE_MS = 2000;
@@ -208,7 +210,7 @@ export class EditActivityService {
 		this.store.settings.timeTrackingEnabled = enabled;
 		if (enabled) this.openTimeCoverage();
 		this.markDirty();
-		this.emitChange({ type: "TIME_STATS" });
+		this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY" });
 		await this.flush();
 	}
 
@@ -219,7 +221,7 @@ export class EditActivityService {
 		this.store.settings.idleTimeoutMinutes = minutes;
 		this.store.timeActivity.policyChanges.push({ at: this.now().getTime(), idleTimeoutMinutes: minutes });
 		this.markDirty();
-		this.emitChange({ type: "TIME_STATS" });
+		this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY" });
 		await this.flush();
 	}
 
@@ -237,9 +239,10 @@ export class EditActivityService {
 	}
 
 	private recordTimeSpan(span: TimeSpan): void {
-		addTimeSpan(this.store.timeActivity, span);
+		const timeKeys = addTimeSpan(this.store.timeActivity, span);
+		if (timeKeys.length === 0) return;
 		this.markDirty();
-		this.emitChange({ type: "TIME_STATS", filePath: span.path });
+		this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", filePath: span.path, timeKeys });
 		this.scheduleSave();
 	}
 
@@ -459,7 +462,7 @@ export class EditActivityService {
 			this.closeOpenCountingPolicyPeriod();
 		}
 		this.markDirty();
-		this.emitChange({ type: "COVERAGE" });
+		this.emitChange({ type: "COVERAGE", source: "EDIT_ACTIVITY" });
 		await this.flush();
 	}
 
@@ -472,7 +475,7 @@ export class EditActivityService {
 		this.finishCountingPolicyChange();
 		this.resetTrustedInputState();
 		this.markDirty();
-		this.emitChange({ type: "SETTINGS" });
+		this.emitChange({ type: "SETTINGS", source: "EDIT_ACTIVITY" });
 		await this.flush();
 	}
 
@@ -491,7 +494,7 @@ export class EditActivityService {
 		this.finishCountingPolicyChange();
 		this.resetTrustedInputState();
 		this.markDirty();
-		this.emitChange({ type: "SETTINGS" });
+		this.emitChange({ type: "SETTINGS", source: "EDIT_ACTIVITY" });
 		await this.flush();
 	}
 
@@ -506,7 +509,7 @@ export class EditActivityService {
 		this.finishCountingPolicyChange();
 		this.resetTrustedInputState();
 		this.markDirty();
-		this.emitChange({ type: "SETTINGS" });
+		this.emitChange({ type: "SETTINGS", source: "EDIT_ACTIVITY" });
 		await this.flush();
 	}
 
@@ -519,7 +522,7 @@ export class EditActivityService {
 		this.finishCountingPolicyChange();
 		this.resetTrustedInputState();
 		this.markDirty();
-		this.emitChange({ type: "SETTINGS" });
+		this.emitChange({ type: "SETTINGS", source: "EDIT_ACTIVITY" });
 		await this.flush();
 	}
 

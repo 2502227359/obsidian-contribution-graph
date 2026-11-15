@@ -11,7 +11,7 @@ import { getAPI } from "obsidian-dataview";
 import { getActivityDateRange } from "src/activity/dateRange";
 import { clampEditPosition } from "src/activity/editPosition";
 import { EditActivityChangeEvent, EditActivityService } from "src/activity/EditActivityService";
-import { areFoldersCoveredByScope, isFileInTrackedFolders, normalizeTrackedFolders } from "src/activity/folderScope";
+import { areFoldersCoveredByScope, normalizeTrackedFolders } from "src/activity/folderScope";
 import {
 	getEditActivityMetricValue,
 	sortEditActivityStatsByMetric,
@@ -19,12 +19,16 @@ import {
 import { Locals } from "src/i18/messages";
 import { CompositeDataSourceQuery } from "src/query/compositeDataSourceQuery";
 import { Renders } from "src/render/renders";
-import { Contribution, ContributionItem } from "src/types";
+import { Contribution, ContributionCellData, ContributionGraphConfig, ContributionItem } from "src/types";
 import { MISS_CONFIG } from "./bizErrors";
 import { GraphProcessError } from "./graphProcessError";
 import { YamlGraphConfig } from "./types";
 import { YamlConfigReconciler } from "./yamlConfigReconciler";
-import { queryTimeGraph } from "../time/timeGraphData";
+import { queryTimeGraph, TimeGraphSelection } from "../time/timeGraphData";
+import { GraphRefreshScheduler } from "./graphRefreshScheduler";
+import { getGraphChange, GraphViewState } from "./graphChanges";
+import { mergeGraphRows } from "./activityGraphData";
+import { getHourlyWeek, groupHourlyData } from "../render/hourlyData";
 import { createDefaultGoalHeatScale, TIME_HOURLY_RULES } from "src/constants";
 import {
 	DataviewIndexTimeoutError,
@@ -43,40 +47,9 @@ class ProcessorLifecycleRenderChild extends MarkdownRenderChild {
 }
 
 class ReactiveGraphRenderChild extends MarkdownRenderChild {
-	private unsubscribe?: () => void;
-	private refreshTimer: number | null = null;
-
-	constructor(
-		container: HTMLElement,
-		private readonly activityService: EditActivityService,
-		private readonly refresh: () => void,
-		private readonly shouldRefresh: (event: EditActivityChangeEvent) => boolean
-	) {
-		super(container);
-	}
-
-	onload(): void {
-		this.unsubscribe = this.activityService.subscribe((event) => {
-			if (!this.shouldRefresh(event)) {
-				return;
-			}
-			if (this.refreshTimer !== null) {
-				window.clearTimeout(this.refreshTimer);
-			}
-			this.refreshTimer = window.setTimeout(() => {
-				this.refreshTimer = null;
-				this.refresh();
-			}, 150);
-		});
-	}
-
-	onunload(): void {
-		this.unsubscribe?.();
-		if (this.refreshTimer !== null) {
-			window.clearTimeout(this.refreshTimer);
-			this.refreshTimer = null;
-		}
-	}
+	constructor(container: HTMLElement, private readonly scheduler: GraphRefreshScheduler) { super(container); }
+	onload(): void { this.scheduler.start(); }
+	onunload(): void { this.scheduler.stop(); }
 }
 
 export class CodeBlockProcessor {
@@ -84,6 +57,11 @@ export class CodeBlockProcessor {
 	private selectedActivityDate?: string;
 	private readonly abortController = new AbortController();
 	private disposed = false;
+	private queriedData: Contribution[] = [];
+	private queriedHours: ContributionCellData[] = [];
+	private currentConfig?: ContributionGraphConfig;
+	private rangeKey?: string;
+	private requestedView?: GraphViewState;
 
 	constructor(private readonly activityService: EditActivityService) {}
 
@@ -104,16 +82,13 @@ export class CodeBlockProcessor {
 				!this.disposed &&
 				["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)
 			) {
-				ctx.addChild(
-					new ReactiveGraphRenderChild(
-						el,
-						this.activityService,
-						() => {
-							void this.renderFromYaml(graphConfig, el, app);
-						},
-						(event) => this.shouldRefreshGraph(event, graphConfig)
-					)
-				);
+				ctx.addChild(new ReactiveGraphRenderChild(el, new GraphRefreshScheduler({
+					container: el,
+					hourly: graphConfig.graphType === "hourly",
+					subscribe: listener => this.activityService.subscribe(listener),
+					accept: event => Boolean(getGraphChange(event, graphConfig, this.readViewState(el))),
+					refresh: events => this.refreshGraph(events, graphConfig, el, app),
+				})));
 			}
 		} catch (error) {
 			if (this.disposed || isAbortError(error)) {
@@ -134,7 +109,8 @@ export class CodeBlockProcessor {
 	async renderFromYaml(
 		graphConfig: YamlGraphConfig,
 		el: HTMLElement,
-		app: App
+		app: App,
+		selection?: TimeGraphSelection
 	): Promise<void> {
 		try {
 			YamlGraphConfig.validate(graphConfig);
@@ -145,58 +121,74 @@ export class CodeBlockProcessor {
 				return;
 			}
 
-			const inlineData = [...(graphConfig.data || [])];
-			const queriedData = this.queryData(graphConfig, app);
-			const renderConfig: YamlGraphConfig = {
-				...graphConfig,
-				dataSource: { ...graphConfig.dataSource },
-				data: [...inlineData, ...queriedData],
-			};
-			if (graphConfig.dataSource?.type === "TIME_ACTIVITY") {
-				const time = queryTimeGraph(graphConfig, this.activityService, app);
-				renderConfig.data = time.data;
-				renderConfig.hourlyData = time.hourlyData;
-				renderConfig.timeTracking = true;
-				renderConfig.activityFolders = normalizeTrackedFolders(graphConfig.dataSource.folders || []);
-				renderConfig.valueUnit = "分钟";
-				if (graphConfig.graphType === "hourly") {
-					renderConfig.heatScale = undefined;
-					renderConfig.cellStyleRules = graphConfig.cellStyleRules || TIME_HOURLY_RULES;
-				}
-				if (graphConfig.graphType !== "hourly") renderConfig.heatScale = graphConfig.heatScale || createDefaultGoalHeatScale(60);
-			}
-
-			if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
-				renderConfig.trackingPeriods =
-					this.activityService.getTrackingPeriods();
-				renderConfig.collectionScopePeriods =
-					this.activityService.getCollectionScopePeriods();
-				renderConfig.activityFolders = normalizeTrackedFolders(
-					graphConfig.dataSource.folders || []
-				);
-				renderConfig.valueUnit = Locals.get().graph_characters_unit;
-			}
-
-			const contributionConfig =
-				YamlGraphConfig.toContributionGraphConfig(renderConfig);
-			if (["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)) {
-				contributionConfig.selectedActivityDate =
-					this.selectedActivityDate;
-				contributionConfig.onCellClick = (cellData) => {
-					this.selectedActivityDate = cellData.hour === undefined ? cellData.date : `${cellData.date}T${cellData.hour}`;
-				};
-				contributionConfig.onActivityClose = () => {
-					this.selectedActivityDate = undefined;
-				};
-			}
-
-			Renders.render(el, contributionConfig);
+			this.updateQueryCache(graphConfig, app, selection);
+			const contributionConfig = YamlGraphConfig.toContributionGraphConfig(this.buildRenderConfig(graphConfig));
+			this.bindActivityState(contributionConfig, graphConfig, el, app);
+			if (!this.currentConfig || !Renders.update(el, contributionConfig)) Renders.render(el, contributionConfig);
+			this.currentConfig = contributionConfig;
+			this.requestedView = undefined;
 		} catch (error) {
 			if (this.disposed || isAbortError(error)) {
 				return;
 			}
+			this.requestedView = undefined;
 			this.renderError(el, error);
 		}
+	}
+
+	private buildRenderConfig(graphConfig: YamlGraphConfig): YamlGraphConfig {
+		const renderConfig: YamlGraphConfig = {
+			...graphConfig,
+			dataSource: { ...graphConfig.dataSource },
+			data: [...(graphConfig.data || []), ...this.queriedData],
+		};
+		if (graphConfig.dataSource?.type === "TIME_ACTIVITY") {
+			renderConfig.data = this.queriedData;
+			renderConfig.hourlyData = this.queriedHours;
+			renderConfig.timeTracking = true;
+			renderConfig.activityFolders = normalizeTrackedFolders(graphConfig.dataSource.folders || []);
+			renderConfig.valueUnit = "分钟";
+			if (graphConfig.graphType === "hourly") {
+				renderConfig.heatScale = undefined;
+				renderConfig.cellStyleRules = graphConfig.cellStyleRules || TIME_HOURLY_RULES;
+			}
+			if (graphConfig.graphType !== "hourly") renderConfig.heatScale = graphConfig.heatScale || createDefaultGoalHeatScale(60);
+		}
+
+		if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
+			renderConfig.trackingPeriods =
+				this.activityService.getTrackingPeriods();
+			renderConfig.collectionScopePeriods =
+				this.activityService.getCollectionScopePeriods();
+			renderConfig.activityFolders = normalizeTrackedFolders(
+				graphConfig.dataSource.folders || []
+			);
+			renderConfig.valueUnit = Locals.get().graph_characters_unit;
+		}
+
+		return renderConfig;
+	}
+
+	private bindActivityState(contributionConfig: ContributionGraphConfig, graphConfig: YamlGraphConfig, el: HTMLElement, app: App): void {
+		if (["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)) {
+			contributionConfig.selectedActivityDate =
+				this.selectedActivityDate;
+			contributionConfig.onCellClick = (cellData) => {
+				this.selectedActivityDate = cellData.hour === undefined ? cellData.date : `${cellData.date}T${cellData.hour}`;
+			};
+			contributionConfig.onActivityClose = () => {
+				this.selectedActivityDate = undefined;
+			};
+		}
+
+		contributionConfig.hourlyViewState = this.readViewState(el);
+		if (graphConfig.graphType === "hourly") contributionConfig.onHourlyViewChange = state => {
+			contributionConfig.hourlyViewState = state;
+			this.requestedView = state;
+			this.currentConfig = contributionConfig;
+			const dates = this.visibleDates(state);
+			void this.renderFromYaml(graphConfig, el, app, {dates});
+		};
 	}
 
 	loadYamlConfig(_el: HTMLElement, code: string): YamlGraphConfig {
@@ -395,21 +387,43 @@ export class CodeBlockProcessor {
 		return this.dataSourceQuery.query(graphConfig.dataSource, app);
 	}
 
-	private shouldRefreshGraph(
-		event: EditActivityChangeEvent,
-		graphConfig: YamlGraphConfig
-	): boolean {
-		if (event.type === "TIME_STATS" && graphConfig.dataSource?.type !== "TIME_ACTIVITY") return false;
-		if (event.type === "STATS" && graphConfig.dataSource?.type === "TIME_ACTIVITY") return false;
-		if (event.type !== "STATS") {
-			return true;
+	private readViewState(el: HTMLElement): GraphViewState | undefined {
+		if (this.requestedView) return this.requestedView;
+		const chart = el.querySelector<HTMLElement>(".charts.hourly-profile");
+		if (!chart) return this.currentConfig?.hourlyViewState;
+		return {view: chart.dataset.view === "week" ? "week" : "day", date: chart.dataset.selectedDate || ""};
+	}
+
+	private visibleDates(state: GraphViewState): string[] {
+		const days = groupHourlyData(this.queriedHours);
+		return state.view === "week" ? getHourlyWeek(days, state.date).map(day => day.date) : [state.date];
+	}
+
+	private refreshGraph(events: EditActivityChangeEvent[], config: YamlGraphConfig, el: HTMLElement, app: App): void {
+		if (this.disposed) return;
+		const state = this.readViewState(el);
+		const changes = events.map(event => getGraphChange(event, config, state)).filter(Boolean);
+		if (!changes.length) return;
+		const all = changes.some(change => change!.all);
+		const dates = all ? undefined : [...new Set(changes.flatMap(change => change!.dates))];
+		const timeKeys = !all && config.graphType === "hourly" ? events.flatMap(event => event.timeKeys || []).filter(key => dates!.includes(key.date)) : undefined;
+		const selection = dates ? {dates, timeKeys} : undefined;
+		void this.renderFromYaml(config, el, app, selection);
+	}
+
+	private updateQueryCache(config: YamlGraphConfig, app: App, selection?: TimeGraphSelection): void {
+		const range = getActivityDateRange(config);
+		const rangeKey = `${range.fromDate}/${range.toDate}`;
+		if (rangeKey !== this.rangeKey) selection = undefined;
+		if (config.dataSource?.type === "TIME_ACTIVITY") {
+			const time = queryTimeGraph(config, this.activityService, app, selection);
+			this.queriedData = mergeGraphRows(this.queriedData, time.data, selection);
+			this.queriedHours = mergeGraphRows(this.queriedHours, time.hourlyData, selection);
+		} else {
+			const rows = selection ? selection.dates.flatMap(date => this.queryData({...config, dateRangeType: "FIXED_DATE_RANGE", fromDate: date, toDate: date}, app)) : this.queryData(config, app);
+			this.queriedData = mergeGraphRows(this.queriedData, rows, selection);
 		}
-		const range = getActivityDateRange(graphConfig);
-		if (event.date && ((range.fromDate && event.date < range.fromDate) || (range.toDate && event.date > range.toDate))) {
-			return false;
-		}
-		const folders = normalizeTrackedFolders(graphConfig.dataSource?.folders || []);
-		return !event.filePath || folders.length === 0 || isFileInTrackedFolders(event.filePath, folders);
+		this.rangeKey = rangeKey;
 	}
 
 	private async resolveCurrentPosition(

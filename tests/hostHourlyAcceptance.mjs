@@ -80,7 +80,8 @@ try {
 	const keyboard = await evaluate(`(()=>{const c=(${chart}),b=c.querySelector('[data-hour="10"]');b.focus();b.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return {hour:document.activeElement.dataset.hour,stops:c.querySelectorAll('.cg-hour-bar[tabindex="0"]').length}})()`);
 	assert.deepEqual(keyboard, {hour:"9", stops:1});
 	await evaluate(`(()=>{window.hourlyOldChart=(${chart});return app.plugins.plugins['contribution-graph-local'].activityService.setIdleTimeoutMinutes(7)})()`);
-	await until(`!window.hourlyOldChart.isConnected && (${chart})?.dataset.view==='day'`);
+	await evaluate('new Promise(resolve=>setTimeout(resolve,250))');
+	assert.equal(await evaluate(`window.hourlyOldChart===(${chart})`),true,'统计刷新保留原时段图节点');
 	assert.equal(await evaluate("document.activeElement.dataset.hour"), "9", "刷新保留小时焦点");
 	assert.match(await evaluate(`(${chart}).closest('.main').querySelector('.cg-detail-heading').textContent`), /09:00—10:00/, "刷新保留小时详情");
 	await selectDate(dates.today); await selectView("week");
@@ -88,7 +89,8 @@ try {
 	assert.deepEqual(week, {rows:7, marks:168, metric:"1 小时 30 分钟"});
 	assert.equal(await evaluate(`(()=>{const c=(${chart});return [...c.querySelectorAll('.cg-week-day')].every(row=>{const box=row.getBoundingClientRect();return [...row.querySelectorAll('.cg-week-fill')].every(fill=>fill.getBoundingClientRect().bottom<=box.bottom+1)})})()`), true, "周行不能裁切小时柱");
 	await evaluate(`(()=>{window.hourlyOldChart=(${chart});const b=window.hourlyOldChart.querySelector('[data-time-view=week]');b.focus();return app.plugins.plugins['contribution-graph-local'].activityService.setIdleTimeoutMinutes(6)})()`);
-	await until(`!window.hourlyOldChart.isConnected && (${chart})?.dataset.view==='week'`);
+	await evaluate('new Promise(resolve=>setTimeout(resolve,250))');
+	assert.equal(await evaluate(`window.hourlyOldChart===(${chart})`),true,'统计刷新保留原时段图节点');
 	assert.equal(await evaluate("document.activeElement.dataset.timeFocus"), "view-week", "统计刷新保留控件焦点");
 	assert.equal(await evaluate(`(${chart}).dataset.selectedDate`), dates.today);
 	await evaluate(`(${chart}).querySelector('.cg-week-day[data-date="${dates.older}"]').click()`);

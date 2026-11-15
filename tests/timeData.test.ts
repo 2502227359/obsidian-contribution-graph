@@ -28,7 +28,12 @@ describe("time activity data", () => {
 	it("跨小时和午夜拆分时长", () => {
 		const data = createEmptyTimeActivity();
 		const start = new Date(2026, 0, 1, 23, 50).getTime();
-		addTimeSpan(data, span("Notes/a.md", start, start + 20 * 60 * 1000));
+		const changed = addTimeSpan(data, span("Notes/a.md", start, start + 20 * 60 * 1000));
+
+		expect(changed).toEqual([
+			{date: "2026-01-01", hour: 23},
+			{date: "2026-01-02", hour: 0},
+		]);
 
 		expect(Object.keys(data.buckets)).toEqual([
 			bucketKey(new Date(2026, 0, 1, 23)),

@@ -17,6 +17,12 @@ export function mountDatePicker(parent: HTMLElement, options: DatePickerOptions)
 	return picker.trigger;
 }
 
+/** 更新日期入口的数据与回调，保留已挂载的按钮和弹窗。 */
+export function updateDatePicker(parent: HTMLElement, options: DatePickerOptions): void {
+	const trigger = parent.querySelector<HTMLButtonElement>(".cg-date-trigger");
+	if (trigger) pickers.get(trigger)?.update(options);
+}
+
 export function captureDatePicker(root: HTMLElement): CalendarSnapshot | undefined {
 	const dialog = root.querySelector<HTMLDialogElement>(".cg-date-picker[open]");
 	if (!dialog) return undefined;
@@ -85,6 +91,23 @@ class DatePicker {
 		this.trigger.setAttribute("aria-expanded", "true");
 		this.position();
 		this.focusDay();
+	}
+
+	update(options: DatePickerOptions): void {
+		const dateChanged = this.options.value !== options.value;
+		Object.assign(this.options, options);
+		const dates = [...new Set(options.dates.filter(isValidFormattedDate))].sort();
+		if (dates.join() !== this.dates.join()) this.dates.splice(0, this.dates.length, ...dates);
+		this.trigger.disabled = !this.dates.length;
+		const value = this.trigger.querySelector(".cg-date-trigger-value");
+		if (value && value.textContent !== options.value) value.textContent = options.value;
+		if (!dateChanged) return;
+		this.month = options.value.slice(0, 7);
+		this.focusedDate = options.value;
+		if (this.dialog.open) {
+			this.renderMonth();
+			this.focusDay();
+		}
 	}
 
 	private createFooter(): void {

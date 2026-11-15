@@ -38,6 +38,23 @@ describe("两种时长热力图的数据接线", () => {
 		expect(hourly[13].future).toBe(true);
 		expect(hourly.reduce((sum, row) => sum + row.value, 0)).toBe(daily.data[0].value);
 	});
+	it("局部查询只返回受影响小时，并将统计查询限制在变化日期", () => {
+		const { service, app, config } = createInputs();
+		config.graphType = "hourly";
+		config.fromDate = "2026-11-01";
+		const query = vi.spyOn(service, "getHourlyTimeStats");
+		const result = queryTimeGraph(config, service, app, {dates: ["2026-11-14"], timeKeys: [{date: "2026-11-14", hour: 10}]}).hourlyData;
+		expect(result.map(cell => [cell.date, cell.hour, cell.timeStats?.seconds])).toEqual([["2026-11-14", 10, 90]]);
+		expect(query).toHaveBeenCalledWith({fromDate: "2026-11-14", toDate: "2026-11-14", folders: []});
+	});
+	it("没有受影响日期时不查询统计，日图局部查询不补齐其他天", () => {
+		const { service, app, config } = createInputs();
+		config.fromDate = "2026-11-01";
+		const query = vi.spyOn(service, "getDailyTimeStats");
+		expect(queryTimeGraph(config, service, app, {dates: []})).toEqual({data: [], hourlyData: []});
+		expect(query).not.toHaveBeenCalled();
+		expect(queryTimeGraph(config, service, app, {dates: ["2026-11-14"]}).data.map(row => row.date)).toEqual(["2026-11-14"]);
+	});
 	it("禁止把时段图连接到字数或文件数量数据源", () => {
 		const { config } = createInputs();
 		config.graphType = "hourly"; config.dataSource.type = "PAGE";

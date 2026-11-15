@@ -198,6 +198,9 @@ export class ContributionGraphConfig {
 	/** 时段图的临时视图状态，不写入笔记配置或统计数据。 */
 	hourlyViewState?: { view: "day" | "week"; date: string };
 
+	/** 由代码块宿主处理时长视图切换。 */
+	onHourlyViewChange?: (state: { view: "day" | "week"; date: string }) => void;
+
 	/**
 	 * Called when the activity-detail panel is closed.
 	 */

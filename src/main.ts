@@ -123,7 +123,7 @@ export default class ContributionGraph extends Plugin {
 			container: HTMLElement,
 			graphConfig: ContributionGraphConfig
 		): void => {
-			Renders.render(container, graphConfig);
+			if (!Renders.update(container, graphConfig)) Renders.render(container, graphConfig);
 		};
 		//@ts-ignore
 		window.contributionGraphApi = {

@@ -8,22 +8,28 @@ import { diffCalendarDays, parseDate, toFormattedDate } from "../util/dateUtils"
 import { formatDuration } from "./timeData";
 import { TimeStats } from "./types";
 
-export function queryTimeGraph(config: YamlGraphConfig, service: EditActivityService, app: App) {
+export interface TimeGraphSelection {
+	dates: readonly string[];
+	timeKeys?: readonly {date: string; hour: number}[];
+}
+
+export function queryTimeGraph(config: YamlGraphConfig, service: EditActivityService, app: App, selection?: TimeGraphSelection) {
 	const folders = normalizeTrackedFolders(config.dataSource.folders || []);
 	validateTimeFolders(folders, service, app);
 	const range = getActivityDateRange(config);
 	const query = { ...range, folders };
 	const hourly = config.graphType === "hourly";
 	if (hourly && diffCalendarDays(parseDate(range.fromDate!), parseDate(range.toDate!)) >= 366) throw new Error("时段图最多显示 366 天，请缩短日期范围");
-	const rows = hourly ? service.getHourlyTimeStats(query) : service.getDailyTimeStats(query);
+	const selectedDates = selection && [...new Set(selection.dates)].filter(date => date >= range.fromDate! && date <= range.toDate!);
+	const queries = selectedDates ? selectedDates.map(date => ({fromDate: date, toDate: date, folders})) : [query];
+	const rows = queries.flatMap(part => hourly ? service.getHourlyTimeStats(part) : service.getDailyTimeStats(part));
 	const indexed = new Map(rows.map(row => [timeKey(row), row]));
 	const data: Contribution[] = [];
 	const hourlyData: ContributionCellData[] = [];
-	const first = parseDate(range.fromDate!);
-	const last = parseDate(range.toDate!);
-	for (const day = new Date(first); day <= last; day.setDate(day.getDate() + 1)) {
+	for (const date of selectedDates || getRangeDates(range.fromDate!, range.toDate!)) {
+		const day = parseDate(date);
 		for (let hour = 0; hour < (hourly ? 24 : 1); hour++) {
-			const date = toFormattedDate(day);
+			if (hourly && selection?.timeKeys && !selection.timeKeys.some(key => key.date === date && key.hour === hour)) continue;
 			const bucket = { date, hour: hourly ? hour : undefined };
 			const stats = indexed.get(timeKey(bucket)) || emptyStats(service, bucket, timeBounds(day, bucket.hour), folders);
 			const contribution = toTimeContribution(stats, app);
@@ -34,6 +40,13 @@ export function queryTimeGraph(config: YamlGraphConfig, service: EditActivitySer
 		}
 	}
 	return { data, hourlyData };
+}
+
+function getRangeDates(from: string, to: string): string[] {
+	const dates: string[] = [];
+	const last = parseDate(to);
+	for (const day = parseDate(from); day <= last; day.setDate(day.getDate() + 1)) dates.push(toFormattedDate(day));
+	return dates;
 }
 
 function validateTimeFolders(folders: string[], service: EditActivityService, app: App): void {
