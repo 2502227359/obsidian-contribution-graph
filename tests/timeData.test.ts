@@ -8,6 +8,7 @@ import {
 	normalizeTimeActivity,
 	queryTimeStats,
 	renameTimePaths,
+	removeTimeSpan,
 } from "../src/time/timeData";
 import { TimeSpan } from "../src/time/types";
 
@@ -25,6 +26,35 @@ const bucketKey = (date: Date): string => {
 };
 
 describe("time activity data", () => {
+	it("整段撤回零碎心跳不会留下浮点残值或负数", () => {
+		const data = createEmptyTimeActivity();
+		const start = new Date(2026, 0, 1, 10).getTime();
+		for (let i = 0; i < 1000; i++) addTimeSpan(data, span("甲.md", start + i, start + i + 1));
+		removeTimeSpan(data, span("甲.md", start, start + 1000));
+		expect(Object.keys(data.buckets)).toEqual([]);
+		addTimeSpan(data, span("甲.md", start, start + 1000));
+		removeTimeSpan(data, span("甲.md", start, start + 2000));
+		expect(Object.keys(data.buckets)).toEqual([]);
+	});
+
+	it("撤回跨午夜空闲尾段，保留此前时长和其他文档并移除空桶", () => {
+		const data = createEmptyTimeActivity();
+		const start = new Date(2026, 0, 1, 23, 58).getTime();
+		addTimeSpan(data, span("甲.md", start - 30000, start + 300000));
+		addTimeSpan(data, span("乙.md", start - 10000, start));
+		expect(removeTimeSpan(data, span("甲.md", start, start + 300000))).toEqual([
+			{ date: "2026-01-01", hour: 23 }, { date: "2026-01-02", hour: 0 },
+		]);
+		expect(Object.keys(data.buckets)).toHaveLength(1);
+		expect(queryTimeStats(data, {}, start + 300000, true)[0]).toMatchObject({
+			seconds: 40, documents: [{ path: "甲.md", seconds: 30 }, { path: "乙.md", seconds: 10 }],
+		});
+		removeTimeSpan(data, span("甲.md", start - 30000, start));
+		expect(queryTimeStats(data, {}, start + 300000, false)[0].seconds).toBe(10);
+		expect(removeTimeSpan(data, span("不存在.md", start, start + 300000))).toEqual([]);
+		expect(queryTimeStats(data, {}, start + 300000, false)[0].seconds).toBe(10);
+	});
+
 	it("跨小时和午夜拆分时长", () => {
 		const data = createEmptyTimeActivity();
 		const start = new Date(2026, 0, 1, 23, 50).getTime();

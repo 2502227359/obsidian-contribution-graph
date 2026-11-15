@@ -106,7 +106,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		new Setting(section)
 			.setName("空闲阈值（分钟）")
 			.setDesc(
-				"默认 5 分钟。最后一次正文操作后继续计时到阈值；静止阅读可能少计，前台挂机可能多计。修改仅影响后续记录。"
+				"默认 5 分钟。达到阈值后暂停，并扣除最后一次正文操作后的整段空闲时间；未到阈值恢复操作则保留。静止阅读可能少计。修改仅影响后续记录。"
 			)
 			.addText((text) => {
 				text.setValue(String(settings.idleTimeoutMinutes));

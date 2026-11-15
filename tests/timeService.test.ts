@@ -76,20 +76,43 @@ describe("时长统计的保存与查询", () => {
 		await service.setTimeTrackingEnabled(true);
 		expect(events.at(-1)).toMatchObject({ type: "TIME_STATS", source: "TIME_ACTIVITY" });
 		const before = events.length;
-		(service as any).recordTimeSpan({ path: "笔记/甲.md", start: 0, end: 0, seconds: 0 });
+		(service as any).recordTimeSpan({ path: "笔记/甲.md", start: 0, end: 0, seconds: 0 }, "add");
 		expect(events).toHaveLength(before);
 	});
-	it("默认五分钟到期停止，设置修改只作用于之后", async () => {
+	it("默认五分钟到期撤回整个尾段，设置修改只作用于之后", async () => {
 		await service.setTimeTrackingEnabled(true);
 		service.recordTimeActivity("笔记/甲.md");
 		advance(360);
-		expect(service.getDailyTimeStats()[0].seconds).toBe(300);
+		expect(service.getDailyTimeStats()).toEqual([]);
+		expect(service.getTimeTrackingStatus()).toBe("时长统计：空闲暂停");
 		await service.setIdleTimeoutMinutes(1);
 		service.recordTimeActivity("笔记/甲.md");
 		advance(120);
-		expect(service.getDailyTimeStats()[0].seconds).toBe(360);
+		expect(service.getDailyTimeStats()).toEqual([]);
 		await expect(service.setIdleTimeoutMinutes(0)).rejects.toThrow();
 		expect(service.getSettings().idleTimeoutMinutes).toBe(1);
+	});
+	it("已保存的跨小时空闲尾段会撤回，重启不恢复且刷新覆盖删除的小时", async () => {
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(15);
+		service.recordTimeActivity("笔记/甲.md"); advance(285);
+		await service.flush();
+		expect(service.getDailyTimeStats()[0].seconds).toBe(300);
+		const events: any[] = []; service.subscribe(event => events.push(event));
+		advance(15);
+		expect(service.getDailyTimeStats()[0].seconds).toBe(15);
+		expect(service.getHourlyTimeStats().map(item => [item.hour, item.seconds])).toEqual([[9, 15]]);
+		expect(events).toContainEqual({ type: "TIME_STATS", source: "TIME_ACTIVITY", filePath: "笔记/甲.md", timeKeys: [
+			{ date: "2026-11-14", hour: 9 }, { date: "2026-11-14", hour: 10 },
+		] });
+		await service.flush();
+		await service.unload();
+		plugin.loadData.mockResolvedValue(plugin.saveData.mock.lastCall[0]);
+		service = new EditActivityService(plugin, () => new Date(wall), () => mono);
+		await service.initialize();
+		expect(service.getDailyTimeStats()[0].seconds).toBe(15);
+		service.recordTimeActivity("笔记/甲.md"); advance(30); service.pauseTimeActivity();
+		expect(service.getDailyTimeStats()[0].seconds).toBe(45);
 	});
 	it("范围外活动不计时，切换范围先结束旧会话", async () => {
 		await service.setTrackedFolders(["项目"]);

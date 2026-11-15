@@ -32,6 +32,14 @@ export function createEmptyTimeActivity(): StoredTimeActivity {
 }
 
 export function addTimeSpan(data: StoredTimeActivity, span: TimeSpan): TimeActivityKey[] {
+	return applyTimeSpan(data, span, 1);
+}
+
+export function removeTimeSpan(data: StoredTimeActivity, span: TimeSpan): TimeActivityKey[] {
+	return applyTimeSpan(data, span, -1);
+}
+
+function applyTimeSpan(data: StoredTimeActivity, span: TimeSpan, direction: 1 | -1): TimeActivityKey[] {
 	if (!isValidTimeSpan(span) || span.seconds === 0) {
 		return [];
 	}
@@ -48,8 +56,9 @@ export function addTimeSpan(data: StoredTimeActivity, span: TimeSpan): TimeActiv
 				: (span.seconds * (end - cursor)) / totalMilliseconds;
 		remainingSeconds -= seconds;
 		const key = { date: formatDate(cursorDate), hour: cursorDate.getHours() };
-		changed.set(`${key.date}T${String(key.hour).padStart(2, "0")}`, key);
-		addBucketSeconds(data, cursorDate, span.path, seconds);
+		if (updateBucketSeconds(data, cursorDate, span.path, seconds * direction)) {
+			changed.set(`${key.date}T${String(key.hour).padStart(2, "0")}`, key);
+		}
 		cursor = end;
 	}
 	return [...changed.values()];
@@ -290,13 +299,14 @@ function getSpanSegmentEnd(date: Date, start: number, end: number): number {
 	return Math.min(end, boundary > start ? boundary : end);
 }
 
-function addBucketSeconds(
+function updateBucketSeconds(
 	data: StoredTimeActivity,
 	date: Date,
 	path: string,
 	seconds: number
-): void {
+): boolean {
 	const key = getBucketKey(date);
+	if (seconds < 0 && !data.buckets[key]?.documents[path]) return false;
 	const bucket =
 		data.buckets[key] ||
 		(data.buckets[key] = {
@@ -305,7 +315,15 @@ function addBucketSeconds(
 			offsetMinutes: -date.getTimezoneOffset(),
 			documents: Object.create(null),
 		});
-	bucket.documents[path] = (bucket.documents[path] || 0) + seconds;
+	const next = (bucket.documents[path] || 0) + seconds;
+	// 合并与整段撤回的浮点舍入可能留下不足一纳秒的残值。
+	if (seconds < 0 && next < 1e-9) {
+		delete bucket.documents[path];
+		if (Object.keys(bucket.documents).length === 0) delete data.buckets[key];
+	} else {
+		bucket.documents[path] = next;
+	}
+	return true;
 }
 
 function getFilteredDocuments(

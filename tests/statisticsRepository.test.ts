@@ -21,6 +21,28 @@ function sample(count: number) {
 }
 
 describe("普通目录统计记录", () => {
+	it("较新版本的时长回撤覆盖旧值，保留其他运行且重放旧版本不复活", async () => {
+		const fs = files();
+		const left = new StatisticsRepository(fs, data => data as any);
+		const right = new StatisticsRepository(fs, data => data as any);
+		await left.initialize(); await right.initialize();
+		const data = emptyStatistics(), other = emptyStatistics();
+		const key = "2026-11-15T10-+480";
+		data.timeActivity.buckets[key] = { date: "2026-11-15", hour: 10, offsetMinutes: 480, documents: { "甲.md": 300 } };
+		other.timeActivity.buckets[key] = { date: "2026-11-15", hour: 10, offsetMinutes: 480, documents: { "甲.md": 600 } };
+		await left.save(data); await right.save(other);
+		const old = new Map(fs.contents);
+		data.timeActivity.buckets = {};
+		await left.save(data); await right.refresh();
+		expect(right.read(other).timeActivity.buckets[key].documents["甲.md"]).toBe(600);
+		for (const [path, value] of old) fs.contents.set(path, value);
+		await right.refresh();
+		expect(right.read(other).timeActivity.buckets[key].documents["甲.md"]).toBe(600);
+		const restarted = new StatisticsRepository(fs, data => data as any);
+		await restarted.initialize();
+		expect(restarted.read(emptyStatistics()).timeActivity.buckets[key].documents["甲.md"]).toBe(600);
+	});
+
 	it("不同运行的记录相加，重复同步和旧版本不重复累计，重启不重计", async () => {
 		const fs = files();
 		const left = new StatisticsRepository(fs, data => data as any);

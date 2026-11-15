@@ -28,7 +28,7 @@ export class TimeTracker {
 	private lastOffset?: number;
 
 	constructor(
-		private readonly onSpan: (span: TimeSpan) => void,
+		private readonly onSpan: (span: TimeSpan, operation: "add" | "remove") => void,
 		private readonly clock: TimeTrackerClock,
 		idleTimeoutMinutes = DEFAULT_IDLE_TIMEOUT_MINUTES
 	) {
@@ -130,23 +130,36 @@ export class TimeTracker {
 		}
 		const idleEndMono =
 			this.lastActivityMono + this.idleTimeoutMinutes * 60 * 1000;
-		const cappedEndMono = Math.min(endMono, idleEndMono);
-		if (cappedEndMono > this.lastEmitMono) {
-			const elapsed = (cappedEndMono - this.lastEmitMono) / 1000;
+		if (endMono >= idleEndMono) {
+			this.status = "IDLE";
+			this.removeIdleTail();
+			return;
+		}
+		if (endMono > this.lastEmitMono) {
+			const elapsed = (endMono - this.lastEmitMono) / 1000;
 			const mappedEndWall =
-				this.lastEmitWall + (cappedEndMono - this.lastEmitMono);
+				this.lastEmitWall + (endMono - this.lastEmitMono);
 			this.onSpan({
 				path: this.path,
 				start: this.lastEmitWall,
 				end: mappedEndWall,
 				seconds: elapsed,
-			});
-			this.lastEmitMono = cappedEndMono;
+			}, "add");
+			this.lastEmitMono = endMono;
 			this.lastEmitWall = mappedEndWall;
 		}
-		if (endMono >= idleEndMono) {
-			this.status = "IDLE";
-		}
+	}
+
+	private removeIdleTail(): void {
+		const milliseconds = this.lastEmitMono - this.lastActivityMono;
+		if (!this.path || milliseconds <= 0) return;
+		// 只撤回心跳已计入的尾段；本次未结算的剩余空闲直接丢弃。
+		this.onSpan({
+			path: this.path,
+			start: this.lastEmitWall - milliseconds,
+			end: this.lastEmitWall,
+			seconds: milliseconds / 1000,
+		}, "remove");
 	}
 
 	private readClock(): { wall: number; mono: number; offset: number } {
@@ -193,6 +206,9 @@ export class TimeTracker {
 		offset: number;
 	}): void {
 		this.status = "IDLE";
+		if (now.mono >= this.lastActivityMono + this.idleTimeoutMinutes * 60 * 1000) {
+			this.removeIdleTail();
+		}
 		this.lastEmitWall = now.wall;
 		this.lastEmitMono = now.mono;
 		this.lastActivityMono = now.mono;

@@ -42,7 +42,7 @@ import {
 	TrustedInputIntent,
 } from "./trustedInput";
 import { TimeTracker } from "../time/timeTracker";
-import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths, TimeActivityKey } from "../time/timeData";
+import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths, removeTimeSpan, TimeActivityKey } from "../time/timeData";
 import { TimeSpan, TimeStatsQuery } from "../time/types";
 import { canonicalStatistics, DEFAULT_STATISTICS_FOLDER, StatisticsRepository } from "./StatisticsRepository";
 import { emptyStatistics, StatisticsData, statisticsFrom } from "./statisticsModel";
@@ -146,7 +146,7 @@ export class EditActivityService {
 	) {
 		this.now = now;
 		this.monotonic = monotonic;
-		this.timeTracker = new TimeTracker(span => this.recordTimeSpan(span), {
+		this.timeTracker = new TimeTracker((span, operation) => this.recordTimeSpan(span, operation), {
 			wall: () => this.now().getTime(), monotonic,
 		});
 	}
@@ -393,8 +393,10 @@ export class EditActivityService {
 		return { trackingState: getTimeTrackingState(this.readStatistics().timeActivity, start, end, folders, now), future: start > now };
 	}
 
-	private recordTimeSpan(span: TimeSpan): void {
-		const timeKeys = addTimeSpan(this.store.timeActivity, span);
+	private recordTimeSpan(span: TimeSpan, operation: "add" | "remove"): void {
+		const timeKeys = operation === "remove"
+			? removeTimeSpan(this.store.timeActivity, span)
+			: addTimeSpan(this.store.timeActivity, span);
 		if (timeKeys.length === 0) return;
 		this.markDirty();
 		this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", filePath: span.path, timeKeys });
