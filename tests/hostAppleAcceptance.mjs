@@ -66,11 +66,16 @@ try {
 		const root = app.workspace.activeLeaf.view.containerEl;
 		const findChart = () => [...root.querySelectorAll('.charts.hourly-profile')].find(e => e.getBoundingClientRect().width > 0);
 		let chart = findChart();
-		const dateInput = chart?.querySelector('.cg-time-date-nav input[type="date"]');
-		const selectedDate = window.contributionGraphApi.getHourlyTimeStats().filter(row=>row.seconds>0 && row.date>=dateInput.min && row.date<=dateInput.max).map(row=>row.date).sort().at(-1);
-		if (dateInput) {
-			dateInput.value = selectedDate;
-			dateInput.dispatchEvent(new Event('change', {bubbles: true}));
+		const trigger = chart?.querySelector('.cg-date-trigger');
+		const selectedDate = window.contributionGraphApi.getHourlyTimeStats().filter(row=>row.seconds>0).map(row=>row.date).sort().at(-1);
+		if (trigger) {
+			trigger.click();
+			const dialog=chart.querySelector('.cg-date-picker');
+			for(let i=0;i<14;i++) {
+				const day=dialog.querySelector('button[data-date="'+selectedDate+'"]:not(:disabled)');
+				if(day){day.click();break}
+				dialog.querySelector(dialog.dataset.month>selectedDate.slice(0,7)?'.cg-date-month-previous':'.cg-date-month-next').click();
+			}
 			await new Promise(resolve => requestAnimationFrame(resolve));
 		}
 		chart = findChart();
@@ -83,7 +88,7 @@ try {
 		return {
 			expectedDate: selectedDate,
 			selectedDate: chart?.dataset.selectedDate,
-			dateValue: chart?.querySelector('.cg-time-date-nav input[type="date"]')?.value,
+			dateValue: chart?.querySelector('.cg-date-trigger')?.textContent,
 			bar: Boolean(bar),
 			heading: main?.querySelector('.cg-detail-heading')?.textContent,
 			rows: main?.querySelectorAll('.cg-document-value').length || 0,

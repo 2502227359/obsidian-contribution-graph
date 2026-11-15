@@ -104,19 +104,6 @@
 	outline-offset: 2px;
 }
 
-.contribution-graph .cg-time-date-nav input[type="date"] {
-	width: 132px;
-	min-height: 30px;
-	padding: 5px 8px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--cg-radius-control, var(--radius-s));
-	background: var(--background-primary);
-	color: var(--text-normal);
-	font: inherit;
-	font-size: var(--font-ui-small);
-	text-align: center;
-}
-
 .contribution-graph .cg-time-period-label {
 	margin: 0 0 14px;
 	color: var(--cg-chart-muted);
@@ -505,11 +492,6 @@
 		justify-content: space-between;
 	}
 
-	.contribution-graph .cg-time-date-nav input[type="date"] {
-		flex: 1 1 auto;
-		width: auto;
-	}
-
 	.contribution-graph .cg-hour-bars {
 		gap: 2px;
 	}
@@ -544,8 +526,7 @@
 		padding-inline: 8px;
 	}
 
-	.contribution-graph .cg-time-tabs button,
-	.contribution-graph .cg-time-date-nav input[type="date"] {
+	.contribution-graph .cg-time-tabs button {
 		font-size: 11px;
 	}
 

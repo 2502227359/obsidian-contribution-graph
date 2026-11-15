@@ -33,7 +33,7 @@ async function until(expression) {
 }
 const chart = "[...app.workspace.activeLeaf.view.containerEl.querySelectorAll('.charts.hourly-profile')].find(e=>e.getBoundingClientRect().width>0)";
 async function selectDate(date) {
-	await evaluate(`(()=>{const input=(${chart}).querySelector('input[type=date]');input.value=${JSON.stringify(date)};input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+	await evaluate(`(()=>{const c=(${chart});c.querySelector('.cg-date-trigger').click();const d=c.querySelector('.cg-date-picker');const date=${JSON.stringify(date)};for(let i=0;i<14;i++){const day=d.querySelector('button[data-date="'+date+'"]:not(:disabled)');if(day){day.click();return true}const direction=d.dataset.month>date.slice(0,7)?'previous':'next';d.querySelector('.cg-date-month-'+direction).click()}throw Error('日期未出现在可选日历内')})()`);
 	await until(`(${chart})?.dataset.selectedDate===${JSON.stringify(date)}`);
 }
 async function selectView(view) {
@@ -47,6 +47,8 @@ try {
 	const fixture = '# 学习时段验收\n\n' + ['default', 'hourly'].map(type => '```contributionGraph\ntitle: ' + (type === 'hourly' ? '学习时段' : '每日活跃时长') + '\ngraphType: ' + type + '\ndateRangeType: FIXED_DATE_RANGE\nfromDate: ' + dates.first + '\ntoDate: ' + dates.future + '\ndataSource:\n  type: TIME_ACTIVITY\n```\n').join('\n');
 	await evaluate(`(async()=>{
 		app.setting.close(); document.querySelector('.modal-header-button')?.click();
+		// 展示验收隔离真实采集，避免弹窗关闭结算测试页阅读时间。
+		app.plugins.plugins['contribution-graph-local'].timeObserver.stop();
 		const service=app.plugins.plugins['contribution-graph-local'].activityService;
 		const data=JSON.parse(service.exportData());
 		const now=new Date(),at=(delta,hour=0,minute=0)=>new Date(now.getFullYear(),now.getMonth(),now.getDate()+delta,hour,minute);
@@ -120,4 +122,4 @@ try {
 	const saved = await evaluate("app.vault.read(app.vault.getAbstractFileByPath('小时时段保存验收.md'))");
 	assert.ok(saved.includes('graphType: hourly') && !saved.includes('hourlyViewState:'), "保存图类型但不把临时视图状态写入配置");
 	console.log("小时视图宿主验收通过：默认单日、24柱比例与零值、日期切换、7天168小时、一周下钻、原始明细、缺失/部分/未来、键盘、刷新状态与焦点、320像素布局、统计数据保留。");
-} finally { socket.close(); }
+} finally { await evaluate("app.plugins.plugins['contribution-graph-local'].timeObserver.start()"); socket.close(); }

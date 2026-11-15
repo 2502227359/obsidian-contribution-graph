@@ -1,0 +1,320 @@
+/* 页面内日期弹窗：保持 Obsidian 字体，只提供克制的 Apple 风格层次。 */
+
+.contribution-graph .cg-time-date-nav button.cg-date-trigger {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 132px !important;
+	min-width: 0 !important;
+	min-height: 30px;
+	padding: 5px 10px !important;
+	border: 1px solid var(--cg-border-strong, var(--background-modifier-border));
+	border-radius: var(--cg-radius-control, var(--radius-s));
+	background: var(--cg-surface-data, var(--background-primary));
+	color: var(--cg-text, var(--text-normal));
+	font: inherit;
+	font-family: var(--font-text);
+	font-size: var(--font-ui-small);
+	line-height: 1.2;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	transition: background-color var(--cg-motion-fast, 140ms ease),
+		border-color var(--cg-motion-fast, 140ms ease), color var(--cg-motion-fast, 140ms ease);
+}
+
+.contribution-graph .cg-time-date-nav button.cg-date-trigger:hover {
+	border-color: var(--cg-blue, var(--interactive-accent));
+	background: var(--cg-blue-wash, var(--background-modifier-hover));
+	color: var(--cg-blue, var(--interactive-accent));
+}
+
+.contribution-graph .cg-time-date-nav button.cg-date-trigger:focus-visible {
+	outline: 2px solid var(--cg-blue, var(--interactive-accent));
+	outline-offset: 2px;
+}
+
+.contribution-graph .cg-date-trigger-value {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* showModal() 后 dialog 进入 top layer，因此不会被 hourly-profile 的 overflow 截断。 */
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker {
+	position: fixed;
+	inset: auto;
+	box-sizing: border-box;
+	width: 288px;
+	max-width: calc(100vw - 24px);
+	max-height: calc(100dvh - 24px);
+	margin: 0;
+	padding: 10px;
+	border: 1px solid var(--cg-border-strong, var(--background-modifier-border));
+	border-radius: 14px;
+	background: var(--cg-surface-raised, var(--background-primary-alt, var(--background-primary)));
+	color: var(--cg-text, var(--text-normal));
+	font-family: var(--font-text) !important;
+	font-size: var(--font-ui-small);
+	line-height: 1.3;
+	font-synthesis: none;
+	box-shadow: var(--cg-shadow-float, 0 14px 38px rgba(15, 23, 42, 0.14));
+	overflow: auto;
+	overscroll-behavior: contain;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker::backdrop {
+	background: transparent;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker input,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker select,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker textarea {
+	font-family: var(--font-text) !important;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker input,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker select,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker textarea {
+	font: inherit;
+}
+
+.contribution-graph .cg-date-header {
+	display: grid;
+	grid-template-columns: 32px minmax(0, 1fr) 32px;
+	align-items: center;
+	gap: 6px;
+	min-height: 32px;
+	margin-bottom: 8px;
+}
+
+.contribution-graph .cg-date-month-label {
+	min-width: 0;
+	margin: 0;
+	color: var(--cg-text, var(--text-normal));
+	font-size: var(--font-ui-small);
+	font-weight: 650;
+	line-height: 1.25;
+	text-align: center;
+	white-space: nowrap;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-previous,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-next {
+	width: 32px !important;
+	min-width: 32px !important;
+	min-height: 32px;
+	padding: 0 !important;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--cg-text-muted, var(--text-muted));
+	font-size: 20px;
+	font-weight: 400;
+	line-height: 1;
+	text-align: center;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-previous:hover,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-next:hover {
+	background: var(--cg-blue-wash, var(--background-modifier-hover));
+	color: var(--cg-blue, var(--interactive-accent));
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-previous:disabled,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-next:disabled {
+	cursor: not-allowed;
+	opacity: 0.34;
+}
+
+.contribution-graph .cg-date-weekdays,
+.contribution-graph .cg-date-week {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 2px;
+}
+
+.contribution-graph .cg-date-weekdays {
+	margin: 2px 0 4px;
+	color: var(--cg-text-faint, var(--text-faint));
+	font-size: var(--font-ui-smaller);
+	line-height: 1.25;
+	text-align: center;
+}
+
+.contribution-graph .cg-date-weekdays > span {
+	min-width: 0;
+	padding: 2px 0;
+	font: inherit;
+}
+
+.contribution-graph .cg-date-grid {
+	display: grid;
+	gap: 2px;
+}
+
+.contribution-graph .cg-date-week {
+	min-width: 0;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day {
+	position: relative;
+	width: auto !important;
+	min-width: 0 !important;
+	min-height: 32px;
+	height: auto;
+	padding: 0 !important;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--cg-text, var(--text-normal));
+	font-size: var(--font-ui-small);
+	font-variant-numeric: tabular-nums;
+	line-height: 1.2;
+	text-align: center;
+	appearance: none;
+	cursor: pointer;
+	transition: background-color var(--cg-motion-fast, 140ms ease), color var(--cg-motion-fast, 140ms ease),
+		opacity var(--cg-motion-fast, 140ms ease);
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day:not(:disabled):hover {
+	background: var(--cg-blue-wash, var(--background-modifier-hover));
+	color: var(--cg-blue, var(--interactive-accent));
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day.is-outside-month {
+	color: var(--cg-text-faint, var(--text-faint));
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day:disabled {
+	cursor: not-allowed;
+	opacity: 0.34;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day.is-selected,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day[aria-selected="true"] {
+	background: var(--cg-blue, var(--interactive-accent));
+	color: var(--text-on-accent, #fff);
+	font-weight: 600;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day.is-selected:hover,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day[aria-selected="true"]:hover {
+	background: var(--interactive-accent-hover, var(--cg-blue, var(--interactive-accent)));
+	color: var(--text-on-accent, #fff);
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day.is-today::after {
+	position: absolute;
+	right: 50%;
+	bottom: 3px;
+	width: 3px;
+	height: 3px;
+	border-radius: 50%;
+	background: currentColor;
+	content: "";
+	opacity: 0.9;
+	transform: translateX(50%);
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day.is-today.is-selected::after,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day[aria-selected="true"].is-today::after {
+	background: var(--text-on-accent, #fff);
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day:focus-visible,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-previous:focus-visible,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-next:focus-visible,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-today:focus-visible,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-close:focus-visible {
+	outline: 2px solid var(--cg-blue, var(--interactive-accent));
+	outline-offset: 2px;
+}
+
+.contribution-graph .cg-date-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--cg-border, var(--background-modifier-border));
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-today,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-close {
+	width: auto !important;
+	min-width: 0 !important;
+	min-height: 30px;
+	padding: 5px 9px !important;
+	border: 0;
+	border-radius: 8px;
+	font-size: var(--font-ui-small);
+	line-height: 1.2;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-today {
+	background: var(--cg-blue-soft, color-mix(in srgb, var(--cg-blue, var(--interactive-accent)) 12%, transparent));
+	color: var(--cg-blue, var(--interactive-accent));
+	font-weight: 600;
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-close {
+	background: transparent;
+	color: var(--cg-text-muted, var(--text-muted));
+}
+
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-today:hover,
+.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-close:hover {
+	background: var(--cg-blue-wash, var(--background-modifier-hover));
+	color: var(--cg-blue, var(--interactive-accent));
+}
+
+@media (max-width: 360px) {
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker {
+		width: calc(100vw - 24px);
+		padding: 8px;
+	}
+
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day {
+		min-height: 30px;
+	}
+}
+
+@media (prefers-contrast: more) {
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker {
+		border-color: var(--background-modifier-border-hover);
+		box-shadow: none;
+	}
+
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day.is-selected,
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day[aria-selected="true"] {
+		outline: 1px solid var(--cg-blue, var(--interactive-accent));
+		outline-offset: -1px;
+	}
+}
+
+@media (forced-colors: active) {
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker {
+		border: 1px solid CanvasText;
+		background: Canvas;
+		color: CanvasText;
+	}
+
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day.is-selected,
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day[aria-selected="true"] {
+		background: Highlight;
+		color: HighlightText;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.contribution-graph .cg-time-date-nav button.cg-date-trigger,
+	.contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-day {
+		transition: none;
+	}
+}

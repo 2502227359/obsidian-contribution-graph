@@ -3,6 +3,7 @@ import { CalendarGraphRender } from "./calendarGraphRender";
 import { MonthTrackGraphRender } from "./monthTrackGraphRender";
 import { GitStyleTrackGraphRender } from "./gitStyleTrackGraphRender";
 import { HourlyGraphRender } from "./hourlyGraphRender";
+import { captureDatePicker, restoreDatePicker } from "../view/datePicker/DatePicker";
 import {
 	bindTimelineScrollAffordance,
 	captureTimelineScroll,
@@ -22,6 +23,7 @@ export class Renders {
 		graphConfig: ContributionGraphConfig
 	): void {
 		const focused = container.ownerDocument.activeElement as HTMLElement | null;
+		const calendar = captureDatePicker(container);
 		const focusedCell = focused && container.contains(focused) && focused.matches("button.cell")
 			? { date: focused.dataset.date, hour: focused.dataset.hour } : undefined;
 		const hourly = container.querySelector<HTMLElement>(".charts.hourly-profile");
@@ -45,6 +47,7 @@ export class Renders {
 		);
 		if (render) {
 			render.render(container, graphConfig);
+			restoreDatePicker(container, calendar);
 			const timeline = container.querySelector<HTMLElement>(
 				".charts.default, .charts.month-track"
 			);

@@ -28,17 +28,19 @@ class FakeMutationObserver {
 	static readonly instances: FakeMutationObserver[] = [];
 	disconnected = false;
 	options?: MutationObserverInit;
-	constructor(private readonly callback: () => void) {
+	private target?: Node;
+	constructor(private readonly callback: (records: MutationRecord[]) => void) {
 		FakeMutationObserver.instances.push(this);
 	}
 	observe(_target: Node, options: MutationObserverInit): void {
+		this.target = _target;
 		this.options = options;
 	}
 	disconnect(): void {
 		this.disconnected = true;
 	}
-	trigger(): void {
-		this.callback();
+	trigger(records: Partial<MutationRecord>[] = [{type: "childList", target: this.target}]): void {
+		this.callback(records as MutationRecord[]);
 	}
 }
 
@@ -294,7 +296,36 @@ describe("时长活动观察器", () => {
 		expect(activity).toHaveBeenCalledTimes(3);
 		observer.stop();
 		expect(FakeMutationObserver.instances[0].disconnected).toBe(true);
-		expect(FakeMutationObserver.instances[0].options).toEqual({ childList: true });
+		expect(FakeMutationObserver.instances[0].options).toEqual({ childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
+	});
+
+	it("页面内日历打开时暂停计时，关闭后恢复", () => {
+		FakeMutationObserver.instances.length = 0;
+		const {plugin, documentTarget} = createPlugin([createView()]);
+		let open = false;
+		documentTarget.querySelector = (selector: string) => open && selector.includes("dialog[open]") ? {} : null;
+		const activity = vi.fn(), pause = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, {activity, pause, checkpoint: vi.fn(), status: () => "计时中"});
+		observer.start();
+		const mutation = {type: "attributes", target: {nodeName: "DIALOG"}} as unknown as MutationRecord;
+		open = true;
+		FakeMutationObserver.instances[0].trigger([mutation]);
+		expect(pause).toHaveBeenCalledTimes(1);
+		open = false;
+		FakeMutationObserver.instances[0].trigger([mutation]);
+		expect(activity).toHaveBeenCalledTimes(2);
+		observer.stop();
+	});
+
+	it("正文内部变化不会因观察日历而刷新空闲计时", () => {
+		FakeMutationObserver.instances.length = 0;
+		const {plugin} = createPlugin([createView()]);
+		const activity = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, {activity, pause: vi.fn(), checkpoint: vi.fn(), status: () => "计时中"});
+		observer.start();
+		FakeMutationObserver.instances[0].trigger([{type: "childList", target: {nodeName: "DIV"} as Node}]);
+		expect(activity).toHaveBeenCalledTimes(1);
+		observer.stop();
 	});
 
 	it("自动补全浮层不会阻断笔记计时", () => {

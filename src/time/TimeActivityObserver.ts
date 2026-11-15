@@ -249,10 +249,14 @@ export class TimeActivityObserver {
 		if (!body || !MutationObserverConstructor) {
 			return;
 		}
-		const observer = new MutationObserverConstructor(() =>
-			this.handleModalMutation(document)
-		);
-		observer.observe(body, { childList: true });
+		const observer = new MutationObserverConstructor(records => {
+			const modalChanged = records.some(record =>
+				(record.type === "childList" && record.target === body) ||
+				(record.type === "attributes" && record.target.nodeName === "DIALOG")
+			);
+			if (modalChanged) this.handleModalMutation(document);
+		});
+		observer.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
 		this.modalObservers.set(document, observer);
 	}
 
@@ -369,7 +373,7 @@ export class TimeActivityObserver {
 		}
 		return Boolean(
 			document.querySelector(
-				".modal-container, .modal, .prompt"
+				".modal-container, .modal, .prompt, dialog[open]"
 			)
 		);
 	}

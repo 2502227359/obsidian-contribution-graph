@@ -6,6 +6,7 @@ import { getHourlyCellKey, getHourlySeconds, getHourlyState, getHourlyWeek,
 	groupHourlyData, HourlyCellData, HourlyDataColumn, selectHourlyDate } from "./hourlyData";
 import { resolveHourNavigation } from "./hourlyNavigation";
 import { getHourlyCaption, getHourlyViewCells, HourlyViewState } from "./hourlyView";
+import { mountDatePicker } from "../view/datePicker/DatePicker";
 
 interface HourlyContext {
 	root: HTMLElement;
@@ -89,16 +90,8 @@ export class HourlyGraphRender extends BaseGraphRender {
 		previous.disabled = index <= 0;
 		previous.dataset.timeFocus = "previous";
 		previous.onclick = () => this.changeView(context, {...context.state, date: context.days[Math.max(0, index - step)].date}, "previous");
-		const input = createEl("input", {parent: nav, attr: {type: "date", "aria-label": "选择日期"}});
-		input.dataset.timeFocus = "date";
-		input.value = context.state.date;
-		input.min = context.days[0]?.date || "";
-		input.max = context.days[context.days.length - 1]?.date || "";
-		input.disabled = !context.days.length;
-		input.onchange = () => {
-			if (context.days.some(day => day.date === input.value)) this.changeView(context, {...context.state, date: input.value}, "date");
-			else input.value = context.state.date;
-		};
+		mountDatePicker(nav, {value: context.state.date, dates: context.days.map(day => day.date),
+			onSelect: date => this.changeView(context, {...context.state, date}, "date")});
 		const next = this.createDateButton(nav, "›", context.state.view === "week" ? "后一周" : "后一天");
 		next.dataset.timeFocus = "next";
 		next.disabled = index < 0 || index >= context.days.length - 1;
