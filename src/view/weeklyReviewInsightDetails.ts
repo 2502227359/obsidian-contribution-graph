@@ -43,15 +43,21 @@ export function renderWeeklyDocumentChanges(parent:HTMLElement,group:WeeklyRevie
 	section.createEl("h4",{text:group.deltaSeconds===undefined?"两期笔记记录":"变化最大的笔记"});
 	const render=(target:HTMLElement,note:WeeklyReviewChangeDocument)=>{
 		const row=target.createDiv({cls:"cg-review-note-change"});row.createDiv({text:note.path,cls:"cg-review-change-path"});
-		for(const period of ["current","previous"] as const){
-			const known=period==="current"?note.currentKnown:note.previousKnown,seconds=period==="current"?note.currentSeconds:note.previousSeconds;
-			const button=row.createEl("button",{text:`${period==="current"?"本期":"上期"} ${known?detailDuration(seconds):"记录不明"}`,attr:{type:"button"}});
-			button.dataset.reviewChangeNote=note.path;button.dataset.reviewChangePeriod=period;button.disabled=!known;button.onclick=()=>select(note,period);
-		}
-		if(note.deltaSeconds!==undefined)row.createEl("small",{text:signedDuration(note.deltaSeconds)});
+		renderWeeklyDocumentAmounts(row,note,select);
 	};
 	for(const note of group.documents.slice(0,5))render(section,note);
 	if(group.documents.length>5){const details=section.createEl("details");details.createEl("summary",{text:`其余 ${group.documents.length-5} 篇`});for(const note of group.documents.slice(5))render(details,note);}
+}
+
+export function renderWeeklyDocumentAmounts(parent:HTMLElement,note:WeeklyReviewChangeDocument,select?:(note:WeeklyReviewChangeDocument,period:"current"|"previous")=>void):void {
+	for(const period of ["current","previous"] as const){
+		const known=period==="current"?note.currentKnown:note.previousKnown,seconds=period==="current"?note.currentSeconds:note.previousSeconds;
+		const text=`${period==="current"?"本期":"上期"} ${known?detailDuration(seconds):"记录不明"}`;
+		if(!select){parent.createSpan({text,attr:{"data-review-note-amount":period}});continue;}
+		const button=parent.createEl("button",{text,attr:{type:"button"}});
+		button.dataset.reviewChangeNote=note.path;button.dataset.reviewChangePeriod=period;button.disabled=!known;button.onclick=()=>select(note,period);
+	}
+	if(note.deltaSeconds!==undefined)parent.createEl("small",{text:signedDuration(note.deltaSeconds)});
 }
 
 function signedDuration(seconds:number):string {return seconds===0?"无变化":`${seconds>0?"+":"−"}${detailDuration(Math.abs(seconds))}`;}

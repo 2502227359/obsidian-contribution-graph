@@ -9,7 +9,7 @@ import type { WeeklyReviewAnalysis, WeeklyReviewAnalysisNode, WeeklyReviewCompar
 import type { WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { TimeDocumentStats } from "../time/types";
 import { formatDuration } from "../time/timeData";
-import { colorFor, axisDuration, detailDuration, labelReviewChart } from "./weeklyReviewChartStyle";
+import { colorFor, detailDuration, labelReviewChart, timeAxisOptions } from "./weeklyReviewChartStyle";
 import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import { renderWeeklyChangeGroups } from "./weeklyReviewInsightDetails";
@@ -231,12 +231,14 @@ export class WeeklyReviewCharts {
 
 	private comparisonOption(rows: readonly WeeklyReviewComparisonRow[]): EChartsCoreOption {
 		const t=this.theme();
+		const maxSeconds=rows.reduce((max,row)=>Math.max(max,row.currentKnown?row.currentSeconds:0,row.previousKnown?row.previousSeconds:0),0);
+		const axis=timeAxisOptions(maxSeconds);
 		const data=(period:"current"|"previous")=>rows.flatMap((row,index)=>{
 			const known=period==="current"?row.currentKnown:row.previousKnown;
 			return known?[{id:row.id,value:[period==="current"?row.currentSeconds:row.previousSeconds,index],itemStyle:{color:colorFor(row.id)}}]:[];
 		});
 		return {...this.baseOption(),grid:{left:8,right:16,top:20,bottom:24,containLabel:true},
-			xAxis:{type:"value",min:0,axisLabel:{color:t.muted,fontFamily:t.font,formatter:axisDuration},splitLine:{lineStyle:{color:t.border}}},
+			xAxis:{type:"value",...axis,axisLabel:{...axis.axisLabel,color:t.muted,fontFamily:t.font},splitLine:{lineStyle:{color:t.border}}},
 			yAxis:{type:"category",inverse:true,data:rows.map(r=>r.name),axisLabel:{color:t.text,fontFamily:t.font,width:92,overflow:"truncate"},axisLine:{show:false},axisTick:{show:false}},
 			series:[{id:"connections",type:"custom",silent:true,renderItem:connector,
 				data:rows.flatMap((r,i)=>r.currentKnown&&r.previousKnown?[{value:[r.currentSeconds,r.previousSeconds,i],itemStyle:{color:colorFor(r.id)}}]:[])},

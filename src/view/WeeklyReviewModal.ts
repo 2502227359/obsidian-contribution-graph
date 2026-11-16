@@ -14,8 +14,8 @@ import { WeeklyReviewCharts, WeeklyReviewChartSelection } from "./weeklyReviewCh
 import { WeeklyReviewTimelineCharts } from "./weeklyReviewTimelineCharts";
 import { WeeklyReviewRankingChart } from "./weeklyReviewRankingChart";
 import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
-import type { WeeklyReviewInsights, WeeklyReviewInsightAction, WeeklyReviewChangeDocument } from "../time/weeklyReviewInsights";
-import { renderWeeklyObservations, renderWeeklyDocumentChanges } from "./weeklyReviewInsightDetails";
+import type { WeeklyReviewInsights, WeeklyReviewInsightAction, WeeklyReviewChangeDocument, WeeklyReviewChangeGroup } from "../time/weeklyReviewInsights";
+import { renderWeeklyObservations, renderWeeklyDocumentChanges, renderWeeklyDocumentAmounts } from "./weeklyReviewInsightDetails";
 import type { TimeDocumentStats } from "../time/types";
 
 interface WeeklyReviewService {
@@ -63,6 +63,7 @@ export class WeeklyReviewModal extends Modal {
 	private panel: "analysis" | "timeline" = "analysis";
 	private chartSelection?: WeeklyReviewChartSelection;
 	private comparisonPeriod: "current" | "previous" = "current";
+	private comparisonNotePath?: string;
 	private dailyOpen = false;
 	private errorMessage = "";
 	private failedRequest?: {query: WeeklyReviewQuery; state?: RequestedReviewState};
@@ -185,6 +186,10 @@ export class WeeklyReviewModal extends Modal {
 
 	private restoreControlFocus(previous?: HTMLElement): void {
 		if (!previous || !this.rootEl) return;
+		if(previous.dataset.reviewChangeNote){
+			const exact=Array.from(this.rootEl.querySelectorAll<HTMLElement>("[data-review-change-note]")).find(e=>e.dataset.reviewChangeNote===previous.dataset.reviewChangeNote&&e.dataset.reviewChangePeriod===previous.dataset.reviewChangePeriod);
+			(exact||this.rootEl.querySelector<HTMLElement>(`[data-review-action="comparison-${previous.dataset.reviewChangePeriod}"]`))?.focus({preventScroll:true});return;
+		}
 		const key = ["reviewGroupKey", "reviewPath", "reviewDay", "reviewField", "reviewAction"].find(name => previous.dataset[name]);
 		if (!key) return;
 		const controls = this.rootEl.querySelectorAll<HTMLElement>("[data-review-action], [data-review-field], [data-review-day]");
@@ -222,13 +227,13 @@ export class WeeklyReviewModal extends Modal {
 		this.renderWeekNavigation(controls, snapshot);
 		const toolbar = controls.createDiv({ cls: "cg-weekly-review-filterbar" });
 		this.renderRootSelect(toolbar, snapshot);
+		this.renderDepthSelect(toolbar);
 		const options = toolbar.createEl("details", { cls: "cg-weekly-review-options" });
 		options.open = this.optionsOpen;
 		options.ontoggle = () => { this.optionsOpen = options.open; };
 		const summary = options.createEl("summary", { text: "显示选项" });
 		summary.dataset.reviewAction = "options";
 		const fields = options.createDiv({ cls: "cg-weekly-review-option-fields" });
-		this.renderDepthSelect(fields);
 		this.renderGoalInput(fields);
 	}
 
@@ -295,12 +300,13 @@ export class WeeklyReviewModal extends Modal {
 
 	private renderDepthSelect(parent: HTMLElement): void {
 		const group = parent.createDiv({ cls: "cg-weekly-review-control-group" });
-		group.createDiv({ cls: "cg-weekly-review-control-label", text: "分组层级" });
+		group.createDiv({ cls: "cg-weekly-review-control-label", text: "分组" });
 		const select = group.createEl("select", { cls: "cg-weekly-review-select" });
 		select.dataset.reviewField = "depth";
 		select.setAttribute("aria-label", "选择学科分组层级");
-		this.createOption(select, "1", "一级分组");
-		this.createOption(select, "2", "二级分组");
+		this.createOption(select, "1", "一级目录");
+		this.createOption(select, "2", "二级目录");
+		select.title=`按${this.getGroupingOptions(this.snapshot!).groupingRoot||"仓库根目录"}下的目录层级展示`;
 		select.value = String(this.depth);
 		select.onchange = () => {
 			this.depth = select.value === "2" ? 2 : 1;
@@ -357,11 +363,11 @@ export class WeeklyReviewModal extends Modal {
 
 	private renderReport(snapshot: WeeklyReviewSnapshot): void {
 		const report = this.scrollEl!.createDiv({ cls: "cg-weekly-review-report" });
-		const roots = normalizeTrackedFolders(this.service.getSettings().trackedFolders);
-		const options = {groupingRoot: snapshot.root || (roots.length === 1 ? roots[0] : ""), depth: this.depth};
+		const options = this.getGroupingOptions(snapshot);
 		this.insights = buildWeeklyReviewInsights(snapshot,options);
 		this.renderOverview(report, snapshot);
-		renderWeeklyObservations(report,this.insights.observations,action=>this.revealObservation(action));
+		const observations=this.insights.observations.filter(item=>item.kind!=="comparison"||this.insights!.changes.canDescribeChange).slice(0,2);
+		renderWeeklyObservations(report,observations,action=>this.revealObservation(action));
 		this.renderChartTabs(report);
 		if (this.panel === "analysis") {
 			if (!this.charts) this.charts = new WeeklyReviewCharts(report.ownerDocument, selection => this.selectAnalysis(selection));
@@ -385,6 +391,11 @@ export class WeeklyReviewModal extends Modal {
 		summary.dataset.reviewAction = "daily-details";
 		this.renderDailyTrend(daily, snapshot);
 		this.renderNotes(report, snapshot);
+	}
+
+	private getGroupingOptions(snapshot:WeeklyReviewSnapshot):{groupingRoot:string;depth:1|2} {
+		const roots=normalizeTrackedFolders(this.service.getSettings().trackedFolders);
+		return {groupingRoot:snapshot.root||(roots.length===1?roots[0]:""),depth:this.depth};
 	}
 
 	private renderComparisonView(): void {
@@ -433,12 +444,14 @@ export class WeeklyReviewModal extends Modal {
 
 	private selectAnalysis(selection: WeeklyReviewChartSelection | undefined): void {
 		this.chartSelection = selection;
+		this.comparisonNotePath=undefined;
 		this.comparisonPeriod = selection?.period || "current";
 		this.refreshDocuments();
 	}
 
 	private resetAnalysisSelection(): void {
 		this.chartSelection = undefined;
+		this.comparisonNotePath=undefined;
 		this.comparisonPeriod = "current";
 		this.charts?.clearSelection();
 		this.timelineCharts?.clearSelection();
@@ -458,8 +471,9 @@ export class WeeklyReviewModal extends Modal {
 	private renderOverview(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
 		const section = parent.createDiv({ cls: "cg-weekly-review-overview" });
 		section.createDiv({ cls: "cg-weekly-review-summary-label", text: snapshot.isCurrentWeek ? "本周已记录" : "本周已记录 · 历史周" });
-		section.createDiv({ cls: "cg-weekly-review-summary-value", text: formatDuration(snapshot.totalSeconds) });
-		section.createDiv({ cls: "cg-weekly-review-summary-hint", text: `有记录 ${snapshot.recordedDays} 天 · ${snapshot.root || "笔记与 YOLO"}` });
+		const main=section.createDiv({cls:"cg-weekly-review-summary-main"});
+		main.createDiv({ cls: "cg-weekly-review-summary-value", text: formatDuration(snapshot.totalSeconds) });
+		main.createDiv({ cls: "cg-weekly-review-summary-hint", text: `有记录 ${snapshot.recordedDays} 天 · ${snapshot.root || "笔记与 YOLO"}` });
 		if (!snapshot.documents.length) section.createDiv({ cls: "cg-weekly-review-empty-inline", text: this.service.getSettings().timeTrackingEnabled ? "本周暂无记录" : "暂无记录，可在设置中开启时长统计" });
 		if (snapshot.warnings.length) this.renderWarningList(section, snapshot.warnings);
 	}
@@ -523,13 +537,17 @@ export class WeeklyReviewModal extends Modal {
 			? selection.previousDocuments || [] : selection?.documents || snapshot.documents;
 		const documents = source.filter(document => !isYoloChatActivity(document.path) && document.seconds > 0)
 			.slice().sort((left, right) => right.seconds - left.seconds || left.path.localeCompare(right.path)).slice(0, 10);
-		const section = this.createSection(parent, "重点笔记", "时长 · 占当前选择");
+		const comparing=selection?.kind==="comparison";
+		const section = this.createSection(parent, comparing?this.comparisonNotePath?"笔记详情":"笔记变化":"重点笔记", comparing?"同一分组 · 两期已记录量":"时长 · 占当前选择");
 		section.addClass("cg-weekly-review-documents-section");
 		if (selection) this.renderSelectionLabel(section, selection);
-		if (selection?.kind === "comparison") this.renderComparisonPeriods(section, selection);
-		if (selection?.kind === "comparison") {
+		if (comparing) {
 			const group=this.insights?.changes.groups.find(group=>group.id===selection.id);
-			if(group)renderWeeklyDocumentChanges(section,group,(note,period)=>this.selectComparisonNote(note,period));
+			if(group&&!group.activity){
+				if(this.comparisonNotePath)this.renderComparisonNoteDetail(section,group,selection);
+				else renderWeeklyDocumentChanges(section,group,(note,period)=>this.selectComparisonNote(note,period));
+				return;
+			}
 		}
 		if (!documents.length) {
 			section.createDiv({ cls: "cg-weekly-review-empty-inline", text: selection?.activity ? "YOLO 对话活动不对应笔记。" : "当前选择未见可显示的笔记记录。" });
@@ -543,7 +561,8 @@ export class WeeklyReviewModal extends Modal {
 	private renderSelectionLabel(parent: HTMLElement, selection: WeeklyReviewChartSelection): void {
 		const start=selection.kind==="comparison"&&this.comparisonPeriod==="previous"?selection.previousFromDate:selection.fromDate;
 		const end=selection.kind==="comparison"&&this.comparisonPeriod==="previous"?selection.previousToDate:selection.toDate;
-		const label=start?`${start}${end&&end!==start?`—${end}`:""} · ${selection.label}`:selection.label;
+		const selected=selection.kind==="comparison"&&this.comparisonNotePath?`${selection.label} · ${getFileName(this.comparisonNotePath)}`:selection.label;
+		const label=start?`${start}${end&&end!==start?`—${end}`:""} · ${selected}`:selected;
 		const clear = parent.createEl("button", { cls: "cg-weekly-review-clear-filter", text: `${label} ×`, attr: {type: "button", "aria-label": "清除笔记筛选"} });
 		clear.dataset.reviewAction = "clear-group";
 		clear.onclick = () => {
@@ -555,10 +574,23 @@ export class WeeklyReviewModal extends Modal {
 
 	private selectComparisonNote(note:WeeklyReviewChangeDocument,period:"current"|"previous"):void {
 		const selection=this.chartSelection;if(selection?.kind!=="comparison")return;
-		const group=this.insights?.changes.groups.find(group=>group.id===selection.id);if(!group)return;
-		this.chartSelection={...selection,label:`${group.name} · ${getFileName(note.path)}`,
-			documents:note.currentSeconds>0?[{path:note.path,seconds:note.currentSeconds}]:[],previousDocuments:note.previousSeconds>0?[{path:note.path,seconds:note.previousSeconds}]:[]};
+		this.comparisonNotePath=note.path;
 		this.comparisonPeriod=period;this.refreshDocuments();
+	}
+
+	private renderComparisonNoteDetail(parent:HTMLElement,group:WeeklyReviewChangeGroup,selection:WeeklyReviewChartSelection):void {
+		const note=group.documents.find(note=>note.path===this.comparisonNotePath);if(!note)return;
+		const back=parent.createEl("button",{text:"‹ 返回分组",cls:"cg-review-note-back",attr:{type:"button"}});back.dataset.reviewAction="back-to-group";
+		back.onclick=()=>{
+			this.comparisonNotePath=undefined;this.refreshDocuments();
+			const buttons=Array.from(this.rootEl!.querySelectorAll<HTMLButtonElement>("[data-review-change-note]")).filter(e=>e.dataset.reviewChangeNote===note.path&&!e.disabled);
+			const target=buttons.find(e=>e.dataset.reviewChangePeriod===this.comparisonPeriod)||buttons[0];
+			const details=target?.closest("details");if(details)details.open=true;
+			target?.focus({preventScroll:true});
+		};
+		this.renderComparisonPeriods(parent,selection);
+		this.renderDocument(parent,note.path,0,0,false);
+		const amounts=parent.createDiv({cls:"cg-review-note-amounts"});renderWeeklyDocumentAmounts(amounts,note);
 	}
 
 	private renderComparisonPeriods(parent: HTMLElement, selection: WeeklyReviewChartSelection): void {
@@ -573,7 +605,7 @@ export class WeeklyReviewModal extends Modal {
 		}
 	}
 
-	private renderDocument(parent: HTMLElement, path: string, seconds: number, denominator: number): void {
+	private renderDocument(parent: HTMLElement, path: string, seconds: number, denominator: number, showDuration=true): void {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		const row = parent.createDiv({ cls: "cg-weekly-review-document" });
 		row.dataset.reviewAction = "open-document";
@@ -581,9 +613,11 @@ export class WeeklyReviewModal extends Modal {
 		const label = row.createDiv({ cls: "cg-weekly-review-document-label" });
 		label.createDiv({ cls: "cg-weekly-review-document-name", text: getFileName(path) });
 		label.createDiv({ cls: "cg-weekly-review-document-path", text: path, attr: {title: path} });
-		const value = row.createDiv({ cls: "cg-weekly-review-document-duration" });
-		value.createDiv({ text: formatDuration(seconds) });
-		if (denominator > 0) value.createDiv({ cls: "cg-weekly-review-document-share", text: formatPercentage(seconds / denominator * 100) });
+		if(showDuration){
+			const value = row.createDiv({ cls: "cg-weekly-review-document-duration" });
+			value.createDiv({ text: formatDuration(seconds) });
+			if (denominator > 0) value.createDiv({ cls: "cg-weekly-review-document-share", text: formatPercentage(seconds / denominator * 100) });
+		}
 		if (file instanceof TFile) {
 			row.classList.add("is-openable");
 			row.tabIndex = 0;

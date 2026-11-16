@@ -7,7 +7,7 @@ import { buildWeeklyTrendGroups, groupWeeklyReviewHours } from "../time/weeklyRe
 import type { WeeklyReviewTimeBin, WeeklyTrendGroup } from "../time/weeklyReviewTimeline";
 import type { WeeklyReviewDay, WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { WeeklyReviewChartSelection } from "./weeklyReviewCharts";
-import { axisDuration, colorFor, detailDuration, labelReviewChart } from "./weeklyReviewChartStyle";
+import { colorFor, detailDuration, labelReviewChart, timeAxisOptions } from "./weeklyReviewChartStyle";
 
 echarts.use([LineChart, HeatmapChart, ScatterChart, GridComponent, TooltipComponent, VisualMapComponent, SVGRenderer]);
 
@@ -25,6 +25,8 @@ export class WeeklyReviewTimelineCharts {
 	private readonly legend: HTMLElement;
 	private readonly heatDateSelect: HTMLSelectElement;
 	private readonly hourSelect: HTMLSelectElement;
+	private readonly rangeLabel: HTMLElement;
+	private readonly rangeExit: HTMLButtonElement;
 	private readonly motion: MediaQueryList;
 	private readonly resizeObserver: ResizeObserver;
 	private readonly themeObserver: MutationObserver;
@@ -38,6 +40,7 @@ export class WeeklyReviewTimelineCharts {
 	private step: 1|2 = 1;
 	private selection?: "trend"|"hour"|"range";
 	private hourRangeSelection?: {start:number;end:number};
+	private rangeControlsState?: {date:string;hour:string};
 	private frame?: number;
 	private disposed = false;
 
@@ -53,8 +56,8 @@ export class WeeklyReviewTimelineCharts {
 		this.heat = this.section("一周时段", "颜色表示已记录时长");
 		this.heatDateSelect = this.select(this.heat.controls,"时段日期","heat-date",()=>this.selectHour());
 		this.hourSelect = this.select(this.heat.controls,"查看时段","heat-hour",()=>this.selectHour());
-		const legend = this.heat.controls.appendChild(owner.createElement("span"));
-		legend.className = "cg-timeline-key"; legend.textContent = "浅 → 深：零 → 多　— 未确认　· 未来";
+		const rangeControls=this.createRangeControls();
+		this.rangeLabel=rangeControls.label;this.rangeExit=rangeControls.exit;
 		this.motion = this.win.matchMedia("(prefers-reduced-motion: reduce)");
 		this.motion.addEventListener("change",this.motionChanged);
 		this.resizeObserver = new this.win.ResizeObserver(()=>this.scheduleResize());
@@ -66,7 +69,7 @@ export class WeeklyReviewTimelineCharts {
 	update(snapshot:WeeklyReviewSnapshot,options:{groupingRoot:string;depth:1|2}):void {
 		if(this.disposed) return;
 		if(snapshot===this.snapshot&&options.groupingRoot===this.options?.groupingRoot&&options.depth===this.options?.depth){this.scheduleResize();return;}
-		const changed = snapshot.weekStart!==this.snapshot?.weekStart||snapshot.root!==this.snapshot?.root||options.depth!==this.options?.depth;
+		const changed = snapshot.weekStart!==this.snapshot?.weekStart||snapshot.root!==this.snapshot?.root||options.groupingRoot!==this.options?.groupingRoot||options.depth!==this.options?.depth;
 		this.snapshot=snapshot; this.options=options;
 		this.groups=snapshot.timeline?buildWeeklyTrendGroups(snapshot.timeline,options):[];
 		this.legend.replaceChildren();
@@ -74,16 +77,22 @@ export class WeeklyReviewTimelineCharts {
 		this.fill(this.groupSelect,[["all","全部分组"],...this.groups.map(group=>[group.id,group.name] as [string,string])]);
 		this.fill(this.dateSelect,(snapshot.timeline?.days||[]).map(day=>[day.date,day.date]));
 		this.fill(this.heatDateSelect,snapshot.days.map(day=>[day.date,day.date]));
-		if(changed){this.selection=undefined;this.hourRangeSelection=undefined;this.dateSelect.value=latestDate(snapshot.timeline?.days||[]);this.heatDateSelect.value=latestDate(snapshot.days);}
+		if(changed){this.selection=undefined;this.hourRangeSelection=undefined;this.rangeControlsState=undefined;this.setRangeControls(false);this.dateSelect.value=latestDate(snapshot.timeline?.days||[]);this.heatDateSelect.value=latestDate(snapshot.days);}
 		this.updateBins(); this.paint();
 		if(this.selection) this.emitSelection();
 	}
 
-	clearSelection():void { this.selection=undefined;this.hourRangeSelection=undefined;if(this.el.isConnected&&this.snapshot?.timeline)this.paintHeatmap();this.describeHour();this.onSelect(undefined); }
+	clearSelection():void {
+		this.selection=undefined;this.hourRangeSelection=undefined;this.restoreRangeControls();
+		if(this.el.isConnected&&this.snapshot?.timeline)this.paintHeatmap();
+		this.describeHour();this.onSelect(undefined);
+	}
 
 	revealHours(start:number,end:number):void {
 		if(!this.snapshot?.timeline)return;
-		this.hourRangeSelection={start,end};this.selection="range";this.paintHeatmap();this.describeHour();this.emitSelection();
+		if(this.selection!=="range")this.rangeControlsState={date:this.heatDateSelect.value,hour:this.hourSelect.value};
+		this.hourRangeSelection={start,end};this.selection="range";this.setRangeControls(true);
+		this.paintHeatmap();this.describeHour();this.emitSelection();
 	}
 
 	dispose():void {
@@ -92,7 +101,7 @@ export class WeeklyReviewTimelineCharts {
 		this.motion.removeEventListener("change",this.motionChanged);
 		if(this.frame!==undefined)this.win.cancelAnimationFrame(this.frame);
 		this.area?.dispose();this.heatmap?.dispose();this.el.remove();
-		this.snapshot=undefined;this.groups=[];this.bins=[];
+		this.snapshot=undefined;this.groups=[];this.bins=[];this.rangeControlsState=undefined;
 	}
 
 	private section(title:string,hint:string):ChartSection {
@@ -113,6 +122,18 @@ export class WeeklyReviewTimelineCharts {
 		return select;
 	}
 
+	private createRangeControls():{label:HTMLElement;exit:HTMLButtonElement} {
+		const label=this.heat.controls.appendChild(this.owner.createElement("span"));
+		label.className="cg-timeline-range";label.hidden=true;
+		const exit=this.heat.controls.appendChild(this.owner.createElement("button"));
+		exit.type="button";exit.className="cg-timeline-range-exit";exit.dataset.timelineControl="exit-range";
+		exit.setAttribute("aria-label","退出整周时段选择");exit.textContent="退出整周";exit.hidden=true;
+		exit.onclick=()=>this.exitRangeSelection();
+		const legend=this.heat.controls.appendChild(this.owner.createElement("span"));legend.className="cg-timeline-key";
+		legend.textContent="浅 → 深：零 → 多　— 未确认　· 未来";
+		return {label,exit};
+	}
+
 	private fill(select:HTMLSelectElement,values:readonly (readonly [string,string])[]):void {
 		const previous=select.value;select.replaceChildren();
 		for(const [value,label] of values){const option=select.appendChild(this.owner.createElement("option"));option.value=value;option.textContent=label;}
@@ -122,6 +143,7 @@ export class WeeklyReviewTimelineCharts {
 	private paint():void {
 		if(this.disposed||!this.snapshot||!this.el.isConnected)return;
 		const available=!!this.snapshot.timeline;
+		if(!available){this.selection=undefined;this.hourRangeSelection=undefined;this.rangeControlsState=undefined;this.setRangeControls(false);}
 		for(const part of [this.trend,this.heat]){part.host.hidden=!available;part.controls.hidden=!available;}
 		if(!available){this.trend.detail.textContent="暂无趋势与时段数据，请刷新";this.heat.detail.textContent="";return;}
 		this.paintArea();this.paintHeatmap();this.describeTrend();this.describeHour();
@@ -145,11 +167,19 @@ export class WeeklyReviewTimelineCharts {
 				this.dateSelect.value=daysAt(this.snapshot,index);this.selectTrend();});
 		}
 		const series=this.areaSeries();
-		this.area.setOption({...this.baseOption(),grid:{left:52,right:16,top:18,bottom:28},
+		const axis=timeAxisOptions(this.areaMaxSeconds());
+		this.area.setOption({...this.baseOption(),grid:{left:12,right:16,top:18,bottom:28,containLabel:true},
 			xAxis:{type:"category",boundaryGap:false,data:days.map(day=>day.date),axisTick:{show:false},axisLine:{lineStyle:{color:theme.border}},
 				axisLabel:{color:theme.muted,interval:6,formatter:(date:string)=>date.slice(5).replace("-","/")}},
-			yAxis:{type:"value",min:0,minInterval:1,axisLabel:{color:theme.muted,formatter:axisDuration},splitLine:{lineStyle:{color:theme.border,type:"dashed"}}},
+			yAxis:{...axis,type:"value",axisLabel:{...axis.axisLabel,color:theme.muted},splitLine:{lineStyle:{color:theme.border,type:"dashed"}}},
 			tooltip:{...this.baseOption().tooltip as object,trigger:"axis",formatter:(params:unknown)=>this.trendTooltip(params)},series},true);
+	}
+
+	private areaMaxSeconds():number {
+		const selected=this.groupSelect.value,groups=this.modeSelect.value==="groups"?this.groups.filter(group=>selected==="all"||group.id===selected):[];
+		if(!groups.length)return Math.max(1,...this.snapshot!.timeline!.days.map(day=>day.seconds));
+		const values=this.snapshot!.timeline!.days.map((_,index)=>groups.reduce((sum,group)=>sum+(group.points[index]?.seconds||0),0));
+		return Math.max(1,...values);
 	}
 
 	private areaSeries():object[] {
@@ -202,8 +232,30 @@ export class WeeklyReviewTimelineCharts {
 	private binOpacity(bin:WeeklyReviewTimeBin):number {return !this.hourRangeSelection||(bin.startHour>=this.hourRangeSelection.start&&bin.endHour<=this.hourRangeSelection.end)?1:.22;}
 
 	private changeTrend():void {this.paintArea();this.selectTrend();}
-	private selectTrend():void {this.selection="trend";this.hourRangeSelection=undefined;this.paintHeatmap();this.describeTrend();this.describeHour();this.emitSelection();}
-	private selectHour():void {this.selection="hour";this.hourRangeSelection=undefined;this.paintHeatmap();this.describeHour();this.emitSelection();}
+	private selectTrend():void {this.leaveRange(true);this.selection="trend";this.paintHeatmap();this.describeTrend();this.describeHour();this.emitSelection();}
+	private selectHour():void {this.leaveRange(false);this.selection="hour";this.paintHeatmap();this.describeHour();this.emitSelection();}
+
+	private setRangeControls(active:boolean):void {
+		const range=this.hourRangeSelection;
+		this.heatDateSelect.hidden=active;this.hourSelect.hidden=active;this.rangeExit.hidden=!active;this.rangeExit.disabled=!active;this.rangeLabel.hidden=!active;
+		if(active&&range){this.rangeLabel.dataset.timelineRange="week";this.rangeLabel.textContent=`整周 · ${hourRange(range.start,range.end)}`;}
+		else {delete this.rangeLabel.dataset.timelineRange;this.rangeLabel.textContent="";}
+	}
+
+	private restoreRangeControls():void {
+		const previous=this.rangeControlsState;
+		if(previous){if(Array.from(this.heatDateSelect.options).some(option=>option.value===previous.date))this.heatDateSelect.value=previous.date;
+			if(Array.from(this.hourSelect.options).some(option=>option.value===previous.hour))this.hourSelect.value=previous.hour;}
+		this.rangeControlsState=undefined;this.setRangeControls(false);
+	}
+
+	private leaveRange(restore:boolean):void {
+		if(this.selection!=="range"&&!this.hourRangeSelection)return;
+		if(restore)this.restoreRangeControls();else {this.rangeControlsState=undefined;this.setRangeControls(false);}
+		this.hourRangeSelection=undefined;
+	}
+
+	private exitRangeSelection():void {this.clearSelection();this.heatDateSelect.focus();}
 
 	private describeTrend():void {
 		const day=this.snapshot?.timeline?.days.find(item=>item.date===this.dateSelect.value);if(!day)return;

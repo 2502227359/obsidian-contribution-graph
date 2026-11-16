@@ -117,5 +117,9 @@ function fullyTracked(days: readonly WeeklyReviewDay[]): boolean {
 	const signatures = days.flatMap(day => day.scopeSignatures);
 	return !signatures.length || new Set(signatures).size === 1;
 }
-function duration(seconds: number): string { if(seconds>0&&seconds<1)return "少于1秒";const minutes = Math.floor(seconds / 60), rest = Math.floor(seconds % 60); return minutes ? `${minutes}分钟` : `${rest}秒`; }
+function duration(seconds: number): string {
+	if (seconds > 0 && seconds < 1) return "少于1秒";
+	const value = Math.max(0, Math.floor(seconds)), hours = Math.floor(value / 3600), minutes = Math.floor(value % 3600 / 60), rest = value % 60;
+	return hours ? `${hours}小时${minutes ? `${minutes}分钟` : ""}` : minutes ? `${minutes}分钟` : `${rest}秒`;
+}
 function percent(value: number, total: number): string { return total > 0 ? (value / total * 100).toFixed(0) : "0"; }

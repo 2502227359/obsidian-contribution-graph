@@ -35,6 +35,12 @@ describe("周回顾第三阶段只读洞察", () => {
 		expect(JSON.stringify(report)).toBe(before);
 	});
 
+	it("洞察文案跨小时显示小时和分钟", () => {
+		const report = snapshot([day("2026-11-16", [row("医/内/甲.md", 3661)])], []);
+		const result = buildWeeklyReviewInsights(report, {groupingRoot: "医", depth: 1});
+		expect(result.observations.find(item => item.id === "structure:top")?.text).toContain("1小时1分钟");
+	});
+
 	it("不完整同期只提示限制，不生成无依据差额", () => {
 		const report = snapshot([day("2026-11-16", [row("医/内/甲.md", 600)], "PARTIAL")], [day("2026-11-09", [row("医/外/乙.md", 400)])], "INCOMPLETE");
 		const result = buildWeeklyReviewInsights(report, {groupingRoot: "医", depth: 1});
