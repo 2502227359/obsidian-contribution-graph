@@ -544,6 +544,8 @@ describe("时长活动观察器", () => {
 		const initialSnapshotCount = snapshot.mock.calls.length;
 		statusBarItem.dispatch("mouseenter", statusBarItem);
 		statusBarItem.dispatch("focus", statusBarItem);
+		expect(statusBarItem.setAttribute).toHaveBeenCalledWith("aria-label", expect.stringContaining("时长统计："));
+		expect(statusBarItem.setAttribute.mock.calls.some(([name]) => name === "title")).toBe(false);
 		statusBarItem.dispatch("click", statusBarItem);
 		statusBarItem.dispatch("keydown", statusBarItem, true, { key: "Enter" });
 		statusBarItem.dispatch("keydown", statusBarItem, true, { key: " " });

@@ -490,7 +490,7 @@ export class TimeActivityObserver {
 		const snapshot = this.callbacks.snapshot();
 		item.setText(getTimeTrackingStatusText(snapshot));
 		const description = getTimeTrackingDescription(snapshot);
-		item.setAttribute?.("title", description);
+		// 宿主使用 aria-label 生成提示，额外的 title 会再弹出浏览器原生提示。
 		item.setAttribute?.("aria-label", description);
 	}
 }
