@@ -1,5 +1,5 @@
 import { App, Modal, Scope, TFile, TFolder } from "obsidian";
-import { normalizeTrackedFolderPath, normalizeTrackedFolders } from "../activity/folderScope";
+import { normalizeTrackedFolderPath } from "../activity/folderScope";
 import { isYoloChatActivity, YOLO_CHAT_ACTIVITY_LABEL } from "../time/timeActivitySource";
 import { formatDuration } from "../time/timeData";
 import { getReviewWeekStart, getWeeklyReviewGoal, getWeeklyReviewGroups, shiftReviewDate } from "../time/weeklyReview";
@@ -60,8 +60,6 @@ export class WeeklyReviewModal extends Modal {
 		super(app);
 		this.service = service;
 		this.onClosedCallback = onClosed;
-		const roots = normalizeTrackedFolders(service.getSettings().trackedFolders);
-		this.selectedRoot = roots.length === 1 ? roots[0] : "";
 		this.originalFocus = this.modalEl.ownerDocument.activeElement as HTMLElement | null;
 		this.scope = new Scope(this.scope);
 		this.scope.register([], "Escape", () => this.handleEscape());
