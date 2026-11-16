@@ -63,7 +63,7 @@ export class CodeBlockProcessor {
 	private rangeKey?: string;
 	private requestedView?: GraphViewState;
 
-	constructor(private readonly activityService: EditActivityService) {}
+	constructor(private readonly activityService: EditActivityService, private readonly openWeeklyReview?: (owner: Document) => void) {}
 
 	async renderFromCodeBlock(
 		code: string,
@@ -123,6 +123,7 @@ export class CodeBlockProcessor {
 
 			this.updateQueryCache(graphConfig, app, selection);
 			const contributionConfig = YamlGraphConfig.toContributionGraphConfig(this.buildRenderConfig(graphConfig));
+			contributionConfig.openWeeklyReview = this.openWeeklyReview;
 			this.bindActivityState(contributionConfig, graphConfig, el, app);
 			if (!this.currentConfig || !Renders.update(el, contributionConfig)) Renders.render(el, contributionConfig);
 			this.currentConfig = contributionConfig;

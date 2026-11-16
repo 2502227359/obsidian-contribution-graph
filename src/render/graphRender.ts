@@ -110,6 +110,10 @@ export abstract class BaseGraphRender implements GraphRender {
 			this.renderTitle(graphConfig, heading);
 		}
 		createDiv({ cls: "graph-subtitle", parent: heading, text: getGraphContext(graphConfig, contributionData) });
+		if (graphConfig.timeTracking && graphConfig.openWeeklyReview) {
+			const button = header.createEl("button", { cls: "cg-weekly-review-entry", text: "周回顾", attr: {type: "button", "aria-label": "查看周回顾"} });
+			button.onclick = () => graphConfig.openWeeklyReview?.(button.ownerDocument);
+		}
 		const metric = getGraphMetric(graphConfig, contributionData);
 		const metricEl = createDiv({ cls: "cg-metric", parent });
 		const valueEl = createDiv({ cls: "cg-metric-value", parent: metricEl, attr: { "aria-label": metric.text } });

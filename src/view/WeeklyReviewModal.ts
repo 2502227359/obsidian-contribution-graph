@@ -55,6 +55,12 @@ export class WeeklyReviewModal extends Modal {
 	private failedRequest?: {query: WeeklyReviewQuery; state?: RequestedReviewState};
 	private rootEl?: HTMLElement;
 	private closed = false;
+	private scrollEl?: HTMLElement;
+	private selectedDay?: string;
+	private optionsOpen = false;
+	private notesOpen = false;
+	private warningsOpen = false;
+	private rootPickerOpen = false;
 
 	constructor(app: App, service: WeeklyReviewService, onClosed: () => void) {
 		super(app);
@@ -67,9 +73,15 @@ export class WeeklyReviewModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("cg-weekly-review-modal");
-		this.modalEl.setAttribute("aria-label", "按学科的周回顾");
+		this.modalEl.setAttribute("aria-label", "周回顾");
 		this.modalEl.setAttribute("tabindex", "-1");
 		this.rootEl = this.contentEl.createDiv({ cls: "cg-weekly-review" });
+		this.rootEl.onclick = event => {
+			if (!this.rootEl?.contains(event.target as Node)) return;
+			for (const details of Array.from(this.rootEl.querySelectorAll<HTMLDetailsElement>(".cg-weekly-review-root-picker[open], .cg-weekly-review-options[open]"))) {
+				if (!details.contains(event.target as Node)) details.open = false;
+			}
+		};
 		this.refreshSnapshot();
 	}
 
@@ -80,6 +92,7 @@ export class WeeklyReviewModal extends Modal {
 		this.contentEl.empty();
 		if (this.originalFocus?.isConnected) this.originalFocus.focus({ preventScroll: true });
 		this.rootEl = undefined;
+		this.scrollEl = undefined;
 		this.snapshot = undefined;
 		this.failedRequest = undefined;
 		this.onClosedCallback();
@@ -94,7 +107,9 @@ export class WeeklyReviewModal extends Modal {
 
 	private handleEscape(): false {
 		const dialog = this.rootEl?.querySelector<HTMLDialogElement>(".cg-date-picker[open]");
+		const directory = this.rootEl?.querySelector<HTMLDetailsElement>(".cg-weekly-review-root-picker[open], .cg-weekly-review-options[open]");
 		if (dialog) dialog.close();
+		else if (directory) { directory.open = false; directory.querySelector<HTMLElement>("summary")?.focus(); }
 		else this.close();
 		return false;
 	}
@@ -130,41 +145,36 @@ export class WeeklyReviewModal extends Modal {
 
 	private render(): void {
 		if (!this.rootEl) return;
-		const scrollTop = this.rootEl.scrollTop;
+		const scrollTop = this.scrollEl?.scrollTop || 0;
 		const focused = this.rootEl.contains(this.rootEl.ownerDocument.activeElement)
 			? this.rootEl.ownerDocument.activeElement as HTMLElement : undefined;
 		this.closeDatePicker();
 		this.rootEl.empty();
 		this.renderHeader();
 		this.renderError();
-		if (!this.snapshot) {
-			this.renderEmptyError();
-			return;
-		}
+		if (!this.snapshot) { this.renderEmptyError(); return; }
+		this.scrollEl = this.rootEl.createDiv({ cls: "cg-weekly-review-scroll" });
 		this.renderControls(this.snapshot);
 		this.renderReport(this.snapshot);
-		this.rootEl.scrollTop = scrollTop;
+		this.scrollEl.scrollTop = scrollTop;
 		this.restoreControlFocus(focused);
 	}
 
 	private restoreControlFocus(previous?: HTMLElement): void {
 		if (!previous || !this.rootEl) return;
-		const key = ["reviewGroupKey", "reviewPath", "reviewField", "reviewAction"].find(name => previous.dataset[name]);
+		const key = ["reviewGroupKey", "reviewPath", "reviewDay", "reviewField", "reviewAction"].find(name => previous.dataset[name]);
 		if (!key) return;
-		const controls = this.rootEl.querySelectorAll<HTMLElement>("[data-review-action], [data-review-field]");
+		const controls = this.rootEl.querySelectorAll<HTMLElement>("[data-review-action], [data-review-field], [data-review-day]");
 		Array.from(controls).find(control => control.dataset[key] === previous.dataset[key])?.focus({ preventScroll: true });
 	}
 
 	private renderHeader(): void {
 		const header = this.rootEl!.createDiv({ cls: "cg-weekly-review-header" });
-		const title = header.createDiv({ cls: "cg-weekly-review-heading" });
-		title.createDiv({ cls: "cg-weekly-review-kicker", text: "每周回顾 · 学习投入" });
-		title.createEl("h2", { text: "按学科的周回顾" });
-		title.createDiv({ cls: "cg-weekly-review-subtitle", text: "只汇总已记录的活跃时长，不代表注意力或掌握程度" });
-		const refresh = header.createEl("button", { cls: "cg-weekly-review-refresh", text: "刷新" });
-		refresh.type = "button";
+		header.createEl("h2", { text: "周回顾" });
+		const actions = header.createDiv({ cls: "cg-weekly-review-header-actions" });
+		if (this.snapshot) actions.createSpan({ cls: "cg-weekly-review-generated", text: `更新于 ${formatTimestamp(this.snapshot.generatedAt)}` });
+		const refresh = actions.createEl("button", { cls: "cg-weekly-review-refresh", text: "刷新", attr: {type: "button", "aria-label": "刷新周回顾"} });
 		refresh.dataset.reviewAction = "refresh";
-		refresh.setAttribute("aria-label", "刷新周回顾快照");
 		refresh.onclick = () => this.refreshSnapshot();
 	}
 
@@ -185,49 +195,79 @@ export class WeeklyReviewModal extends Modal {
 	}
 
 	private renderControls(snapshot: WeeklyReviewSnapshot): void {
-		const controls = this.rootEl!.createDiv({ cls: "cg-weekly-review-controls" });
+		const controls = this.scrollEl!.createDiv({ cls: "cg-weekly-review-controls" });
 		this.renderWeekNavigation(controls, snapshot);
-		this.renderRootSelect(controls, snapshot);
-		this.renderDepthSelect(controls);
-		this.renderGoalInput(controls);
+		const toolbar = controls.createDiv({ cls: "cg-weekly-review-filterbar" });
+		this.renderRootSelect(toolbar, snapshot);
+		const options = toolbar.createEl("details", { cls: "cg-weekly-review-options" });
+		options.open = this.optionsOpen;
+		options.ontoggle = () => { this.optionsOpen = options.open; };
+		const summary = options.createEl("summary", { text: "显示选项" });
+		summary.dataset.reviewAction = "options";
+		const fields = options.createDiv({ cls: "cg-weekly-review-option-fields" });
+		this.renderDepthSelect(fields);
+		this.renderGoalInput(fields);
 	}
 
 	private renderWeekNavigation(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
-		const group = parent.createDiv({ cls: "cg-weekly-review-control-group cg-weekly-review-week-nav" });
-		group.createDiv({ cls: "cg-weekly-review-control-label", text: "查看周" });
-		const nav = group.createDiv({ cls: "cg-weekly-review-nav-buttons" });
+		const nav = parent.createDiv({ cls: "cg-weekly-review-week-nav" });
 		this.createControlButton(nav, "‹", "上一周", () => this.shiftWeek(-7), {disabled: this.isPreviousDisabled(snapshot), id: "previous-week"});
 		const dateNav = nav.createDiv({ cls: "cg-weekly-review-date-picker" });
 		const dateTrigger = mountDatePicker(dateNav, {
-			value: snapshot.weekStart,
-			dates: reviewCalendarDates(snapshot),
-			onSelect: date => this.selectDate(date),
+			value: snapshot.weekStart, dates: reviewCalendarDates(snapshot), onSelect: date => this.selectDate(date),
 		});
 		dateTrigger.dataset.reviewField = "date";
-		this.createControlButton(nav, "本周", "回到本周", () => this.selectCurrentWeek(), {disabled: snapshot.isCurrentWeek, id: "current-week"});
+		dateTrigger.setAttribute("aria-label", `选择周，当前 ${snapshot.weekStart} 至 ${snapshot.weekEnd}`);
+		dateTrigger.querySelector(".cg-date-trigger-value")!.textContent = `${snapshot.weekStart.slice(5).replace("-", "月")}日 — ${snapshot.weekEnd.slice(5).replace("-", "月")}日`;
 		this.createControlButton(nav, "›", "下一周", () => this.shiftWeek(7), {disabled: snapshot.isCurrentWeek, id: "next-week"});
-		group.createDiv({ cls: "cg-weekly-review-range", text: `${formatDate(snapshot.weekStart)} — ${formatDate(snapshot.weekEnd)}` });
-		group.createDiv({ cls: "cg-weekly-review-generated", text: `快照 ${formatTimestamp(snapshot.generatedAt)}` });
+		if (!snapshot.isCurrentWeek) this.createControlButton(nav, "回到本周", "回到本周", () => this.selectCurrentWeek(), {disabled: false, id: "current-week"});
+		nav.createSpan({ cls: "cg-weekly-review-year", text: snapshot.weekStart.slice(0, 4) + "年" });
 	}
 
 	private renderRootSelect(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
-		const group = parent.createDiv({ cls: "cg-weekly-review-control-group" });
-		group.createDiv({ cls: "cg-weekly-review-control-label", text: "统计范围" });
-		const select = group.createEl("select", { cls: "cg-weekly-review-select" });
-		select.dataset.reviewField = "root";
-		select.setAttribute("aria-label", "选择统计根目录");
-		this.createOption(select, "", "全部已有记录（按仓库根目录分组）");
-		for (const path of this.getFolderPaths(snapshot)) {
-			const exists = this.app.vault.getAbstractFileByPath(path) instanceof TFolder;
-			this.createOption(select, path, `${path}${exists ? "" : "（目录已不存在）"}`);
+		const picker = parent.createEl("details", { cls: "cg-weekly-review-root-picker" });
+		picker.open = this.rootPickerOpen;
+		picker.ontoggle = () => { this.rootPickerOpen = picker.open; };
+		const summary = picker.createEl("summary", { text: this.selectedRoot || "全部记录" });
+		summary.dataset.reviewField = "root";
+		summary.setAttribute("aria-label", `统计范围：${this.selectedRoot || "全部记录"}`);
+		const panel = picker.createDiv({ cls: "cg-weekly-review-root-panel" });
+		const search = panel.createEl("input", { type: "search", placeholder: "搜索目录", attr: {"aria-label": "搜索统计目录"} });
+		search.dataset.reviewField = "root-search";
+		const results = panel.createDiv({ cls: "cg-weekly-review-root-results", attr: {role: "group", "aria-label": "统计目录"} });
+		const preferred = this.service.getSettings().trackedFolders;
+		const paths = this.getFolderPaths(snapshot).sort((a, b) => Number(preferred.includes(b)) - Number(preferred.includes(a)) || a.localeCompare(b));
+		const update = () => this.renderRootResults(results, paths, search.value);
+		search.oninput = update;
+		search.onkeydown = event => { if (event.key === "ArrowDown") { event.preventDefault(); results.querySelector<HTMLButtonElement>("button")?.focus(); } };
+		results.onkeydown = event => this.navigateRootResults(event, results, search);
+		update();
+	}
+
+	private renderRootResults(parent: HTMLElement, paths: string[], keyword: string): void {
+		parent.empty();
+		const matched = paths.filter(path => path.toLocaleLowerCase().includes(keyword.trim().toLocaleLowerCase()));
+		for (const path of ["", ...matched]) {
+			const exists = !path || this.app.vault.getAbstractFileByPath(path) instanceof TFolder;
+			const button = parent.createEl("button", { text: path ? `${path}${exists ? "" : "（已不存在）"}` : "全部记录", attr: {type: "button", "aria-pressed": String(path === this.selectedRoot)} });
+			button.title = path || "笔记与 YOLO 的全部已有时长";
+			button.dataset.reviewRoot = path;
+			button.onclick = () => {
+				this.rootPickerOpen = false;
+				this.selectedGroupKey = undefined;
+				this.refreshSnapshot(this.getQueryWithRoot(path), { root: path });
+				this.rootEl?.querySelector<HTMLElement>('[data-review-field="root"]')?.focus();
+			};
 		}
-		select.value = this.selectedRoot;
-		select.onchange = () => {
-			const root = normalizeTrackedFolderPath(select.value);
-			this.selectedGroupKey = undefined;
-			this.refreshSnapshot(this.getQueryWithRoot(root), { root });
-		};
-		group.createDiv({ cls: "cg-weekly-review-control-hint", text: snapshot.root ? `当前：${snapshot.root}` : "未指定学科根目录" });
+		if (!matched.length && keyword.trim()) parent.createDiv({ cls: "cg-weekly-review-empty-inline", text: "没有匹配的目录" });
+	}
+
+	private navigateRootResults(event: KeyboardEvent, results: HTMLElement, search: HTMLInputElement): void {
+		const buttons = Array.from(results.querySelectorAll<HTMLButtonElement>("button"));
+		const index = buttons.indexOf(event.target as HTMLButtonElement);
+		if (event.key === "ArrowUp" && index === 0) { event.preventDefault(); search.focus(); return; }
+		const next = event.key === "ArrowDown" ? index + 1 : event.key === "ArrowUp" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : -1;
+		if (next >= 0 && next < buttons.length) { event.preventDefault(); buttons[next].focus(); }
 	}
 
 	private renderDepthSelect(parent: HTMLElement): void {
@@ -248,15 +288,17 @@ export class WeeklyReviewModal extends Modal {
 
 	private renderGoalInput(parent: HTMLElement): void {
 		const group = parent.createDiv({ cls: "cg-weekly-review-control-group cg-weekly-review-goal-control" });
-		group.createDiv({ cls: "cg-weekly-review-control-label", text: "本次参考目标" });
+		group.createDiv({ cls: "cg-weekly-review-control-label", text: "每日参考目标" });
 		const line = group.createDiv({ cls: "cg-weekly-review-goal-line" });
 		const input = line.createEl("input", { cls: "cg-weekly-review-goal-input" });
 		input.dataset.reviewField = "goal";
 		input.type = "text";
 		input.inputMode = "numeric";
 		input.value = this.goalText;
-		input.placeholder = "分钟";
+		input.placeholder = "未设置";
 		input.setAttribute("aria-label", "本次参考目标分钟数");
+		input.setAttribute("aria-invalid", String(Boolean(this.goalError)));
+		line.createSpan({ cls: "cg-weekly-review-control-hint", text: "分钟 / 天" });
 		const error = group.createDiv({ cls: "cg-weekly-review-control-error", attr: { role: "status" } });
 		error.textContent = this.goalError;
 		const updateGoal = () => {
@@ -277,19 +319,19 @@ export class WeeklyReviewModal extends Modal {
 			this.render();
 			this.rootEl?.querySelector<HTMLElement>('[data-review-field="goal"]')?.focus();
 		};
-		group.createDiv({ cls: "cg-weekly-review-control-hint", text: this.goalText ? "仅用于本次报告，不修改图表目标" : "未设置目标" });
+
 	}
 
 	private refreshReport(): void {
 		if (!this.rootEl || !this.snapshot || this.closed) return;
-		const scrollTop = this.rootEl.scrollTop;
-		this.rootEl.querySelector(".cg-weekly-review-report")?.remove();
+		const scrollTop = this.scrollEl?.scrollTop || 0;
+		this.scrollEl?.querySelector(".cg-weekly-review-report")?.remove();
 		this.renderReport(this.snapshot);
-		this.rootEl.scrollTop = scrollTop;
+		if (this.scrollEl) this.scrollEl.scrollTop = scrollTop;
 	}
 
 	private renderReport(snapshot: WeeklyReviewSnapshot): void {
-		const report = this.rootEl!.createDiv({ cls: "cg-weekly-review-report" });
+		const report = this.scrollEl!.createDiv({ cls: "cg-weekly-review-report" });
 		this.renderOverview(report, snapshot);
 		this.renderDailyTrend(report, snapshot);
 		this.renderComparison(report, snapshot.comparison);
@@ -299,65 +341,83 @@ export class WeeklyReviewModal extends Modal {
 	}
 
 	private renderOverview(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
-		const section = this.createSection(parent, snapshot.isCurrentWeek ? "本周概览" : "所选周概览",
-			snapshot.isCurrentWeek ? "截至快照生成时刻，包含今天已有记录" : "完整自然周的已记录时长");
-		if (!snapshot.documents.length) section.createDiv({cls: "cg-weekly-review-empty-inline", text: this.service.getSettings().timeTrackingEnabled
-			? "当前周范围暂无时长记录；未采集不代表零投入。" : "当前范围暂无时长记录。可在设置中开启时长统计，以积累后续记录。"});
-		const cards = section.createDiv({ cls: "cg-weekly-review-summary-cards" });
-		this.createSummaryCard(cards, "已记录时长", formatDuration(snapshot.totalSeconds), "按当前日期和目录范围汇总");
-		this.createSummaryCard(cards, "有记录的天数", `${snapshot.recordedDays} 天`, "不把未采集日期补成零");
-		const counts = this.getGoalCounts(snapshot);
-		this.createSummaryCard(cards, "目标状态", this.formatGoalCounts(counts), this.getGoalHint());
+		const section = parent.createDiv({ cls: "cg-weekly-review-overview" });
+		section.createDiv({ cls: "cg-weekly-review-summary-label", text: snapshot.isCurrentWeek ? "本周已记录" : "本周已记录 · 历史周" });
+		section.createDiv({ cls: "cg-weekly-review-summary-value", text: formatDuration(snapshot.totalSeconds) });
+		section.createDiv({ cls: "cg-weekly-review-summary-hint", text: `有记录 ${snapshot.recordedDays} 天 · ${snapshot.root || "笔记与 YOLO"}` });
+		if (!snapshot.documents.length) section.createDiv({ cls: "cg-weekly-review-empty-inline", text: this.service.getSettings().timeTrackingEnabled ? "本周暂无记录" : "暂无记录，可在设置中开启时长统计" });
 		if (snapshot.warnings.length) this.renderWarningList(section, snapshot.warnings);
 	}
 
 	private renderDailyTrend(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
-		const section = this.createSection(parent, "每日趋势", "周一至周日；共用同一时长坐标");
-		const days = section.createDiv({ cls: "cg-weekly-review-days" });
-		const maxSeconds = Math.max(1, ...snapshot.days.map(day => day.seconds));
-		for (const day of snapshot.days) this.renderDay(days, day, snapshot, maxSeconds);
+		const section = this.createSection(parent, "每日时长", "");
+		const maxSeconds = Math.max(60, Math.ceil(Math.max(...snapshot.days.map(day => day.seconds)) / 60) * 60);
+		const plot = section.createDiv({ cls: "cg-weekly-review-plot" });
+		const axis = plot.createDiv({ cls: "cg-weekly-review-axis", attr: {"aria-hidden": "true"} });
+		axis.createSpan({ text: `${Math.ceil(maxSeconds / 60)}分` });
+		axis.createSpan({ text: "0" });
+		const days = plot.createDiv({ cls: "cg-weekly-review-days", attr: {role: "group", "aria-label": "周一至周日已记录时长"} });
+		const selected = snapshot.days.find(day => day.date === this.selectedDay) || snapshot.days.find(day => day.date === snapshot.today) || snapshot.days[0];
+		for (const day of snapshot.days) this.renderDay(days, day, snapshot, maxSeconds, day === selected);
+		this.renderDayDetail(section, selected, snapshot);
 	}
 
-	private renderDay(parent: HTMLElement, day: WeeklyReviewDay, snapshot: WeeklyReviewSnapshot, maxSeconds: number): void {
+	private renderDay(parent: HTMLElement, day: WeeklyReviewDay, snapshot: WeeklyReviewSnapshot, maxSeconds: number, selected: boolean): void {
 		const goal = getWeeklyReviewGoal(day, snapshot.today, this.getGoalMinutes());
-		const row = parent.createDiv({ cls: "cg-weekly-review-day" });
-		row.classList.toggle("is-future", day.future);
-		row.classList.toggle("is-today", day.date === snapshot.today);
-		const label = row.createDiv({ cls: "cg-weekly-review-day-label" });
-		label.createEl("time", { cls: "cg-weekly-review-day-date", text: day.date.slice(5), attr: { datetime: day.date } });
-		label.createSpan({ cls: "cg-weekly-review-day-weekday", text: `周${getWeekday(day.date)}` });
-		if (day.date === snapshot.today) label.createSpan({ cls: "cg-weekly-review-day-today", text: "今天" });
-		const graph = row.createDiv({ cls: "cg-weekly-review-day-graph" });
+		const value = reviewDayValue(day);
+		const status = day.future && !day.seconds ? "尚未到来" : COVERAGE_LABELS[day.coverage];
+		const button = parent.createEl("button", { cls: "cg-weekly-review-day", attr: {type: "button", "aria-pressed": String(selected), "aria-label": `${formatDate(day.date)}，${value}，${status}，${this.getGoalLabel(goal)}`} });
+		button.dataset.reviewDay = day.date;
+		button.classList.toggle("is-future", day.future);
+		button.classList.toggle("is-today", day.date === snapshot.today);
+		button.classList.toggle("is-selected", selected);
+		button.classList.toggle("is-untracked", !day.seconds && day.coverage === "UNTRACKED" && !day.future);
+		const graph = button.createDiv({ cls: "cg-weekly-review-day-graph", attr: {"aria-hidden": "true"} });
+		graph.createSpan({ cls: "cg-weekly-review-day-value", text: reviewDayBarLabel(day) });
 		const bar = graph.createDiv({ cls: "cg-weekly-review-day-bar" });
-		bar.style.width = `${Math.max(0, Math.min(100, day.seconds / maxSeconds * 100))}%`;
-		graph.createSpan({ cls: "cg-weekly-review-day-value", text: reviewDayValue(day) });
-		const status = row.createDiv({ cls: "cg-weekly-review-day-status" });
-		status.createSpan({ cls: `cg-weekly-review-coverage is-${day.coverage.toLowerCase()}`, text: day.future && !day.seconds ? "尚未到来" : COVERAGE_LABELS[day.coverage] });
-		status.createSpan({ cls: `cg-weekly-review-goal is-${goal.toLowerCase()}`, text: this.getGoalLabel(goal) });
-		if (day.future && day.seconds > 0) status.createSpan({ cls: "cg-weekly-review-day-note", text: "日期超前" });
-		if (day.timezoneWarning) status.createSpan({ cls: "cg-weekly-review-day-note", text: "时区需确认" });
+		bar.style.height = `${Math.max(0, Math.min(100, day.seconds / maxSeconds * 100))}%`;
+		button.createSpan({ cls: "cg-weekly-review-day-weekday", text: day.date === snapshot.today ? "今天" : `周${getWeekday(day.date)}` });
+		button.createEl("time", { cls: "cg-weekly-review-day-date", text: day.date.slice(5).replace("-", "/"), attr: {datetime: day.date} });
+		button.onclick = () => { this.selectedDay = day.date; this.render(); };
+		button.onkeydown = event => this.navigateDays(event, parent);
+	}
+
+	private navigateDays(event: KeyboardEvent, parent: HTMLElement): void {
+		const buttons = Array.from(parent.querySelectorAll<HTMLButtonElement>(".cg-weekly-review-day"));
+		const index = buttons.indexOf(event.currentTarget as HTMLButtonElement);
+		const next = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : -1;
+		if (next >= 0 && next < buttons.length) { event.preventDefault(); buttons[next].focus(); }
+	}
+
+	private renderDayDetail(parent: HTMLElement, day: WeeklyReviewDay, snapshot: WeeklyReviewSnapshot): void {
+		const detail = parent.createDiv({ cls: "cg-weekly-review-day-detail", attr: {"aria-live": "polite"} });
+		detail.createSpan({ text: formatDate(day.date) });
+		detail.createEl("strong", { text: reviewDayValue(day) });
+		if (!day.future || day.seconds > 0) {
+			detail.createSpan({ text: COVERAGE_LABELS[day.coverage] });
+			if (this.getGoalMinutes()) detail.createSpan({ text: this.getGoalLabel(getWeeklyReviewGoal(day, snapshot.today, this.getGoalMinutes())) });
+		}
+		if (day.future && day.seconds > 0) detail.createSpan({ cls: "cg-weekly-review-alert", text: "日期超前" });
+		if (day.timezoneWarning) detail.createSpan({ cls: "cg-weekly-review-alert", text: "时区需确认" });
 	}
 
 	private renderComparison(parent: HTMLElement, comparison: WeeklyReviewComparison): void {
-		const section = this.createSection(parent, this.snapshot?.isCurrentWeek ? "上周同期" : "历史周对上一完整周", this.getComparisonSubtitle(comparison));
-		if (comparison.state === "NO_COMPLETED_DAYS") {
-			section.createDiv({cls: "cg-weekly-review-empty-inline", text: this.getComparisonResult(comparison)});
+		const section = this.createSection(parent, this.snapshot?.isCurrentWeek ? "上周同期" : "与上一周相比", "");
+		const result = section.createDiv({ cls: "cg-weekly-review-comparison-result" });
+		if (comparison.state !== "READY") {
+			result.textContent = this.getComparisonResult(comparison);
 			return;
 		}
-		const grid = section.createDiv({ cls: "cg-weekly-review-comparison" });
-		this.createComparisonValue(grid, "本次区间", getComparisonRange(comparison.fromDate, comparison.toDate), comparison.currentSeconds, comparison.currentDays);
-		this.createComparisonValue(grid, "对照区间", getComparisonRange(comparison.referenceFromDate, comparison.referenceToDate), comparison.previousSeconds, comparison.previousDays);
-		const result = grid.createDiv({ cls: `cg-weekly-review-comparison-result is-${comparison.state.toLowerCase()}` });
-		result.createDiv({ cls: "cg-weekly-review-comparison-result-label", text: this.getComparisonResult(comparison) });
-		if (comparison.state === "READY" && comparison.deltaSeconds !== undefined) {
-			const delta = formatSignedDuration(comparison.deltaSeconds);
-			result.createDiv({ cls: "cg-weekly-review-comparison-delta", text: `${delta}${comparison.percentage === undefined ? "" : ` · ${formatPercentage(comparison.percentage, true)}`}` });
-		}
+		if (comparison.deltaSeconds !== undefined) result.createEl("strong", { text: formatSignedDuration(comparison.deltaSeconds) });
+		if (comparison.percentage !== undefined) result.createSpan({ text: formatPercentage(comparison.percentage, true) });
+		const range = section.createDiv({ cls: "cg-weekly-review-comparison-range" });
+		range.textContent = `${getComparisonRange(comparison.fromDate, comparison.toDate)}：${formatDuration(comparison.currentSeconds)} · 上期 ${formatDuration(comparison.previousSeconds)}`;
+		if (comparison.percentage === undefined) section.createDiv({ cls: "cg-weekly-review-control-hint", text: this.getComparisonResult(comparison) });
 	}
 
 	private renderGroups(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
 		const groups = getWeeklyReviewGroups(snapshot, this.depth).filter(group => group.seconds > 0);
-		const section = this.createSection(parent, "学科分布", groups.length ? "点击一行，仅筛选下方重点笔记" : "本周暂无可分组的已记录时长");
+		const section = this.createSection(parent, snapshot.root ? "学科分布" : "活动分布", groups.length ? "" : "暂无记录");
 		if (!groups.length) return;
 		const list = section.createDiv({ cls: "cg-weekly-review-groups", attr: { role: "group", "aria-label": "学科与独立活动分布" } });
 		for (const group of groups) this.renderGroup(list, group, snapshot.totalSeconds);
@@ -379,7 +439,7 @@ export class WeeklyReviewModal extends Modal {
 		if (group.activity) heading.createSpan({ cls: "cg-weekly-review-activity-badge", text: "独立活动" });
 		const meta = button.createDiv({ cls: "cg-weekly-review-group-meta" });
 		meta.createSpan({ text: formatDuration(group.seconds) });
-		if (totalSeconds > 0) meta.createSpan({ text: `${formatPercentage(group.seconds / totalSeconds * 100)} · ${group.documents.length} 项` });
+		if (totalSeconds > 0) meta.createSpan({ text: formatPercentage(group.seconds / totalSeconds * 100) });
 		const bar = button.createDiv({ cls: "cg-weekly-review-group-bar" });
 		bar.createDiv({ cls: "cg-weekly-review-group-bar-fill" }).style.width = `${Math.min(100, group.seconds / Math.max(totalSeconds, 1) * 100)}%`;
 	}
@@ -390,8 +450,17 @@ export class WeeklyReviewModal extends Modal {
 			.filter(document => !isYoloChatActivity(document.path) && document.seconds > 0)
 			.sort((left, right) => right.seconds - left.seconds || left.path.localeCompare(right.path))
 			.slice(0, 10);
-		const title = selectedGroup ? `重点笔记 · ${selectedGroup.label}` : "投入最多的十篇笔记";
-		const section = this.createSection(parent, title, "按完整路径区分同名笔记；已删除文件仍保留统计");
+		const section = this.createSection(parent, "重点笔记", "");
+		if (selectedGroup) {
+			const clear = section.createEl("button", { cls: "cg-weekly-review-clear-filter", text: `${selectedGroup.label} ×`, attr: {type: "button", "aria-label": "清除笔记分组筛选"} });
+			clear.dataset.reviewAction = "clear-group";
+			clear.onclick = () => {
+				this.selectedGroupKey = undefined;
+				this.render();
+				Array.from(this.rootEl!.querySelectorAll<HTMLElement>("[data-review-group-key]"))
+					.find(button => button.dataset.reviewGroupKey === selectedGroup.key)?.focus({preventScroll: true});
+			};
+		}
 		if (!documents.length) {
 			section.createDiv({ cls: "cg-weekly-review-empty-inline", text: selectedGroup?.activity ? "YOLO 对话活动不对应笔记。" : "暂无可显示的笔记记录。" });
 			return;
@@ -407,7 +476,7 @@ export class WeeklyReviewModal extends Modal {
 		row.dataset.reviewPath = path;
 		const label = row.createDiv({ cls: "cg-weekly-review-document-label" });
 		label.createDiv({ cls: "cg-weekly-review-document-name", text: getFileName(path) });
-		label.createDiv({ cls: "cg-weekly-review-document-path", text: path });
+		label.createDiv({ cls: "cg-weekly-review-document-path", text: path, attr: {title: path} });
 		row.createDiv({ cls: "cg-weekly-review-document-duration", text: formatDuration(seconds) });
 		if (file instanceof TFile) {
 			row.classList.add("is-openable");
@@ -427,44 +496,42 @@ export class WeeklyReviewModal extends Modal {
 	}
 
 	private renderNotes(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
-		const section = this.createSection(parent, "口径说明", "报告只解释已有快照，不补造未采集时长");
-		const list = section.createDiv({ cls: "cg-weekly-review-notes" });
+		const section = parent.createEl("details", { cls: "cg-weekly-review-notes" });
+		section.open = this.notesOpen;
+		section.ontoggle = () => { this.notesOpen = section.open; };
+		const summary = section.createEl("summary", { text: "统计说明" });
+		summary.dataset.reviewAction = "notes";
 		const notes = [
-			"时长按原记录日期汇总，覆盖按本机日界判断；多端同时发生的活动直接相加。",
-			"本周主累计包含今天已有记录；同期比较只使用已结束日期，不把今天与上周整日比较。",
-			this.goalError ? "当前目标输入无效，已隐藏目标判断。" : this.goalText ? `目标是本次参考值 ${this.goalText} 分钟，不代表任何历史图表目标。` : "当前未设置本次参考目标，隐藏目标判断。",
-			"更改分组或目标只影响本次报告，点击刷新查看最新记录；不会自动写入笔记。",
+			"只汇总已记录的活跃时长，不代表注意力或掌握程度。缺失记录不等于零投入。",
+			"时长按原记录日期汇总，覆盖按本机日界判断；多端同时活动直接相加。",
+			"本周累计包含今天，同期比较仅使用已结束日期；历史周比较上一完整周。",
+			this.goalError ? "目标输入无效，已隐藏目标判断。" : this.goalText ? `本次每日参考目标 ${this.goalText} 分钟，不还原历史目标。` : "未设置参考目标。",
+			"分组和目标仅本次有效，不修改全局采集范围；点击刷新获取最新记录。",
 		];
-		for (const note of notes) list.createDiv({ text: note });
-		if (snapshot.warnings.length) list.createDiv({ cls: "cg-weekly-review-note-muted", text: "异常提示已在相关区域列出。" });
+		for (const note of notes) section.createEl("p", { text: note });
 	}
 
 	private createSection(parent: HTMLElement, title: string, subtitle: string): HTMLElement {
 		const section = parent.createDiv({ cls: "cg-weekly-review-section" });
 		const heading = section.createDiv({ cls: "cg-weekly-review-section-heading" });
 		heading.createEl("h3", { text: title });
-		heading.createDiv({ cls: "cg-weekly-review-section-subtitle", text: subtitle });
+		if (subtitle) heading.createDiv({ cls: "cg-weekly-review-section-subtitle", text: subtitle });
 		return section;
 	}
 
-	private createSummaryCard(parent: HTMLElement, label: string, value: string, hint: string): void {
-		const card = parent.createDiv({ cls: "cg-weekly-review-summary-card" });
-		card.createDiv({ cls: "cg-weekly-review-summary-label", text: label });
-		card.createDiv({ cls: "cg-weekly-review-summary-value", text: value });
-		card.createDiv({ cls: "cg-weekly-review-summary-hint", text: hint });
-	}
+
 
 	private renderWarningList(parent: HTMLElement, warnings: readonly string[]): void {
-		const list = parent.createDiv({ cls: "cg-weekly-review-warnings", attr: { role: "status" } });
-		for (const warning of warnings) list.createDiv({ text: warning });
-	}
-
-	private createComparisonValue(parent: HTMLElement, label: string, range: string, seconds: number, days: readonly WeeklyReviewDay[]): void {
-		const value = parent.createDiv({ cls: "cg-weekly-review-comparison-value" });
-		value.createDiv({ cls: "cg-weekly-review-comparison-label", text: label });
-		value.createDiv({ cls: "cg-weekly-review-comparison-range", text: range });
-		value.createDiv({ cls: "cg-weekly-review-comparison-seconds", text: `已记录 ${formatDuration(seconds)}` });
-		value.createDiv({ cls: "cg-weekly-review-control-hint", text: `覆盖完整 ${days.filter(day => day.coverage === "TRACKED").length}/${days.length} 天，其余记录不完整或无法确认` });
+		const severe = warnings.filter(warning => warning.includes("日期超前") || warning.includes("时区"));
+		for (const warning of severe) parent.createDiv({ cls: "cg-weekly-review-alert", text: warning });
+		const remaining = warnings.filter(warning => !severe.includes(warning));
+		if (!remaining.length) return;
+		const details = parent.createEl("details", { cls: "cg-weekly-review-warnings" });
+		details.open = this.warningsOpen;
+		details.ontoggle = () => { this.warningsOpen = details.open; };
+		const summary = details.createEl("summary", { text: warnings.some(w => w.includes("缺失")) ? "部分日期记录不完整 · 查看原因" : "记录范围 · 查看说明" });
+		summary.dataset.reviewAction = "warnings";
+		for (const warning of remaining) details.createEl("p", { text: warning });
 	}
 
 	private createControlButton(parent: HTMLElement, text: string, label: string, action: () => void, options: {disabled: boolean; id: string}): void {
@@ -499,37 +566,23 @@ export class WeeklyReviewModal extends Modal {
 		return this.goalError || !this.goalText ? undefined : Number(this.goalText);
 	}
 
-	private getGoalCounts(snapshot: WeeklyReviewSnapshot): Record<WeeklyReviewGoalState, number> {
-		const result: Record<WeeklyReviewGoalState, number> = { MET: 0, MISSED: 0, UNKNOWN: 0, IN_PROGRESS: 0, EXCLUDED: 0 };
-		if (!this.goalText || this.goalError) return result;
-		for (const day of snapshot.days) result[getWeeklyReviewGoal(day, snapshot.today, this.getGoalMinutes())]++;
-		return result;
-	}
 
-	private formatGoalCounts(counts: Record<WeeklyReviewGoalState, number>): string {
-		if (this.goalError) return "目标无效";
-		if (!this.goalText) return "未设置目标";
-		return `达标 ${counts.MET} · 未达标 ${counts.MISSED} · 无法判定 ${counts.UNKNOWN} · 进行中 ${counts.IN_PROGRESS}`;
-	}
 
-	private getGoalHint(): string {
-		if (this.goalError) return "输入无效，已隐藏目标判断";
-		return this.goalText ? `按 ${this.goalText} 分钟目标` : "未设置本次参考目标";
-	}
+
+
+
 
 	private getGoalLabel(goal: WeeklyReviewGoalState): string {
 		if (this.goalError) return "目标无效";
 		return this.goalText ? GOAL_LABELS[goal] : "未设置目标";
 	}
 
-	private getComparisonSubtitle(comparison: WeeklyReviewComparison): string {
-		return comparison.toDate ? "本周比较不含今天；历史周对上一完整周" : "本周尚无已结束日期可比较";
-	}
+
 
 	private getComparisonResult(comparison: WeeklyReviewComparison): string {
 		switch (comparison.state) {
 			case "READY": return comparison.previousSeconds > 0 ? "已记录时长可比较" : comparison.currentSeconds > 0 ? "上期已采集但无活动，本期新增已记录时长" : "已记录时长持平";
-			case "NO_COMPLETED_DAYS": return "本周尚无已结束日期，明日起可比较";
+			case "NO_COMPLETED_DAYS": return "本周尚无完整日期可比较";
 			case "POLICY_CHANGED": return "比较口径可能不同，暂不计算变化率";
 			default: return "记录不完整，暂不计算变化率";
 		}
@@ -622,6 +675,18 @@ function formatPercentage(value: number, signed = false): string {
 	if (!Number.isFinite(value)) return "变化率无法计算";
 	const rounded = Math.round(value * 10) / 10 || 0;
 	return `${signed && rounded > 0 ? "+" : ""}${rounded.toFixed(1)}%`;
+}
+
+function reviewDayBarLabel(day: WeeklyReviewDay): string {
+	if (day.seconds) return compactDuration(day.seconds);
+	if (day.future) return "—";
+	return {TRACKED: "0", UNTRACKED: "未采集", UNKNOWN: "待确认", PARTIAL: "部分"}[day.coverage];
+}
+
+function compactDuration(seconds: number): string {
+	if (seconds < 60) return "<1分";
+	const minutes = Math.floor(seconds / 60);
+	return minutes < 100 ? `${minutes}分` : `${(seconds / 3600).toFixed(1)}时`;
 }
 
 function reviewDayValue(day: WeeklyReviewDay): string {

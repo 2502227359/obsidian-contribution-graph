@@ -89,18 +89,20 @@ export default class ContributionGraph extends Plugin {
 	}
 
 	private registerWeeklyReviewCommand(): void {
-		this.addCommand({ id: "weekly-review", name: "查看学科周回顾", callback: () => {
-			if (this.shuttingDown) return;
-			const owner = typeof activeDocument === "undefined" ? document : activeDocument;
-			const existing = this.weeklyReviewModals.get(owner);
-			if (existing) { existing.focus(); return; }
-			const modal = new WeeklyReviewModal(this.app, this.activityService, () => this.weeklyReviewModals.delete(owner));
-			this.weeklyReviewModals.set(owner, modal);
-			modal.open();
-		} });
+		this.addCommand({ id: "weekly-review", name: "查看学科周回顾", callback: () => this.openWeeklyReview() });
+		this.addRibbonIcon("calendar-days", "周回顾", () => this.openWeeklyReview());
 		this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, closedWindow) => {
 			for (const [owner, modal] of this.weeklyReviewModals) if (owner.defaultView === closedWindow) modal.close();
 		}));
+	}
+
+	private openWeeklyReview(owner = typeof activeDocument === "undefined" ? document : activeDocument): void {
+		if (this.shuttingDown) return;
+		const existing = this.weeklyReviewModals.get(owner);
+		if (existing) { existing.focus(); return; }
+		const modal = new WeeklyReviewModal(this.app, this.activityService, () => this.weeklyReviewModals.delete(owner));
+		this.weeklyReviewModals.set(owner, modal);
+		modal.open();
 	}
 
 	async onunload() {
@@ -187,6 +189,7 @@ export default class ContributionGraph extends Plugin {
 			container: HTMLElement,
 			graphConfig: ContributionGraphConfig
 		): void => {
+			graphConfig.openWeeklyReview = owner => this.openWeeklyReview(owner);
 			if (!Renders.update(container, graphConfig)) Renders.render(container, graphConfig);
 		};
 		//@ts-ignore
@@ -205,7 +208,7 @@ export default class ContributionGraph extends Plugin {
 		this.registerMarkdownCodeBlockProcessor(
 			"contributionGraph",
 			(code, el, ctx) => {
-				const processor = new CodeBlockProcessor(this.activityService);
+				const processor = new CodeBlockProcessor(this.activityService, owner => this.openWeeklyReview(owner));
 				processor.renderFromCodeBlock(code, el, ctx, this.app);
 				if (el.parentElement) {
 					mountEditButtonToCodeblock(

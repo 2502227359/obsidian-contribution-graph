@@ -1,7 +1,7 @@
 {
 	"id": "contribution-graph-local",
 	"name": "Contribution Graph Local",
-	"version": "0.22.1",
+	"version": "0.23.0",
 	"minAppVersion": "1.3.0",
 	"description": "Local heatmap and character edit activity tracker",
 	"author": "Local fork",

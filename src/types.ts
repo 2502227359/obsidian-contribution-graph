@@ -75,6 +75,8 @@ export interface SavedGraphTheme {
 }
 
 export class ContributionGraphConfig {
+	/** 当前宿主窗口的周回顾入口，不写入图表配置。 */
+	openWeeklyReview?: (owner: Document) => void;
 	timeTracking?: boolean;
 	hourlyData?: ContributionCellData[];
 	/**
