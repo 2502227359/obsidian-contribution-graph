@@ -20,11 +20,14 @@ import "../style/datePicker.css";
 import { EditActivityService } from "./activity/EditActivityService";
 import { EditActivitySettingTab } from "./activity/EditActivitySettingTab";
 import { TimeActivityObserver } from "./time/TimeActivityObserver";
+import { WeeklyReviewModal } from "./view/WeeklyReviewModal";
+import "../style/weeklyReview.css";
 
 export default class ContributionGraph extends Plugin {
 	activityService: EditActivityService;
 	private timeObserver: TimeActivityObserver;
 	private shuttingDown = false;
+	private readonly weeklyReviewModals = new Map<Document, WeeklyReviewModal>();
 
 	async onload() {
 		this.shuttingDown = false;
@@ -59,6 +62,7 @@ export default class ContributionGraph extends Plugin {
 		this.registerCodeblockProcessor();
 		this.registerContributionGraphCreateCommand();
 		this.registerTimeTrackingCommands();
+		this.registerWeeklyReviewCommand();
 		this.registerContextMenu();
 	}
 
@@ -84,9 +88,25 @@ export default class ContributionGraph extends Plugin {
 		}
 	}
 
+	private registerWeeklyReviewCommand(): void {
+		this.addCommand({ id: "weekly-review", name: "查看学科周回顾", callback: () => {
+			if (this.shuttingDown) return;
+			const owner = typeof activeDocument === "undefined" ? document : activeDocument;
+			const existing = this.weeklyReviewModals.get(owner);
+			if (existing) { existing.focus(); return; }
+			const modal = new WeeklyReviewModal(this.app, this.activityService, () => this.weeklyReviewModals.delete(owner));
+			this.weeklyReviewModals.set(owner, modal);
+			modal.open();
+		} });
+		this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, closedWindow) => {
+			for (const [owner, modal] of this.weeklyReviewModals) if (owner.defaultView === closedWindow) modal.close();
+		}));
+	}
+
 	async onunload() {
 		this.shuttingDown = true;
 		this.timeObserver?.stop();
+		this.closeWeeklyReviews();
 		// @ts-ignore
 		window.renderContributionGraph = undefined;
 		// @ts-ignore
@@ -94,10 +114,16 @@ export default class ContributionGraph extends Plugin {
 		await this.activityService?.unload();
 	}
 
+	private closeWeeklyReviews(): void {
+		for (const modal of this.weeklyReviewModals.values()) modal.close();
+		this.weeklyReviewModals.clear();
+	}
+
 	registerAppResumeEvents() {
 		this.registerEvent(this.app.workspace.on("quit", tasks => {
 			this.shuttingDown = true;
 			this.timeObserver?.stop();
+			this.closeWeeklyReviews();
 			tasks.addPromise(this.activityService.unload());
 		}));
 		this.registerDomEvent(window, "focus", () => {

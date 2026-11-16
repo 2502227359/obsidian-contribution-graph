@@ -42,6 +42,8 @@ import {
 	TrustedInputIntent,
 } from "./trustedInput";
 import { TimeTracker } from "../time/timeTracker";
+import { buildWeeklyReview } from "../time/weeklyReview";
+import type { WeeklyReviewQuery } from "../time/weeklyReviewTypes";
 import { isTimeActivityInCollectionScope } from "../time/timeActivitySource";
 import { getTimeTrackingStatusText } from "../time/timeTrackingPresentation";
 import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths, removeTimeSpan, TimeActivityKey } from "../time/timeData";
@@ -474,6 +476,12 @@ export class EditActivityService {
 
 	getDailyTimeStats(query: TimeStatsQuery = {}) {
 		return queryTimeStats(this.readStatistics().timeActivity, query, this.now().getTime(), false);
+	}
+
+	getWeeklyReview(query: WeeklyReviewQuery = {}) {
+		if (this.unloading) throw new Error("插件正在关闭，无法读取周回顾");
+		const now = this.now().getTime();
+		return buildWeeklyReview(this.readStatistics().timeActivity, query, now);
 	}
 
 	getHourlyTimeStats(query: TimeStatsQuery = {}) {

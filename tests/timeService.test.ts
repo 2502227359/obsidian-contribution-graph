@@ -31,6 +31,20 @@ describe("时长统计的保存与查询", () => {
 			wall += 15000; mono += 15000; service.checkpointTimeActivity();
 		}
 	};
+	it("周回顾读取当前一致快照，不结算、保存或暴露可变统计", async () => {
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(15);
+		const before = service.getDailyTimeStats(), writes = plugin.app.vault.adapter.write.mock.calls.length;
+		wall += 3000; mono += 3000;
+		const report = service.getWeeklyReview({root: "笔记"});
+		expect(report.totalSeconds).toBe(15);
+		expect(report.days).toHaveLength(7);
+		report.documents[0].seconds = 999;
+		expect(service.getDailyTimeStats()).toEqual(before);
+		expect(plugin.app.vault.adapter.write).toHaveBeenCalledTimes(writes);
+		await service.unload();
+		expect(() => service.getWeeklyReview()).toThrow("正在关闭");
+	});
 	it("YOLO 独立活动不归笔记，全部时长包含它且范围筛选、暂停和空闲回撤口径一致", async () => {
 		await service.setTrackedFolders(["临床医学"]);
 		await service.setTimeTrackingEnabled(true);
