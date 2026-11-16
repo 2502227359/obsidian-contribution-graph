@@ -2,6 +2,7 @@ import {
 	Editor,
 	MarkdownFileInfo,
 	MarkdownView,
+	Notice,
 	Plugin,
 	TFile,
 	TFolder,
@@ -33,7 +34,12 @@ export default class ContributionGraph extends Plugin {
 			activity: path => this.activityService.recordTimeActivity(path),
 			pause: () => this.activityService.pauseTimeActivity(),
 			checkpoint: () => this.activityService.checkpointTimeActivity(),
-			status: () => this.activityService.getTimeTrackingStatus(),
+			context: context => this.activityService.setTimeTrackingContext(context),
+			snapshot: () => this.activityService.getTimeTrackingSnapshot(),
+			toggle: () => this.setManualTimePaused(!this.activityService.getTimeTrackingSnapshot().manualPaused),
+			subscribe: listener => this.activityService.subscribe(event => {
+				if (["TIME_STATUS", "TIME_STATS", "COVERAGE", "SETTINGS", "IMPORT", "TEMPORAL"].includes(event.type)) listener();
+			}),
 		});
 		this.app.workspace.onLayoutReady(() => { if (!this.shuttingDown) this.timeObserver.start(); });
 		this.registerEditorExtension(
@@ -43,7 +49,8 @@ export default class ContributionGraph extends Plugin {
 			new EditActivitySettingTab(
 				this.app,
 				this,
-				this.activityService
+				this.activityService,
+				paused => this.setManualTimePaused(paused)
 			)
 		);
 		this.registerAppResumeEvents();
@@ -51,7 +58,30 @@ export default class ContributionGraph extends Plugin {
 		this.registerGlobalRenderApi();
 		this.registerCodeblockProcessor();
 		this.registerContributionGraphCreateCommand();
+		this.registerTimeTrackingCommands();
 		this.registerContextMenu();
+	}
+
+	private async setManualTimePaused(paused: boolean): Promise<void> {
+		if (this.shuttingDown) return;
+		if (!this.activityService.getSettings().timeTrackingEnabled) {
+			new Notice("请先在插件设置中启用时长统计。");
+			return;
+		}
+		const previous = this.activityService.getTimeTrackingSnapshot().manualPaused;
+		if (paused) await this.activityService.pauseTimeTrackingForSession();
+		else await this.activityService.resumeTimeTrackingForSession();
+		const changed = previous !== this.activityService.getTimeTrackingSnapshot().manualPaused;
+		if (!this.shuttingDown) this.timeObserver.refreshCurrentContext(changed);
+	}
+
+	private registerTimeTrackingCommands(): void {
+		for (const [id, name, paused] of [
+			["pause-time-tracking", "暂停本次时长统计", true],
+			["resume-time-tracking", "恢复本次时长统计", false],
+		] as const) {
+			this.addCommand({ id, name, callback: () => { void this.setManualTimePaused(paused); } });
+		}
 	}
 
 	async onunload() {

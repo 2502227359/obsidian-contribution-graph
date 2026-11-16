@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	TimeActivityObserver,
+	type TimeActivityObserverCallbacks,
 	isTimeActivityEvent,
 } from "../src/time/TimeActivityObserver";
+import type { TimeTrackingSnapshot } from "../src/time/types";
 
 class FakeEventTarget {
 	private readonly listeners = new Map<string, Set<(event: any) => void>>();
@@ -17,10 +19,14 @@ class FakeEventTarget {
 		this.listeners.get(type)?.delete(listener);
 	}
 
-	dispatch(type: string, target: unknown = this, trusted = true): void {
+	dispatch(type: string, target: unknown = this, trusted = true, details: Record<string, unknown> = {}): void {
 		for (const listener of this.listeners.get(type) || []) {
-			listener({ type, target, isTrusted: trusted });
+			listener({ type, target, isTrusted: trusted, ...details });
 		}
+	}
+
+	contains(target: unknown): boolean {
+		return target === this;
 	}
 }
 
@@ -59,7 +65,7 @@ function createView(path = "Notes/Test.md") {
 	};
 }
 
-function createPlugin(views: Array<ReturnType<typeof createView>>) {
+function createDocumentTarget() {
 	const documentTarget = new FakeEventTarget() as any;
 	const windowTarget = new FakeEventTarget() as any;
 	documentTarget.visibilityState = "visible";
@@ -68,8 +74,17 @@ function createPlugin(views: Array<ReturnType<typeof createView>>) {
 	documentTarget.body = {};
 	documentTarget.defaultView = windowTarget;
 	windowTarget.MutationObserver = FakeMutationObserver;
-	for (const view of views) {
-		view.root.ownerDocument = documentTarget;
+	return { documentTarget, windowTarget };
+}
+
+function createPlugin(
+	views: Array<ReturnType<typeof createView>>,
+	documents: Array<{ documentTarget: any; windowTarget: any }> = []
+) {
+	const firstDocument = documents[0] || createDocumentTarget();
+	const { documentTarget, windowTarget } = firstDocument;
+	for (const [index, view] of views.entries()) {
+		view.root.ownerDocument = (documents[index] || firstDocument).documentTarget;
 	}
 	const handlers = new Map<string, Set<(...args: any[]) => void>>();
 	const workspace = {
@@ -89,14 +104,51 @@ function createPlugin(views: Array<ReturnType<typeof createView>>) {
 			handlers.get(ref.name)?.delete(ref.callback);
 		},
 	};
+	const statusBarItem = new FakeEventTarget() as FakeEventTarget & {
+		setText: ReturnType<typeof vi.fn>;
+		setAttribute: ReturnType<typeof vi.fn>;
+		remove: ReturnType<typeof vi.fn>;
+	};
+	statusBarItem.setText = vi.fn();
+	statusBarItem.setAttribute = vi.fn();
+	statusBarItem.remove = vi.fn();
 	return {
 		plugin: {
 			app: { workspace },
-			addStatusBarItem: vi.fn(() => ({ setText: vi.fn(), remove: vi.fn() })),
+			addStatusBarItem: vi.fn(() => statusBarItem),
 		},
 		documentTarget,
 		windowTarget,
 		handlers,
+		statusBarItem,
+	};
+}
+
+function createSnapshot(overrides: Partial<TimeTrackingSnapshot> = {}): TimeTrackingSnapshot {
+	return {
+		reason: "ACTIVE",
+		path: "Notes/Test.md",
+		manualPaused: false,
+		enabled: true,
+		todaySeconds: 0,
+		todayPendingSeconds: 0,
+		remainingMs: 300_000,
+		...overrides,
+	};
+}
+
+function createCallbacks(
+	overrides: Partial<TimeActivityObserverCallbacks> = {}
+): TimeActivityObserverCallbacks {
+	return {
+		activity: vi.fn(),
+		pause: vi.fn(),
+		context: vi.fn(),
+		checkpoint: vi.fn(),
+		snapshot: vi.fn(() => createSnapshot()),
+		toggle: vi.fn(async () => undefined),
+		subscribe: vi.fn(() => vi.fn()),
+		...overrides,
 	};
 }
 
@@ -106,16 +158,20 @@ describe("时间活动事件策略", () => {
 		view.view.getViewType = () => "mindmap";
 		const { plugin, documentTarget } = createPlugin([view]);
 		const activity = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, { activity, pause: vi.fn(), checkpoint: vi.fn(), status: () => "暂停" });
+		const context = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, context }));
 		observer.start(); documentTarget.dispatch("wheel", view.root);
 		expect(activity).not.toHaveBeenCalled();
+		documentTarget.querySelector = () => ({});
+		FakeMutationObserver.instances[FakeMutationObserver.instances.length - 1].trigger();
+		expect(context).toHaveBeenLastCalledWith({ reason: "MODAL", path: undefined });
 		observer.stop();
 	});
 	it("当前笔记重命名后立即以新路径采集", () => {
 		const view = createView("旧路径.md");
 		const { plugin, documentTarget } = createPlugin([view]);
 		const activity = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, { activity, pause: vi.fn(), checkpoint: vi.fn(), status: () => "计时中" });
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity }));
 		observer.start();
 		view.view.file.path = "新路径.md";
 		observer.handlePathRename();
@@ -140,12 +196,7 @@ describe("时长活动观察器", () => {
 		const activity = vi.fn();
 		const pause = vi.fn();
 		const checkpoint = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {
-			activity,
-			pause,
-			checkpoint,
-			status: () => "计时中",
-		});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause, checkpoint }));
 
 		observer.start();
 		documentTarget.dispatch("keydown", view.root, true);
@@ -163,14 +214,14 @@ describe("时长活动观察器", () => {
 
 	it("停止后不再派发事件或工作区回调", () => {
 		const view = createView();
-		const { plugin, documentTarget, windowTarget, handlers } = createPlugin([view]);
+		const { plugin, documentTarget, windowTarget, handlers, statusBarItem } = createPlugin([view]);
 		const activity = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {
+		const unsubscribe = vi.fn();
+		const callbacks = createCallbacks({
 			activity,
-			pause: vi.fn(),
-			checkpoint: vi.fn(),
-			status: () => "已暂停",
+			subscribe: vi.fn(() => unsubscribe),
 		});
+		const observer = new TimeActivityObserver(plugin as any, callbacks);
 
 		observer.start();
 		activity.mockClear();
@@ -180,6 +231,8 @@ describe("时长活动观察器", () => {
 		for (const callbacks of handlers.values()) {
 			expect(callbacks.size).toBe(0);
 		}
+		expect(unsubscribe).toHaveBeenCalledTimes(1);
+		expect(statusBarItem.remove).toHaveBeenCalledTimes(1);
 		expect(activity).not.toHaveBeenCalled();
 	});
 
@@ -188,12 +241,7 @@ describe("时长活动观察器", () => {
 		const { plugin, documentTarget } = createPlugin([view]);
 		const activity = vi.fn();
 		const pause = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {
-			activity,
-			pause,
-			checkpoint: vi.fn(),
-			status: () => "计时中",
-		});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause }));
 		observer.start();
 		documentTarget.dispatch("pointerdown", view.root, false);
 		documentTarget.dispatch("pointerdown", view.root, true);
@@ -213,12 +261,7 @@ describe("时长活动观察器", () => {
 		const second = createView("Notes/Second.md");
 		const { plugin, handlers } = createPlugin([first, second]);
 		const activity = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {
-			activity,
-			pause: vi.fn(),
-			checkpoint: vi.fn(),
-			status: () => "计时中",
-		});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity }));
 		observer.start();
 		plugin.app.workspace.activeLeaf = second as any;
 		for (const callback of handlers.get("active-leaf-change") || []) {
@@ -234,12 +277,7 @@ describe("时长活动观察器", () => {
 		const { plugin, documentTarget } = createPlugin([view]);
 		const pause = vi.fn();
 		const checkpoint = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {
-			activity: vi.fn(),
-			pause,
-			checkpoint,
-			status: () => "计时中",
-		});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ pause, checkpoint }));
 		observer.start();
 		documentTarget.dispatch("pointerdown", view.root, true);
 		documentTarget.querySelector = () => ({}) as Element;
@@ -255,12 +293,7 @@ describe("时长活动观察器", () => {
 		const view = createView();
 		const { plugin, windowTarget } = createPlugin([view]);
 		const activity = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {
-			activity,
-			pause: vi.fn(),
-			checkpoint: vi.fn(),
-			status: () => "计时中",
-		});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity }));
 		observer.start();
 		windowTarget.dispatch("blur");
 		windowTarget.dispatch("focus");
@@ -279,12 +312,7 @@ describe("时长活动观察器", () => {
 		let modalOpen = false;
 		documentTarget.querySelector = (selector: string) =>
 			modalOpen && selector.includes(".modal") ? ({} as Element) : null;
-		const observer = new TimeActivityObserver(plugin as any, {
-			activity,
-			pause,
-			checkpoint: vi.fn(),
-			status: () => "计时中",
-		});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause }));
 		observer.start();
 		documentTarget.dispatch("pointerdown", view.root, true);
 		modalOpen = true;
@@ -305,7 +333,7 @@ describe("时长活动观察器", () => {
 		let open = false;
 		documentTarget.querySelector = (selector: string) => open && selector.includes("dialog[open]") ? {} : null;
 		const activity = vi.fn(), pause = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {activity, pause, checkpoint: vi.fn(), status: () => "计时中"});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause }));
 		observer.start();
 		const mutation = {type: "attributes", target: {nodeName: "DIALOG"}} as unknown as MutationRecord;
 		open = true;
@@ -321,7 +349,7 @@ describe("时长活动观察器", () => {
 		FakeMutationObserver.instances.length = 0;
 		const {plugin} = createPlugin([createView()]);
 		const activity = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {activity, pause: vi.fn(), checkpoint: vi.fn(), status: () => "计时中"});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity }));
 		observer.start();
 		FakeMutationObserver.instances[0].trigger([{type: "childList", target: {nodeName: "DIV"} as Node}]);
 		expect(activity).toHaveBeenCalledTimes(1);
@@ -335,17 +363,88 @@ describe("时长活动观察器", () => {
 			selector.includes("suggestion-container") ? ({} as Element) : null;
 		const activity = vi.fn();
 		const pause = vi.fn();
-		const observer = new TimeActivityObserver(plugin as any, {
-			activity,
-			pause,
-			checkpoint: vi.fn(),
-			status: () => "计时中",
-		});
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause }));
 		observer.start();
 		documentTarget.dispatch("pointerdown", view.root, true);
 
 		expect(activity).toHaveBeenCalledWith("Notes/Test.md");
 		expect(pause).not.toHaveBeenCalled();
+		observer.stop();
+	});
+
+	it("手动暂停门控正文活动，恢复后强制重新核对上下文", () => {
+		const view = createView();
+		const { plugin, documentTarget } = createPlugin([view]);
+		let manualPaused = false;
+		const activity = vi.fn();
+		const callbacks = createCallbacks({
+			activity,
+			snapshot: vi.fn(() => createSnapshot({ manualPaused })),
+		});
+		const observer = new TimeActivityObserver(plugin as any, callbacks);
+
+		observer.start();
+		const initialActivityCount = activity.mock.calls.length;
+		manualPaused = true;
+		documentTarget.dispatch("pointerdown", view.root);
+		expect(activity).toHaveBeenCalledTimes(initialActivityCount);
+
+		manualPaused = false;
+		observer.refreshCurrentContext();
+		expect(activity).toHaveBeenLastCalledWith("Notes/Test.md");
+		expect(activity).toHaveBeenCalledTimes(initialActivityCount + 1);
+		// 暂停与恢复在同一轮控制操作内结束时，旧启动缓存也不能挡住恢复。
+		manualPaused = true; manualPaused = false;
+		observer.refreshCurrentContext(true);
+		expect(activity).toHaveBeenCalledTimes(initialActivityCount + 2);
+		observer.stop();
+	});
+
+	it("状态栏控件只切换手动状态，支持回车和空格且不产生正文活动", async () => {
+		const view = createView();
+		const { plugin, documentTarget, statusBarItem } = createPlugin([view]);
+		const activity = vi.fn();
+		const toggle = vi.fn(async () => undefined);
+		const snapshot = vi.fn(() => createSnapshot());
+		const callbacks = createCallbacks({ activity, toggle, snapshot });
+		const observer = new TimeActivityObserver(plugin as any, callbacks);
+
+		observer.start();
+		const initialActivityCount = activity.mock.calls.length;
+		const initialSnapshotCount = snapshot.mock.calls.length;
+		statusBarItem.dispatch("mouseenter", statusBarItem);
+		statusBarItem.dispatch("focus", statusBarItem);
+		statusBarItem.dispatch("click", statusBarItem);
+		statusBarItem.dispatch("keydown", statusBarItem, true, { key: "Enter" });
+		statusBarItem.dispatch("keydown", statusBarItem, true, { key: " " });
+		await vi.waitFor(() => expect(toggle).toHaveBeenCalledTimes(3));
+		expect(activity).toHaveBeenCalledTimes(initialActivityCount);
+		expect(snapshot.mock.calls.length).toBeGreaterThanOrEqual(initialSnapshotCount + 2);
+		observer.stop();
+		statusBarItem.dispatch("click", statusBarItem);
+		expect(toggle).toHaveBeenCalledTimes(3);
+	});
+
+	it("旧窗口的延迟 blur 不会暂停新聚焦窗口", () => {
+		const first = createView("Notes/First.md");
+		const second = createView("Notes/Second.md");
+		const firstDocument = createDocumentTarget();
+		const secondDocument = createDocumentTarget();
+		const { plugin, handlers } = createPlugin([first, second], [firstDocument, secondDocument]);
+		const pause = vi.fn();
+		const activity = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause }));
+
+		observer.start();
+		plugin.app.workspace.activeLeaf = second as any;
+		for (const callback of handlers.get("active-leaf-change") || []) {
+			callback(second);
+		}
+		const pauseCountAfterSwitch = pause.mock.calls.length;
+		firstDocument.windowTarget.dispatch("blur");
+
+		expect(activity).toHaveBeenLastCalledWith("Notes/Second.md");
+		expect(pause).toHaveBeenCalledTimes(pauseCountAfterSwitch);
 		observer.stop();
 	});
 });

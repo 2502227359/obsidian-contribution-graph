@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TimeSpan } from "../src/time/types";
+import { IdleTimeDiscard, TimeSpan } from "../src/time/types";
 import { TimeTracker } from "../src/time/timeTracker";
 
 function createClock(start = 0) {
@@ -22,6 +22,43 @@ function createClock(start = 0) {
 }
 
 describe("活跃时长会话", () => {
+	it("到期结果区分已撤回二百八十五秒与未计十五秒，重复检查不重报", () => {
+		const clock = createClock(1000), discarded: IdleTimeDiscard[] = [];
+		const tracker = new TimeTracker(() => undefined, clock.clock, 5, result => discarded.push(result));
+		tracker.activity("甲.md");
+		for (let i = 0; i < 20; i++) { clock.advance(15000); tracker.checkpoint(); }
+		tracker.pause(); tracker.checkpoint();
+		expect(discarded).toEqual([{ path: "甲.md", start: 1000, detectedAt: 301000,
+			recordedSeconds: 285, unrecordedSeconds: 15, reason: "idle" }]);
+	});
+	it("没有已计尾段时仍报告未计区间，中断回撤保留中断原因", () => {
+		const clock = createClock(0), discarded: IdleTimeDiscard[] = [];
+		const tracker = new TimeTracker(() => undefined, clock.clock, 1, result => discarded.push(result));
+		tracker.activity("甲.md"); clock.advance(60000); tracker.checkpoint();
+		expect(discarded[0]).toMatchObject({ recordedSeconds: 0, unrecordedSeconds: 60, reason: "idle" });
+		tracker.activity("甲.md"); clock.advance(15000); tracker.checkpoint();
+		clock.advance(120000); tracker.checkpoint();
+		expect(discarded[1]).toMatchObject({ recordedSeconds: 15, unrecordedSeconds: 120, reason: "interrupted" });
+		expect(tracker.getSnapshot().interrupted).toBe(true);
+	});
+	it("读取快照只展示已计暂计量和单调时钟余量，不充当活动或心跳", () => {
+		const clock = createClock(1000);
+		const spans: TimeSpan[] = [];
+		const tracker = new TimeTracker(span => spans.push(span), clock.clock);
+		tracker.activity("甲.md"); clock.advance(15000); tracker.checkpoint();
+		clock.advance(10000);
+		expect(tracker.getSnapshot()).toMatchObject({
+			status: "ACTIVE", path: "甲.md", pendingSeconds: 15,
+			pendingStart: 1000, pendingEnd: 16000, remainingMs: 275000,
+		});
+		clock.setWall(999999);
+		expect(tracker.getSnapshot().remainingMs).toBe(275000);
+		expect(spans).toHaveLength(1);
+		clock.setWall(26000); clock.advance(51000);
+		tracker.getSnapshot(); tracker.checkpoint();
+		expect(tracker.getSnapshot().interrupted).toBe(true);
+		expect(spans).toHaveLength(1);
+	});
 	it("墙钟前跳三十秒时丢弃未确认的区间", () => {
 		const clock = createClock(0);
 		const spans: TimeSpan[] = [];

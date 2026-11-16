@@ -42,8 +42,9 @@ import {
 	TrustedInputIntent,
 } from "./trustedInput";
 import { TimeTracker } from "../time/timeTracker";
+import { getTimeTrackingStatusText } from "../time/timeTrackingPresentation";
 import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths, removeTimeSpan, TimeActivityKey } from "../time/timeData";
-import { TimeSpan, TimeStatsQuery } from "../time/types";
+import { IdleTimeDiscard, TimeSpan, TimeStatsQuery, TimeTrackingContext, TimeTrackingSnapshot, TimeTrackerSnapshot, TimeStatusReason } from "../time/types";
 import { canonicalStatistics, DEFAULT_STATISTICS_FOLDER, StatisticsRepository } from "./StatisticsRepository";
 import { emptyStatistics, StatisticsData, statisticsFrom } from "./statisticsModel";
 import { VaultStatisticsFiles } from "./VaultStatisticsFiles";
@@ -80,7 +81,7 @@ export interface DailyEditStatsQuery {
 }
 
 export interface EditActivityChangeEvent {
-	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT" | "TIME_STATS" | "SAVE_STATE";
+	type: "STATS" | "SETTINGS" | "COVERAGE" | "TEMPORAL" | "IMPORT" | "TIME_STATS" | "SAVE_STATE" | "TIME_STATUS";
 	source?: "EDIT_ACTIVITY" | "TIME_ACTIVITY";
 	date?: string;
 	filePath?: string;
@@ -123,7 +124,10 @@ export class EditActivityService {
 	private backupSequence = 0;
 	private readonly now: () => Date;
 	private readonly timeTracker: TimeTracker;
-	private lastTimePath?: string;
+	private manualTimePaused = false;
+	private timeContext: TimeTrackingContext = { reason: "NO_MARKDOWN" };
+	private lastTimeDiscard?: IdleTimeDiscard;
+	private timeTotalCache?: { date: string; local: number; remote: number; seconds: number };
 	private pendingSince?: number;
 	private pendingWrites = 0;
 	private saveStatus = "已保存";
@@ -148,6 +152,9 @@ export class EditActivityService {
 		this.monotonic = monotonic;
 		this.timeTracker = new TimeTracker((span, operation) => this.recordTimeSpan(span, operation), {
 			wall: () => this.now().getTime(), monotonic,
+		}, undefined, result => {
+			this.lastTimeDiscard = result;
+			this.emitTimeStatus();
 		});
 	}
 
@@ -303,6 +310,7 @@ export class EditActivityService {
 
 	private adoptReplacedStatistics(): void {
 		this.pauseTimeActivity();
+		this.lastTimeDiscard = undefined;
 		this.pendingLineEdits = new WeakMap(); this.pendingLineViews.clear();
 		this.resetTrustedInputState();
 		Object.assign(this.store, emptyStatistics());
@@ -335,27 +343,108 @@ export class EditActivityService {
 
 	recordTimeActivity(path: string): void {
 		if (this.unloading) return;
-		this.lastTimePath = path;
-		if (!this.store.settings.timeTrackingEnabled || !isFileInTrackedFolders(path, this.store.settings.trackedFolders)) {
+		this.timeContext = { reason: "READY", path };
+		if (!this.store.settings.timeTrackingEnabled || this.manualTimePaused || !isFileInTrackedFolders(path, this.store.settings.trackedFolders)) {
 			this.timeTracker.pause();
+			this.emitTimeStatus();
 			return;
 		}
 		this.timeTracker.activity(path);
+		this.emitTimeStatus();
 	}
 
 	checkpointTimeActivity(): void {
 		this.timeTracker.checkpoint();
+		this.emitTimeStatus();
 	}
 
 	pauseTimeActivity(): void {
 		this.timeTracker.pause();
-		this.lastTimePath = undefined;
+	}
+
+	setTimeTrackingContext(context: TimeTrackingContext): void {
+		if (this.unloading) return;
+		if (context.reason === this.timeContext.reason && context.path === this.timeContext.path) return;
+		this.timeContext = { ...context };
+		if (context.reason !== "READY") this.pauseTimeActivity();
+		this.emitTimeStatus();
+	}
+
+	async pauseTimeTrackingForSession(): Promise<void> {
+		if (this.unloading || !this.store.settings.timeTrackingEnabled || this.manualTimePaused) return;
+		this.manualTimePaused = true;
+		this.pauseTimeActivity();
+		this.closeTimeCoverage();
+		this.markDirty();
+		this.emitTimeCoverage();
+		await this.flush();
+	}
+
+	async resumeTimeTrackingForSession(): Promise<void> {
+		if (this.unloading || !this.store.settings.timeTrackingEnabled || !this.manualTimePaused) return;
+		this.manualTimePaused = false;
+		this.openTimeCoverage();
+		this.markDirty();
+		this.emitTimeCoverage();
+		await this.flush();
+	}
+
+	getTimeTrackingSnapshot(): TimeTrackingSnapshot {
+		const core = this.timeTracker.getSnapshot();
+		const date = this.today();
+		const todaySeconds = this.getTodayTimeSeconds(date);
+		return {
+			reason: this.getTimeStatusReason(core), path: this.timeContext.path || core.path,
+			manualPaused: this.manualTimePaused, enabled: this.store.settings.timeTrackingEnabled,
+			todaySeconds, todayPendingSeconds: Math.min(todaySeconds, this.getTodayPendingSeconds(core)),
+			remainingMs: core.remainingMs,
+			lastDiscard: this.lastTimeDiscard ? { ...this.lastTimeDiscard } : undefined,
+		};
+	}
+
+	private getTodayTimeSeconds(date: string): number {
+		const remote = this.statistics?.version || 0;
+		if (this.timeTotalCache?.date === date && this.timeTotalCache.local === this.mutationVersion && this.timeTotalCache.remote === remote) {
+			return this.timeTotalCache.seconds;
+		}
+		const seconds = queryTimeStats(this.readStatistics().timeActivity,
+			{ fromDate: date, toDate: date, folders: this.store.settings.trackedFolders }, this.now().getTime(), false)
+			.reduce((sum, row) => sum + row.seconds, 0);
+		this.timeTotalCache = { date, local: this.mutationVersion, remote, seconds };
+		return seconds;
+	}
+
+	private getTimeStatusReason(core: TimeTrackerSnapshot): TimeStatusReason {
+		if (!this.store.settings.timeTrackingEnabled) return "DISABLED";
+		if (this.manualTimePaused) return "MANUAL";
+		const context = this.timeContext;
+		if (context.reason === "BACKGROUND" || context.reason === "MODAL" || context.reason === "NO_MARKDOWN") return context.reason;
+		if (context.path && !isFileInTrackedFolders(context.path, this.store.settings.trackedFolders)) return "OUT_OF_SCOPE";
+		if (context.reason === "OUTSIDE_EDITOR") return "OUTSIDE_EDITOR";
+		if (core.interrupted) return "INTERRUPTED";
+		return core.status === "ACTIVE" ? "ACTIVE" : "IDLE";
+	}
+
+	private getTodayPendingSeconds(core: TimeTrackerSnapshot): number {
+		if (core.pendingStart === undefined || core.pendingEnd === undefined || !core.path) return 0;
+		if (!isFileInTrackedFolders(core.path, this.store.settings.trackedFolders)) return 0;
+		const start = new Date(this.now().getTime()); start.setHours(0, 0, 0, 0);
+		const end = new Date(start); end.setDate(end.getDate() + 1);
+		const overlap = Math.max(0, Math.min(core.pendingEnd, end.getTime()) - Math.max(core.pendingStart, start.getTime()));
+		return core.pendingSeconds * overlap / (core.pendingEnd - core.pendingStart);
+	}
+
+	private emitTimeStatus(): void {
+		this.emitChange({ type: "TIME_STATUS" });
+	}
+
+	private emitTimeCoverage(): void {
+		this.emitTimeStatus();
+		this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY" });
 	}
 
 	getTimeTrackingStatus(): string {
-		if (!this.store.settings.timeTrackingEnabled) return "时长统计：未启用";
-		if (this.lastTimePath && !isFileInTrackedFolders(this.lastTimePath, this.store.settings.trackedFolders)) return "时长统计：笔记不在范围内";
-		return this.timeTracker.getStatus() === "ACTIVE" ? "时长统计：计时中" : "时长统计：空闲暂停";
+		return getTimeTrackingStatusText(this.getTimeTrackingSnapshot());
 	}
 
 	async setTimeTrackingEnabled(enabled: boolean): Promise<void> {
@@ -404,6 +493,7 @@ export class EditActivityService {
 	}
 
 	private openTimeCoverage(): void {
+		if (this.manualTimePaused || !this.store.settings.timeTrackingEnabled) return;
 		const periods = this.store.timeActivity.periods;
 		if (periods.length && periods[periods.length - 1].end === undefined) return;
 		periods.push({ start: this.now().getTime(), folders: [...this.store.settings.trackedFolders] });
@@ -418,6 +508,7 @@ export class EditActivityService {
 	}
 
 	private resetTimeTrackingAfterReplacement(): void {
+		this.lastTimeDiscard = undefined;
 		this.timeTracker.setIdleTimeout(this.store.settings.idleTimeoutMinutes);
 		this.closeTimeCoverage();
 		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();

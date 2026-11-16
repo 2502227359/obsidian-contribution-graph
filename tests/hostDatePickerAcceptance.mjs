@@ -70,9 +70,9 @@ try {
 	await until(`!(${chart}).querySelector('.cg-date-picker[open]')`);
 	assert.equal(await evaluate(`(${chart}).dataset.selectedDate`), await evaluate(`(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')})()`));
 	await evaluate("app.plugins.plugins['contribution-graph-local'].activityService.recordTimeActivity('阅读测试.md')");
-	assert.equal(await evaluate("app.plugins.plugins['contribution-graph-local'].activityService.getTimeTrackingStatus()"),'时长统计：计时中');
+	assert.equal(await evaluate("app.plugins.plugins['contribution-graph-local'].activityService.getTimeTrackingStatus()"),'时长：计时中');
 	await evaluate(`(${chart}).querySelector('.cg-date-trigger').click()`);
-	await until(`app.plugins.plugins['contribution-graph-local'].activityService.getTimeTrackingStatus()==='时长统计：空闲暂停'`);
+	await until(`app.plugins.plugins['contribution-graph-local'].activityService.getTimeTrackingStatus()==='时长：弹窗暂停'`);
 	await call('Input.dispatchMouseEvent',{type:'mousePressed',x:2,y:2,button:'left',clickCount:1});
 	await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:2,y:2,button:'left',clickCount:1});
 	await until(`!(${chart}).querySelector('.cg-date-picker[open]')`);

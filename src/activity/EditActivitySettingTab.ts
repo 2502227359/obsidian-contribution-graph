@@ -16,6 +16,10 @@ import {
 	VaultFolderSuggestModal,
 } from "./VaultFolderSuggestModal";
 import { isValidSaveIntervalSeconds } from "./types";
+import {
+	getTimeTrackingDescription,
+	getTimeTrackingStatusText,
+} from "../time/timeTrackingPresentation";
 
 export const SETTINGS_SECTION_KEYS = [
 	"time",
@@ -39,12 +43,18 @@ export function parseSaveIntervalSeconds(value: string): number | null {
 export class EditActivitySettingTab extends PluginSettingTab {
 	private unsubscribeService?: () => void;
 	private timeStatusEl?: HTMLElement;
+	private timeDescriptionEl?: HTMLElement;
+	private timeControlButton?: {
+		setButtonText(text: string): unknown;
+		setDisabled(disabled: boolean): unknown;
+	};
 	private saveStatusEl?: HTMLElement;
 
 	constructor(
 		app: App,
 		plugin: Plugin,
-		private readonly activityService: EditActivityService
+		private readonly activityService: EditActivityService,
+		private readonly setManualPause: (paused: boolean) => Promise<void>
 	) {
 		super(app, plugin);
 	}
@@ -52,6 +62,8 @@ export class EditActivitySettingTab extends PluginSettingTab {
 	display(): void {
 		this.stopServiceListening();
 		this.timeStatusEl = undefined;
+		this.timeDescriptionEl = undefined;
+		this.timeControlButton = undefined;
 		this.saveStatusEl = undefined;
 		const { containerEl } = this;
 		const local = Locals.get();
@@ -70,6 +82,8 @@ export class EditActivitySettingTab extends PluginSettingTab {
 	hide(): void {
 		this.stopServiceListening();
 		this.timeStatusEl = undefined;
+		this.timeDescriptionEl = undefined;
+		this.timeControlButton = undefined;
 		this.saveStatusEl = undefined;
 		super.hide();
 	}
@@ -84,12 +98,17 @@ export class EditActivitySettingTab extends PluginSettingTab {
 	}
 
 	private createTimeSection(container: HTMLElement, settings: ReturnType<EditActivityService["getSettings"]>): void {
+		const snapshot = this.activityService.getTimeTrackingSnapshot();
 		const section = this.createSection(
 			container,
 			"time",
 			"活跃使用时长",
-			this.activityService.getTimeTrackingStatus()
+			getTimeTrackingStatusText(snapshot)
 		);
+		this.timeDescriptionEl = section.createDiv({
+			cls: "cg-settings-time-description",
+			text: getTimeTrackingDescription(snapshot),
+		});
 		new Setting(section)
 			.setName("启用时长统计")
 			.setDesc(
@@ -127,6 +146,34 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						this.resetIdleTimeoutInput(text);
 					}
 				});
+			});
+		this.createTimeControlSetting(section, snapshot);
+	}
+
+	private createTimeControlSetting(
+		container: HTMLElement,
+		snapshot: ReturnType<EditActivityService["getTimeTrackingSnapshot"]>
+	): void {
+		new Setting(container)
+			.setName("本次时长统计")
+			.setDesc(
+				"暂停只影响本次插件运行的时长采集；全局关闭时按钮不会隐式开启统计。"
+			)
+			.addButton((button) => {
+				this.timeControlButton = button;
+				button
+					.setButtonText(snapshot.manualPaused ? "恢复本次" : "暂停本次")
+					.setDisabled(!snapshot.enabled)
+					.onClick(async () => {
+						const current = this.activityService.getTimeTrackingSnapshot();
+						if (!current.enabled) {
+							new Notice("请先在设置中开启全局时长统计。");
+							this.updateTimeStatus();
+							return;
+						}
+						await this.setManualPause(!current.manualPaused);
+						this.updateTimeStatus();
+					});
 			});
 	}
 
@@ -600,9 +647,19 @@ export class EditActivitySettingTab extends PluginSettingTab {
 	}
 
 	private updateTimeStatus(): void {
+		const snapshot = this.activityService.getTimeTrackingSnapshot();
 		if (this.timeStatusEl) {
-			this.timeStatusEl.textContent =
-				this.activityService.getTimeTrackingStatus();
+			this.timeStatusEl.textContent = getTimeTrackingStatusText(snapshot);
+		}
+		if (this.timeDescriptionEl) {
+			this.timeDescriptionEl.textContent =
+				getTimeTrackingDescription(snapshot);
+		}
+		if (this.timeControlButton) {
+			this.timeControlButton.setButtonText(
+				snapshot.manualPaused ? "恢复本次" : "暂停本次"
+			);
+			this.timeControlButton.setDisabled(!snapshot.enabled);
 		}
 	}
 
@@ -619,7 +676,8 @@ export class EditActivitySettingTab extends PluginSettingTab {
 				event.type === "TIME_STATS" ||
 				event.type === "COVERAGE" ||
 				event.type === "IMPORT" ||
-				event.type === "SETTINGS"
+				event.type === "SETTINGS" ||
+				event.type === "TIME_STATUS"
 			) {
 				this.updateTimeStatus();
 			}

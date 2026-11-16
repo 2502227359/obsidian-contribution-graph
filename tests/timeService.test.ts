@@ -25,12 +25,65 @@ describe("时长统计的保存与查询", () => {
 		service = new EditActivityService(plugin, () => new Date(wall), () => mono);
 		await service.initialize();
 	});
-	afterEach(async () => { await service.unload(); vi.useRealTimers(); });
+	afterEach(async () => { await service.unload(); vi.restoreAllMocks(); vi.useRealTimers(); });
 	const advance = (seconds: number) => {
 		for (let i = 0; i < seconds; i += 15) {
 			wall += 15000; mono += 15000; service.checkpointTimeActivity();
 		}
 	};
+	it("临时暂停保存并关闭覆盖，正文与后台事件不能恢复，显式恢复不补计", async () => {
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(30);
+		await service.pauseTimeTrackingForSession();
+		const stopped = service.exportData();
+		expect(service.getTimeTrackingSnapshot().reason).toBe("MANUAL");
+		expect(service.getSaveStatus()).toBe("已保存");
+		advance(30); service.recordTimeActivity("笔记/乙.md");
+		service.setTimeTrackingContext({ reason: "MODAL" });
+		service.setTimeTrackingContext({ reason: "READY", path: "笔记/乙.md" });
+		await service.handleAppSuspend(); service.handleAppResume();
+		await service.pauseTimeTrackingForSession();
+		expect(service.getDailyTimeStats()[0].seconds).toBe(30);
+		expect(JSON.parse(service.exportData()).timeActivity.periods).toEqual(JSON.parse(stopped).timeActivity.periods);
+		await service.resumeTimeTrackingForSession();
+		service.recordTimeActivity("笔记/乙.md"); advance(15); service.pauseTimeActivity();
+		expect(service.getDailyTimeStats()[0].seconds).toBe(45);
+		expect(JSON.parse(service.exportData()).timeActivity.periods).toHaveLength(2);
+	});
+	it("暂停不被范围、全局开关和数据替换绕过，保存失败仍暂停且运行状态不导出", async () => {
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(15);
+		vi.spyOn(console, "error").mockImplementation(() => undefined);
+		plugin.app.vault.adapter.write.mockRejectedValueOnce(new Error("磁盘错误"));
+		await service.pauseTimeTrackingForSession();
+		expect(service.getSaveStatus()).toBe("保存失败，待重试");
+		expect(service.getTimeTrackingSnapshot().manualPaused).toBe(true);
+		await service.flush();
+		const exported = service.exportData();
+		await service.setTimeTrackingEnabled(false); await service.resumeTimeTrackingForSession();
+		await service.setTimeTrackingEnabled(true); await service.setTrackedFolders(["笔记"]);
+		await service.importData(exported); await service.clearData(); await service.restoreLatestBackup();
+		service.recordTimeActivity("笔记/乙.md"); advance(15);
+		expect(service.getTimeTrackingSnapshot().reason).toBe("MANUAL");
+		const saved = JSON.parse(service.exportData());
+		expect(saved.timeActivity.periods.every((period: { end?: number }) => period.end !== undefined)).toBe(true);
+		expect(saved).not.toHaveProperty("manualTimePaused");
+		expect(saved).not.toHaveProperty("lastTimeDiscard");
+	});
+	it("跨午夜快照只报今日已计暂计量，真实回撤结果不可被展示修改且替换后清除", async () => {
+		wall = new Date(2026, 10, 14, 23, 59, 45).getTime();
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(30);
+		expect(service.getTimeTrackingSnapshot()).toMatchObject({ todaySeconds: 15, todayPendingSeconds: 15, remainingMs: 270000 });
+		advance(270);
+		const snapshot = service.getTimeTrackingSnapshot();
+		expect(snapshot).toMatchObject({ reason: "IDLE", todaySeconds: 0, todayPendingSeconds: 0,
+			lastDiscard: { recordedSeconds: 285, unrecordedSeconds: 15 } });
+		snapshot.lastDiscard!.recordedSeconds = 999;
+		expect(service.getTimeTrackingSnapshot().lastDiscard!.recordedSeconds).toBe(285);
+		await service.clearData();
+		expect(service.getTimeTrackingSnapshot().lastDiscard).toBeUndefined();
+	});
 	it("字数关闭时仍可独立计时，跨小时汇总与明细一致", async () => {
 		expect(service.getSettings().idleTimeoutMinutes).toBe(5);
 		await service.setTimeTrackingEnabled(true);
@@ -84,7 +137,7 @@ describe("时长统计的保存与查询", () => {
 		service.recordTimeActivity("笔记/甲.md");
 		advance(360);
 		expect(service.getDailyTimeStats()).toEqual([]);
-		expect(service.getTimeTrackingStatus()).toBe("时长统计：空闲暂停");
+		expect(service.getTimeTrackingStatus()).toBe("时长：空闲暂停");
 		await service.setIdleTimeoutMinutes(1);
 		service.recordTimeActivity("笔记/甲.md");
 		advance(120);

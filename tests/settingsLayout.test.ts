@@ -86,6 +86,7 @@ vi.mock("obsidian", () => {
 		toggle?: { value: boolean; handler?: (value: boolean) => Promise<void> };
 		buttons: Array<{
 			text: string;
+			disabled: boolean;
 			handler?: () => void | Promise<void>;
 		}> = [];
 
@@ -144,8 +145,13 @@ vi.mock("obsidian", () => {
 		}
 
 		addButton(callback: (button: { setButtonText(text: string): any; setDisabled(disabled: boolean): any; onClick(handler: () => void | Promise<void>): any }) => void): this {
-			const record: { text: string; handler?: () => void | Promise<void> } = {
+			const record: {
+				text: string;
+				disabled: boolean;
+				handler?: () => void | Promise<void>;
+			} = {
 				text: "",
+				disabled: false,
 			};
 			const button = {
 				setWarning: () => button,
@@ -154,7 +160,10 @@ vi.mock("obsidian", () => {
 					if (!this.buttons.includes(record)) this.buttons.push(record);
 					return button;
 				},
-				setDisabled: (_disabled: boolean) => button,
+				setDisabled: (disabled: boolean) => {
+					record.disabled = disabled;
+					return button;
+				},
 				onClick: (handler: () => void | Promise<void>) => {
 					record.handler = handler;
 					return button;
@@ -231,11 +240,26 @@ function createService() {
 	};
 	let status = "时长统计：未启用";
 	let saveStatus = "已保存";
+	let manualPaused = false;
 	const listeners = new Set<(event: { type: string }) => void>();
 	const service = {
 		getSettings: vi.fn(() => ({ ...settings, trackedFolders: [...settings.trackedFolders] })),
 		getStatisticsFolder: vi.fn(() => "Template/数据/学习统计"),
 		getTimeTrackingStatus: vi.fn(() => status),
+		getTimeTrackingSnapshot: vi.fn(() => ({
+			reason: status.includes("未启用")
+				? "DISABLED"
+				: status.includes("手动暂停")
+					? "MANUAL"
+					: status.includes("计时中")
+						? "ACTIVE"
+						: "IDLE",
+				manualPaused,
+				enabled: settings.timeTrackingEnabled,
+				todaySeconds: 0,
+				todayPendingSeconds: 0,
+				remainingMs: 300000,
+			})),
 		getSaveStatus: vi.fn(() => saveStatus),
 		subscribe: vi.fn((listener: (event: { type: string }) => void) => {
 			listeners.add(listener);
@@ -243,8 +267,13 @@ function createService() {
 		}),
 		setTimeTrackingEnabled: vi.fn(async (enabled: boolean) => {
 			settings = { ...settings, timeTrackingEnabled: enabled };
-			status = enabled ? "时长统计：空闲暂停" : "时长统计：未启用";
+			status = enabled ? "时长统计：计时中" : "时长统计：未启用";
 			for (const listener of listeners) listener({ type: "TIME_STATS" });
+		}),
+		setManualPause: vi.fn(async (paused: boolean) => {
+			manualPaused = paused;
+			status = paused ? "时长统计：手动暂停" : "时长统计：计时中";
+			for (const listener of listeners) listener({ type: "TIME_STATUS" });
 		}),
 		setIdleTimeoutMinutes: vi.fn(async (minutes: number) => {
 			settings = { ...settings, idleTimeoutMinutes: minutes };
@@ -271,7 +300,11 @@ function createService() {
 	return {
 		service,
 		settings: () => settings,
+		enabled: (value: boolean) => {
+			settings = { ...settings, timeTrackingEnabled: value };
+		},
 		status: (value: string) => (status = value),
+		setManualPause: service.setManualPause,
 		saveStatus: (value: string) => (saveStatus = value),
 	};
 }
@@ -313,14 +346,19 @@ describe("EditActivitySettingTab layout", () => {
 			value: { getItem: () => "zh" },
 			configurable: true,
 		});
-		const { service, status, saveStatus } = createService();
+		const { service, enabled, status, saveStatus, setManualPause } = createService();
 		const app = {
 			vault: {
 				getAllLoadedFiles: () => [],
 				getAbstractFileByPath: () => undefined,
 			},
 		} as any;
-		const tab = new EditActivitySettingTab(app, {} as any, service as any);
+		const tab = new EditActivitySettingTab(
+			app,
+			{} as any,
+			service as any,
+			setManualPause
+		);
 
 		tab.display();
 		const container = (tab as any).containerEl;
@@ -333,8 +371,15 @@ describe("EditActivitySettingTab layout", () => {
 		]);
 		expect(container.querySelectorAll(".cg-settings-header")).toHaveLength(1);
 		expect(container.querySelectorAll(".cg-settings-status")[0].textContent).toBe(
-			"时长统计：未启用"
+			"时长：未启用"
 		);
+		const timeControl = findSetting(container, "本次时长统计");
+		expect(timeControl.buttons[0]).toMatchObject({
+			text: "暂停本次",
+			disabled: true,
+		});
+		await timeControl.buttons[0].handler!();
+		expect(setManualPause).not.toHaveBeenCalled();
 		const saveStatusElement = container.querySelectorAll(
 			".cg-settings-save-status"
 		)[0];
@@ -343,11 +388,22 @@ describe("EditActivitySettingTab layout", () => {
 		);
 		expect(service.subscribe).toHaveBeenCalledTimes(1);
 
+		enabled(true);
 		status("时长统计：计时中");
-		service.emit({ type: "TIME_STATS" });
+		service.emit({ type: "TIME_STATUS" });
 		expect(container.querySelectorAll(".cg-settings-status")[0].textContent).toBe(
-			"时长统计：计时中"
+			"时长：计时中"
 		);
+		expect(timeControl.buttons[0]).toMatchObject({
+			text: "暂停本次",
+			disabled: false,
+		});
+		await timeControl.buttons[0].handler!();
+		expect(setManualPause).toHaveBeenLastCalledWith(true);
+		expect(container.querySelectorAll(".cg-settings-status")[0].textContent).toBe(
+			"时长：手动暂停"
+		);
+		expect(timeControl.buttons[0].text).toBe("恢复本次");
 
 		saveStatus("正在保存");
 		service.emit({ type: "SAVE_STATE" });
@@ -387,6 +443,7 @@ describe("EditActivitySettingTab layout", () => {
 		expect(service.setSaveIntervalSeconds).toHaveBeenLastCalledWith(120);
 
 		const timeSetting = findSetting(container, "启用时长统计");
+		status("时长统计：计时中");
 		await timeSetting.toggle.handler!(true);
 		expect(service.setTimeTrackingEnabled).toHaveBeenCalledWith(true);
 		expect(service.setTrackingEnabled).not.toHaveBeenCalled();

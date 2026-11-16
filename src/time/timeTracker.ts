@@ -1,4 +1,4 @@
-import { TimeSpan } from "./types";
+import { IdleTimeDiscard, TimeSpan, TimeTrackerSnapshot } from "./types";
 
 export interface TimeTrackerClock {
 	wall: () => number;
@@ -26,11 +26,13 @@ export class TimeTracker {
 	private lastObservedMono = 0;
 	private hasObservedClock = false;
 	private lastOffset?: number;
+	private interrupted = false;
 
 	constructor(
 		private readonly onSpan: (span: TimeSpan, operation: "add" | "remove") => void,
 		private readonly clock: TimeTrackerClock,
-		idleTimeoutMinutes = DEFAULT_IDLE_TIMEOUT_MINUTES
+		idleTimeoutMinutes = DEFAULT_IDLE_TIMEOUT_MINUTES,
+		private readonly onDiscard?: (result: IdleTimeDiscard) => void
 	) {
 		this.idleTimeoutMinutes = validateIdleTimeout(idleTimeoutMinutes);
 	}
@@ -111,12 +113,25 @@ export class TimeTracker {
 		return this.status;
 	}
 
+	getSnapshot(): TimeTrackerSnapshot {
+		const pendingMs = this.status === "ACTIVE" ? Math.max(0, this.lastEmitMono - this.lastActivityMono) : 0;
+		return {
+			status: this.status, interrupted: this.interrupted, path: this.path,
+			pendingStart: pendingMs ? this.lastEmitWall - pendingMs : undefined,
+			pendingEnd: pendingMs ? this.lastEmitWall : undefined,
+			pendingSeconds: pendingMs / 1000,
+			remainingMs: this.status === "ACTIVE"
+				? Math.max(0, this.lastActivityMono + this.idleTimeoutMinutes * 60000 - this.clock.monotonic()) : 0,
+		};
+	}
+
 	private startSession(
 		path: string,
 		now: { wall: number; mono: number; offset: number }
 	): void {
 		this.path = path;
 		this.status = "ACTIVE";
+		this.interrupted = false;
 		this.lastEmitWall = now.wall;
 		this.lastEmitMono = now.mono;
 		this.lastActivityMono = now.mono;
@@ -132,7 +147,7 @@ export class TimeTracker {
 			this.lastActivityMono + this.idleTimeoutMinutes * 60 * 1000;
 		if (endMono >= idleEndMono) {
 			this.status = "IDLE";
-			this.removeIdleTail();
+			this.removeIdleTail(endMono, "idle");
 			return;
 		}
 		if (endMono > this.lastEmitMono) {
@@ -150,16 +165,22 @@ export class TimeTracker {
 		}
 	}
 
-	private removeIdleTail(): void {
+	private removeIdleTail(endMono: number, reason: IdleTimeDiscard["reason"]): void {
 		const milliseconds = this.lastEmitMono - this.lastActivityMono;
-		if (!this.path || milliseconds <= 0) return;
+		if (!this.path) return;
+		const start = this.lastEmitWall - milliseconds;
 		// 只撤回心跳已计入的尾段；本次未结算的剩余空闲直接丢弃。
-		this.onSpan({
+		if (milliseconds > 0) this.onSpan({
 			path: this.path,
-			start: this.lastEmitWall - milliseconds,
+			start,
 			end: this.lastEmitWall,
 			seconds: milliseconds / 1000,
 		}, "remove");
+		this.onDiscard?.({
+			path: this.path, start, detectedAt: this.lastEmitWall + endMono - this.lastEmitMono,
+			recordedSeconds: milliseconds / 1000,
+			unrecordedSeconds: Math.max(0, endMono - this.lastEmitMono) / 1000, reason,
+		});
 	}
 
 	private readClock(): { wall: number; mono: number; offset: number } {
@@ -206,8 +227,9 @@ export class TimeTracker {
 		offset: number;
 	}): void {
 		this.status = "IDLE";
+		this.interrupted = true;
 		if (now.mono >= this.lastActivityMono + this.idleTimeoutMinutes * 60 * 1000) {
-			this.removeIdleTail();
+			this.removeIdleTail(now.mono, "interrupted");
 		}
 		this.lastEmitWall = now.wall;
 		this.lastEmitMono = now.mono;

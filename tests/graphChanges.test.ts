@@ -11,9 +11,11 @@ const config = (overrides: Partial<GraphChangeConfig> = {}): GraphChangeConfig =
 });
 
 describe("图表统计变化影响范围", () => {
-	it("保存状态通知不触发任何统计图查询或刷新", () => {
-		expect(getGraphChange({type: "SAVE_STATE"}, config())).toBeUndefined();
-		expect(getGraphChange({type: "SAVE_STATE"}, config({dataSource: {type: "EDIT_ACTIVITY"}}))).toBeUndefined();
+	it("运行和保存状态通知不触发任何统计图查询或刷新", () => {
+		for (const type of ["SAVE_STATE", "TIME_STATUS"] as const) {
+			expect(getGraphChange({type}, config())).toBeUndefined();
+			expect(getGraphChange({type}, config({dataSource: {type: "EDIT_ACTIVITY"}}))).toBeUndefined();
+		}
 	});
 	it("只返回时长事件实际影响的日期，并排除无关文件夹和范围外日期", () => {
 		expect(getGraphChange({ type: "TIME_STATS", filePath: "临床医学/甲.md", timeKeys: [

@@ -1,10 +1,18 @@
 import type { EventRef, Plugin } from "obsidian";
+import {
+	getTimeTrackingDescription,
+	getTimeTrackingStatusText,
+} from "./timeTrackingPresentation";
+import type { TimeTrackingContext, TimeTrackingSnapshot } from "./types";
 
 export interface TimeActivityObserverCallbacks {
 	activity: (path: string) => void;
 	pause: () => void;
+	context: (context: TimeTrackingContext) => void;
 	checkpoint: () => void;
-	status: () => string;
+	snapshot: () => TimeTrackingSnapshot;
+	toggle: () => Promise<void>;
+	subscribe: (listener: () => void) => () => void;
 }
 
 interface MarkdownViewLike {
@@ -50,6 +58,18 @@ interface ViewBinding {
 	ownerDocument?: Document;
 }
 
+interface ActiveContext {
+	context: TimeTrackingContext;
+	view?: ViewBinding;
+}
+
+interface StatusBarItemLike {
+	ownerDocument?: Document;
+	setText: (value: string) => void;
+	setAttribute?: (name: string, value: string) => void;
+	remove?: () => void;
+}
+
 const ACTIVITY_EVENT_TYPES = [
 	"beforeinput",
 	"input",
@@ -78,14 +98,24 @@ function isFocusedWindow(document: Document | undefined): boolean {
 
 function getPath(view: MarkdownViewLike | undefined): string | undefined {
 	if (view?.getViewType() !== "markdown") return undefined;
-	const path = view?.file?.path;
+	const path = view.file?.path;
 	return isMarkdownFilePath(path) ? path : undefined;
+}
+
+function sameView(first: ViewBinding | undefined, second: ViewBinding | undefined): boolean {
+	return Boolean(
+		first &&
+		second &&
+		first.path === second.path &&
+		first.root === second.root &&
+		first.ownerDocument === second.ownerDocument
+	);
 }
 
 /**
  * 将 Markdown 视图中的可信交互转换为活动回调。
  * 观察器不监听 scroll 或 mousemove：滚轮和触摸事件代表用户滚动，
- * 程序滚动保持静默。
+ * 程序滚动保持静默。状态栏只通过自己的控件监听器执行暂停/恢复。
  */
 export class TimeActivityObserver {
 	private readonly bindings: EventBinding[] = [];
@@ -93,11 +123,13 @@ export class TimeActivityObserver {
 	private readonly views: ViewBinding[] = [];
 	private readonly documents = new Set<Document>();
 	private readonly modalObservers = new Map<Document, MutationObserver>();
-	private statusBarItem?: HTMLElement & { setText(value: string): void };
+	private statusBarItem?: StatusBarItemLike & EventBinding["target"];
 	private checkpointTimer?: ReturnType<typeof setInterval>;
+	private unsubscribe?: () => void;
 	private started = false;
-	private currentPath?: string;
-	private currentDocument?: Document;
+	private currentView?: ViewBinding;
+	private currentContext?: TimeTrackingContext;
+	private activitySessionStarted = false;
 
 	constructor(
 		private readonly plugin: PluginLike,
@@ -105,22 +137,19 @@ export class TimeActivityObserver {
 	) {}
 
 	start(): void {
-		if (this.started) {
-			return;
-		}
+		if (this.started) return;
 		this.started = true;
-		this.statusBarItem = this.plugin.addStatusBarItem() as HTMLElement & {
-			setText(value: string): void;
-		};
+		this.statusBarItem = this.plugin.addStatusBarItem() as StatusBarItemLike & EventBinding["target"];
+		this.bindStatusBarItem();
+		this.bindDocument(this.statusBarItem.ownerDocument);
+		this.unsubscribe = this.callbacks.subscribe(() => this.updateStatus());
 		this.bindWorkspaceEvents();
 		this.refreshViews();
-		this.startActiveView();
+		this.refreshCurrentContext();
 		this.checkpointTimer = setInterval(() => {
-			if (!this.started) {
-				return;
-			}
-			if (this.currentPath && !this.isCurrentContextUsable()) {
-				this.pauseCurrentActivity();
+			if (!this.started) return;
+			if (this.currentView && !this.isCurrentContextUsable()) {
+				this.refreshCurrentContext();
 			}
 			this.callbacks.checkpoint();
 			this.updateStatus();
@@ -129,15 +158,18 @@ export class TimeActivityObserver {
 	}
 
 	stop(): void {
-		if (!this.started) {
-			return;
-		}
+		if (!this.started) return;
 		this.started = false;
 		this.callbacks.pause();
+		this.activitySessionStarted = false;
+		this.currentView = undefined;
+		this.currentContext = undefined;
 		if (this.checkpointTimer !== undefined) {
 			clearInterval(this.checkpointTimer);
 			this.checkpointTimer = undefined;
 		}
+		this.unsubscribe?.();
+		this.unsubscribe = undefined;
 		for (const binding of this.bindings.splice(0)) {
 			binding.target.removeEventListener(binding.type, binding.listener, true);
 		}
@@ -151,41 +183,73 @@ export class TimeActivityObserver {
 		this.modalObservers.clear();
 		this.documents.clear();
 		this.views.length = 0;
-		this.currentPath = undefined;
-		this.currentDocument = undefined;
-		this.statusBarItem?.remove();
+		this.statusBarItem?.remove?.();
 		this.statusBarItem = undefined;
 	}
 
-	handlePathRename(): void {
-		this.pauseCurrentActivity(true);
+	/** 手动控制或命令面板结束后，强制重新核对宿主上下文。 */
+	refreshCurrentContext(restartSession = false): void {
+		if (!this.started) return;
+		if (restartSession) this.activitySessionStarted = false;
 		this.refreshViews();
-		this.startActiveView();
+		const active = this.getActiveContext();
+		this.emitContext(active.context);
+		if (!active.view) {
+			this.pauseCurrentActivity();
+			this.updateStatus();
+			return;
+		}
+		if (active.context.reason !== "READY") {
+			this.pauseCurrentActivity();
+			this.updateStatus();
+			return;
+		}
+		this.activateView(active.view);
 		this.updateStatus();
+	}
+
+	/** 文件重命名后立即重新读取当前 Markdown 路径。 */
+	handlePathRename(): void {
+		this.refreshCurrentContext();
+	}
+
+	private bindStatusBarItem(): void {
+		const item = this.statusBarItem;
+		if (!item) return;
+		item.setAttribute?.("role", "button");
+		item.setAttribute?.("tabindex", "0");
+		item.setAttribute?.("data-cg-time-control", "time-tracking");
+		this.bindEvent(item, "mouseenter", () => this.updateStatus());
+		this.bindEvent(item, "focus", () => this.updateStatus());
+		this.bindEvent(item, "click", () => {
+			void this.toggleFromStatusBar();
+		});
+		this.bindEvent(item, "keydown", event => {
+			const key = (event as KeyboardEvent).key;
+			if ((event as KeyboardEvent).repeat) return;
+			if (key !== "Enter" && key !== " ") return;
+			event.preventDefault?.();
+			void this.toggleFromStatusBar();
+		});
+	}
+
+	private async toggleFromStatusBar(): Promise<void> {
+		if (!this.started) return;
+		await this.callbacks.toggle();
+		this.refreshCurrentContext();
 	}
 
 	private bindWorkspaceEvents(): void {
 		const workspace = this.plugin.app.workspace;
 		this.bindWorkspaceEvent(workspace, "active-leaf-change", () => {
-			this.callbacks.pause();
-			this.currentPath = undefined;
-			this.currentDocument = undefined;
-			this.refreshViews();
-			this.startActiveView();
-			this.updateStatus();
+			this.refreshCurrentContext();
 		});
 		this.bindWorkspaceEvent(workspace, "file-open", () => {
-			this.callbacks.pause();
-			this.currentPath = undefined;
-			this.currentDocument = undefined;
-			this.refreshViews();
-			this.startActiveView();
-			this.updateStatus();
+			this.refreshCurrentContext();
 		});
 		this.bindWorkspaceEvent(workspace, "window-open", (_workspaceWindow, window) => {
 			this.bindDocument(window?.document);
-			this.refreshViews();
-			this.startActiveView();
+			this.refreshCurrentContext();
 		});
 	}
 
@@ -204,71 +268,64 @@ export class TimeActivityObserver {
 			const view = leaf?.view;
 			const path = getPath(view);
 			const root = view?.containerEl;
-			if (!path || !root || this.views.some((item) => item.root === root)) {
-				return;
-			}
+			this.bindDocument(root?.ownerDocument);
+			if (!path || !root || this.views.some(item => item.root === root)) return;
 			this.views.push({ path, root, ownerDocument: root.ownerDocument });
-			this.bindDocument(root.ownerDocument);
 		};
 		workspace.iterateAllLeaves(addView);
 		addView(workspace.activeLeaf);
 	}
 
 	private bindDocument(document: Document | undefined): void {
-		if (!document || this.documents.has(document)) {
-			return;
-		}
+		if (!document || this.documents.has(document)) return;
 		this.documents.add(document);
 		for (const type of ACTIVITY_EVENT_TYPES) {
-			this.bindEvent(document, type, (event) => this.handleDocumentEvent(event));
+			this.bindEvent(document, type, event => this.handleDocumentEvent(event));
 		}
-		this.bindEvent(document, "visibilitychange", () => {
-			if (!isVisibleDocument(document)) {
-				this.pauseCurrentActivity();
-			} else {
-				this.refreshViews();
-				this.startActiveView();
-				this.updateStatus();
-			}
-		});
+		this.bindEvent(document, "visibilitychange", () => this.refreshCurrentContext());
 		const window = document.defaultView;
 		if (window) {
-			this.bindEvent(window, "blur", () => this.pauseCurrentActivity());
-			this.bindEvent(window, "focus", () => {
-				this.refreshViews();
-				this.startActiveView();
-				this.updateStatus();
-			});
+			this.bindEvent(window, "blur", () => this.handleWindowBlur(document));
+			this.bindEvent(window, "focus", () => this.refreshCurrentContext());
 		}
 		this.bindModalObserver(document);
+	}
+
+	private handleWindowBlur(document: Document): void {
+		const activeView = this.getActiveViewBinding();
+		const activeDocument = this.plugin.app.workspace.activeLeaf?.view?.containerEl?.ownerDocument || this.statusBarItem?.ownerDocument;
+		if (activeDocument !== document) return;
+		this.emitContext({ reason: "BACKGROUND", path: activeView?.path });
+		this.pauseCurrentActivity();
+		this.updateStatus();
 	}
 
 	private bindModalObserver(document: Document): void {
 		const body = document.body;
 		const MutationObserverConstructor = document.defaultView?.MutationObserver;
-		if (!body || !MutationObserverConstructor) {
-			return;
-		}
+		if (!body || !MutationObserverConstructor) return;
 		const observer = new MutationObserverConstructor(records => {
 			const modalChanged = records.some(record =>
 				(record.type === "childList" && record.target === body) ||
-				(record.type === "attributes" && record.target.nodeName === "DIALOG")
+				(record.type === "attributes" && (record.target as Element).nodeName === "DIALOG")
 			);
 			if (modalChanged) this.handleModalMutation(document);
 		});
-		observer.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
+		observer.observe(body, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeFilter: ["open"],
+		});
 		this.modalObservers.set(document, observer);
 	}
 
 	private handleModalMutation(document: Document): void {
-		if (this.hasBlockingModal(document)) {
-			if (this.currentDocument === document) {
-				this.pauseCurrentActivity();
-			}
+		const activeDocument = this.plugin.app.workspace.activeLeaf?.view?.containerEl?.ownerDocument || this.statusBarItem?.ownerDocument;
+		if (this.currentView?.ownerDocument !== document && activeDocument !== document) {
 			return;
 		}
-		this.startActiveView();
-		this.updateStatus();
+		this.refreshCurrentContext();
 	}
 
 	private bindEvent(
@@ -281,127 +338,140 @@ export class TimeActivityObserver {
 	}
 
 	private handleDocumentEvent(event: Event): void {
-		if (!this.started) {
-			return;
-		}
-		if (event.type === "visibilitychange") {
-			return;
-		}
-		if (!isTimeActivityEvent(event)) {
-			return;
-		}
-		if ("isTrusted" in event && event.isTrusted === false) {
-			return;
-		}
-		const target = event.target;
-		const view = this.views.find((candidate) => {
-			try {
-				return candidate.root === target || Boolean(candidate.root.contains?.(target));
-			} catch {
-				return false;
-			}
-		});
-		if (
-			!view ||
-			this.hasBlockingModal(view.ownerDocument) ||
-			!isVisibleDocument(view.ownerDocument) ||
-			!isFocusedWindow(view.ownerDocument)
-		) {
+		if (!this.started || !isTimeActivityEvent(event)) return;
+		if ("isTrusted" in event && event.isTrusted === false) return;
+		if (this.isStatusBarTarget(event.target)) return;
+
+		const active = this.getActiveContext();
+		if (active.context.reason !== "READY") {
+			this.emitContext(active.context);
 			this.pauseCurrentActivity(true);
+			this.updateStatus();
 			return;
 		}
-		if (this.currentPath && this.currentPath !== view.path) {
-			this.callbacks.pause();
+		const activeView = active.view;
+		const eventView = this.views.find(candidate => this.contains(candidate.root, event.target));
+		if (!eventView || !sameView(eventView, activeView)) {
+			if (eventView) return;
+			this.emitContext({ reason: "OUTSIDE_EDITOR", path: activeView?.path });
+			this.pauseCurrentActivity(true);
+			this.updateStatus();
+			return;
 		}
-		this.currentPath = view.path;
-		this.currentDocument = view.ownerDocument;
-		this.callbacks.activity(view.path);
+
+		this.emitContext(active.context);
+		if (active.view) this.activateView(active.view, true);
 		this.updateStatus();
 	}
 
-	private pauseCurrentActivity(force = false): void {
-		if (force || this.currentPath !== undefined) {
-			this.callbacks.pause();
-		}
-		if (this.currentPath !== undefined) {
-			this.currentPath = undefined;
-			this.currentDocument = undefined;
-			this.updateStatus();
+	private contains(root: ViewBinding["root"], target: EventTarget | null): boolean {
+		try {
+			return root === target || Boolean(root.contains?.(target));
+		} catch {
+			return false;
 		}
 	}
 
-	private startActiveView(): void {
-		const view = this.getActiveViewBinding();
+	private isStatusBarTarget(target: EventTarget | null): boolean {
+		const item = this.statusBarItem;
+		if (!item || !target) return false;
+		const itemTarget = item as unknown as EventTarget & {
+			contains?: (child: EventTarget) => boolean;
+		};
+		try {
+			return itemTarget === target || Boolean(itemTarget.contains?.(target));
+		} catch {
+			return itemTarget === target;
+		}
+	}
+
+	private emitContext(context: TimeTrackingContext): void {
 		if (
-			!view ||
-			this.hasBlockingModal(view.ownerDocument) ||
-			!isVisibleDocument(view.ownerDocument) ||
-			!isFocusedWindow(view.ownerDocument)
+			this.currentContext?.reason === context.reason &&
+			this.currentContext?.path === context.path
 		) {
 			return;
 		}
-		if (
-			this.currentPath === view.path &&
-			this.currentDocument === view.ownerDocument
-		) {
+		this.currentContext = context;
+		this.callbacks.context(context);
+	}
+
+	private activateView(view: ViewBinding, fromActivity = false): void {
+		if (!sameView(this.currentView, view)) {
+			if (this.activitySessionStarted) this.callbacks.pause();
+			this.currentView = view;
+			this.activitySessionStarted = false;
+		}
+
+		if (this.callbacks.snapshot().manualPaused) {
+			this.activitySessionStarted = false;
 			return;
 		}
-		this.currentPath = view.path;
-		this.currentDocument = view.ownerDocument;
-		this.callbacks.activity(view.path);
+		if (fromActivity || !this.activitySessionStarted) {
+			this.callbacks.activity(view.path);
+			this.activitySessionStarted = true;
+		}
+	}
+
+	private pauseCurrentActivity(force = false): void {
+		if (force || this.activitySessionStarted) this.callbacks.pause();
+		this.currentView = undefined;
+		this.activitySessionStarted = false;
+	}
+
+	private getActiveContext(): ActiveContext {
+		const view = this.plugin.app.workspace.activeLeaf?.view;
+		const root = view?.containerEl;
+		const path = getPath(view);
+		const document = root?.ownerDocument || this.statusBarItem?.ownerDocument;
+		if (document && (!isVisibleDocument(document) || !isFocusedWindow(document))) {
+			return { context: { reason: "BACKGROUND", path } };
+		}
+		if (this.hasBlockingModal(document)) return { context: { reason: "MODAL", path } };
+		if (!path || !root) return { context: { reason: "NO_MARKDOWN" } };
+		const binding = this.views.find(candidate => candidate.root === root) || {
+			path,
+			root,
+			ownerDocument: document,
+		};
+		return { context: { reason: "READY", path }, view: binding };
 	}
 
 	private getActiveViewBinding(): ViewBinding | undefined {
 		const view = this.plugin.app.workspace.activeLeaf?.view;
 		const path = getPath(view);
 		const root = view?.containerEl;
-		if (!path || !root) {
-			return undefined;
-		}
-		return (
-			this.views.find((candidate) => candidate.root === root) || {
-				path,
-				root,
-				ownerDocument: root.ownerDocument,
-			}
-		);
+		if (!path || !root) return undefined;
+		return this.views.find(candidate => candidate.root === root) || {
+			path,
+			root,
+			ownerDocument: root.ownerDocument,
+		};
 	}
 
 	private hasBlockingModal(document: Document | undefined): boolean {
-		if (!document?.querySelector) {
-			return false;
-		}
-		return Boolean(
-			document.querySelector(
-				".modal-container, .modal, .prompt, dialog[open]"
-			)
-		);
+		if (!document?.querySelector) return false;
+		return Boolean(document.querySelector(".modal-container, .modal, .prompt, dialog[open]"));
 	}
 
 	private isCurrentContextUsable(): boolean {
-		if (!this.currentPath || !this.currentDocument) {
-			return false;
-		}
-		const view = this.views.find(
-			(candidate) =>
-				candidate.path === this.currentPath &&
-				candidate.ownerDocument === this.currentDocument
-		);
+		if (!this.currentView) return false;
 		const activeView = this.getActiveViewBinding();
 		return Boolean(
-			view &&
-			activeView?.path === this.currentPath &&
-			activeView.ownerDocument === this.currentDocument &&
-			!this.hasBlockingModal(view.ownerDocument) &&
-			isVisibleDocument(view.ownerDocument) &&
-			isFocusedWindow(view.ownerDocument)
+			sameView(this.currentView, activeView) &&
+			!this.hasBlockingModal(this.currentView.ownerDocument) &&
+			isVisibleDocument(this.currentView.ownerDocument) &&
+			isFocusedWindow(this.currentView.ownerDocument)
 		);
 	}
 
 	private updateStatus(): void {
-		if (!this.statusBarItem) {
-			return;
-		}
-		this.statusBarItem.setText(this.callbacks.status());
+		const item = this.statusBarItem;
+		if (!item) return;
+		const snapshot = this.callbacks.snapshot();
+		item.setText(getTimeTrackingStatusText(snapshot));
+		const description = getTimeTrackingDescription(snapshot);
+		item.setAttribute?.("title", description);
+		item.setAttribute?.("aria-label", description);
 	}
 }
