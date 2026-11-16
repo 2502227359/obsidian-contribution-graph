@@ -42,6 +42,7 @@ import {
 	TrustedInputIntent,
 } from "./trustedInput";
 import { TimeTracker } from "../time/timeTracker";
+import { isTimeActivityInCollectionScope } from "../time/timeActivitySource";
 import { getTimeTrackingStatusText } from "../time/timeTrackingPresentation";
 import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTimeActivity, queryTimeStats, renameTimePaths, removeTimeSpan, TimeActivityKey } from "../time/timeData";
 import { IdleTimeDiscard, TimeSpan, TimeStatsQuery, TimeTrackingContext, TimeTrackingSnapshot, TimeTrackerSnapshot, TimeStatusReason } from "../time/types";
@@ -344,7 +345,7 @@ export class EditActivityService {
 	recordTimeActivity(path: string): void {
 		if (this.unloading) return;
 		this.timeContext = { reason: "READY", path };
-		if (!this.store.settings.timeTrackingEnabled || this.manualTimePaused || !isFileInTrackedFolders(path, this.store.settings.trackedFolders)) {
+		if (!this.store.settings.timeTrackingEnabled || this.manualTimePaused || !isTimeActivityInCollectionScope(path, this.store.settings.trackedFolders)) {
 			this.timeTracker.pause();
 			this.emitTimeStatus();
 			return;
@@ -408,8 +409,10 @@ export class EditActivityService {
 			return this.timeTotalCache.seconds;
 		}
 		const seconds = queryTimeStats(this.readStatistics().timeActivity,
-			{ fromDate: date, toDate: date, folders: this.store.settings.trackedFolders }, this.now().getTime(), false)
-			.reduce((sum, row) => sum + row.seconds, 0);
+			{ fromDate: date, toDate: date }, this.now().getTime(), false)
+			.flatMap(row => row.documents)
+			.filter(item => isTimeActivityInCollectionScope(item.path, this.store.settings.trackedFolders))
+			.reduce((sum, item) => sum + item.seconds, 0);
 		this.timeTotalCache = { date, local: this.mutationVersion, remote, seconds };
 		return seconds;
 	}
@@ -419,7 +422,7 @@ export class EditActivityService {
 		if (this.manualTimePaused) return "MANUAL";
 		const context = this.timeContext;
 		if (context.reason === "BACKGROUND" || context.reason === "MODAL" || context.reason === "NO_MARKDOWN") return context.reason;
-		if (context.path && !isFileInTrackedFolders(context.path, this.store.settings.trackedFolders)) return "OUT_OF_SCOPE";
+		if (context.path && !isTimeActivityInCollectionScope(context.path, this.store.settings.trackedFolders)) return "OUT_OF_SCOPE";
 		if (context.reason === "OUTSIDE_EDITOR") return "OUTSIDE_EDITOR";
 		if (core.interrupted) return "INTERRUPTED";
 		return core.status === "ACTIVE" ? "ACTIVE" : "IDLE";
@@ -427,7 +430,7 @@ export class EditActivityService {
 
 	private getTodayPendingSeconds(core: TimeTrackerSnapshot): number {
 		if (core.pendingStart === undefined || core.pendingEnd === undefined || !core.path) return 0;
-		if (!isFileInTrackedFolders(core.path, this.store.settings.trackedFolders)) return 0;
+		if (!isTimeActivityInCollectionScope(core.path, this.store.settings.trackedFolders)) return 0;
 		const start = new Date(this.now().getTime()); start.setHours(0, 0, 0, 0);
 		const end = new Date(start); end.setDate(end.getDate() + 1);
 		const overlap = Math.max(0, Math.min(core.pendingEnd, end.getTime()) - Math.max(core.pendingStart, start.getTime()));

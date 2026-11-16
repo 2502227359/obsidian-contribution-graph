@@ -4,6 +4,7 @@ import {
 	normalizeTrackedFolders,
 } from "../activity/folderScope";
 import { isValidFormattedDate } from "../util/dateUtils";
+import { isYoloChatActivity } from "./timeActivitySource";
 import {
 	StoredTimeActivity,
 	TimeBucket,
@@ -234,6 +235,7 @@ function mapRenamedPath(
 	prefix: string,
 	isFolder: boolean
 ): string {
+	if (isYoloChatActivity(path)) return path;
 	if (!isFolder) {
 		return path === oldPath ? newPath : path;
 	}

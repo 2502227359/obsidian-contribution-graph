@@ -1,4 +1,5 @@
 import { TimeStatusReason, TimeTrackingSnapshot } from "./types";
+import { isYoloChatActivity, YOLO_CHAT_ACTIVITY_LABEL } from "./timeActivitySource";
 
 const STATUS_TEXT: Record<TimeStatusReason, string> = {
 	DISABLED: "时长：未启用",
@@ -45,7 +46,7 @@ function formatRemaining(remainingMs: number): string | undefined {
 function getDiscardDescription(discard: NonNullable<TimeTrackingSnapshot["lastDiscard"]>): string[] {
 	const reason = discard.reason === "idle" ? "空闲" : "中断";
 	const lines = [
-		`最近一次${reason}回撤笔记：${discard.path}`,
+		isYoloChatActivity(discard.path) ? `最近一次${reason}回撤活动：${YOLO_CHAT_ACTIVITY_LABEL}` : `最近一次${reason}回撤笔记：${discard.path}`,
 		`空闲开始：${formatTimestamp(discard.start)}，检测于：${formatTimestamp(
 			discard.detectedAt
 		)}`,
@@ -79,6 +80,7 @@ function getTimeTrackingActionDescription(snapshot: TimeTrackingSnapshot): strin
 export function getTimeTrackingStatusText(
 	snapshot: TimeTrackingSnapshot
 ): string {
+	if (isYoloChatActivity(snapshot.path) && snapshot.reason === "OUTSIDE_EDITOR") return "时长：等待对话操作";
 	return STATUS_TEXT[snapshot.reason];
 }
 
@@ -88,8 +90,8 @@ export function getTimeTrackingDescription(
 	const lines = [
 		getTimeTrackingStatusText(snapshot).replace("时长：", "时长统计："),
 	];
-	if (snapshot.path) lines.push(`当前笔记：${snapshot.path}`);
-	lines.push(`今日累计：${formatDuration(snapshot.todaySeconds)}，按当前全局采集范围，多端汇总`);
+	if (snapshot.path) lines.push(isYoloChatActivity(snapshot.path) ? `当前活动：${YOLO_CHAT_ACTIVITY_LABEL}` : `当前笔记：${snapshot.path}`);
+	lines.push(`今日累计：${formatDuration(snapshot.todaySeconds)}，当前笔记采集范围及 YOLO 对话，多端汇总`);
 	if (snapshot.todayPendingSeconds > 0) {
 		lines.push(
 			`其中本机今日暂计：${formatDuration(

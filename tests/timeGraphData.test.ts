@@ -19,6 +19,17 @@ describe("两种时长热力图的数据接线", () => {
 			fromDate: "2026-11-14", toDate: "2026-11-14", dataSource: { type: "TIME_ACTIVITY" } });
 		return { service, app, config };
 	};
+	it("YOLO 对话明细显示独立活动，不查找或打开虚构文件", () => {
+		const { service, app, config } = createInputs();
+		service.getDailyTimeStats = () => [{ date: "2026-11-14", seconds: 90,
+			documents: [{ path: "activity://yolo-chat", seconds: 90 }], trackingState: "PARTIAL", future: false }];
+		app.vault.getAbstractFileByPath = vi.fn();
+		const item = queryTimeGraph(config, service, app).data[0].items![0];
+		expect(item).toMatchObject({ label: "YOLO 对话活动", value: 1.5 });
+		expect(item.description).not.toContain("文件已不存在");
+		expect(item.open).toBeUndefined();
+		expect(app.vault.getAbstractFileByPath).not.toHaveBeenCalled();
+	});
 	it("每日图使用分钟值并保留秒数、覆盖状态和删除笔记明细", () => {
 		const { service, app, config } = createInputs();
 		const { data } = queryTimeGraph(config, service, app);

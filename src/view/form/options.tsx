@@ -97,7 +97,7 @@ export const cellShapes: SelectOption<string>[] = [
 ];
 
 export const dataSourceTypes: SelectOption<DataSourceType>[] = [
-	{ label: "活跃使用时长（阅读＋编辑）", value: "TIME_ACTIVITY" },
+	{ label: "活跃使用时长（笔记＋YOLO）", value: "TIME_ACTIVITY" },
 	{
 		label: Locals.get().form_datasource_type_page,
 		value: "PAGE",

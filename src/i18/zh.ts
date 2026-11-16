@@ -225,7 +225,7 @@ export class Zh implements Local {
 	settings_count_pasted_text = "统计粘贴内容";
 	settings_count_pasted_text_description = "将用户手动粘贴的文本计入编辑活动。关闭后会排除整笔粘贴替换，包括粘贴时被替换的字符。";
 	settings_tracked_folders = "统计文件夹";
-	settings_tracked_folders_description = "字数与时长统计共用此采集范围，修改只影响之后的记录。严格输入模式仅影响字数统计。";
+	settings_tracked_folders_description = "字数与笔记时长共用此采集范围；YOLO 对话单独归类，不受笔记目录限制。修改只影响之后的记录，严格输入模式仅影响字数统计。";
 	settings_tracked_folders_choose = "选择文件夹";
 	settings_tracked_folders_remove = "移除此文件夹";
 	settings_tracked_folders_all = "当前统计整个仓库。";

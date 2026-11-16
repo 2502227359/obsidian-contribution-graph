@@ -21,6 +21,16 @@ function createSnapshot(
 }
 
 describe("时长状态展示", () => {
+	it("YOLO 显示活动名称与回撤来源，不伪装成笔记路径", () => {
+		const snapshot = createSnapshot({ path: "activity://yolo-chat", reason: "OUTSIDE_EDITOR",
+			lastDiscard: { path: "activity://yolo-chat", start: 0, detectedAt: 300000,
+				recordedSeconds: 285, unrecordedSeconds: 15, reason: "idle" } });
+		expect(getTimeTrackingStatusText(snapshot)).toBe("时长：等待对话操作");
+		const description = getTimeTrackingDescription(snapshot);
+		expect(description).toContain("当前活动：YOLO 对话活动");
+		expect(description).toContain("最近一次空闲回撤活动：YOLO 对话活动");
+		expect(description).not.toContain("activity://");
+	});
 	it("为每一种状态原因生成稳定的短状态", () => {
 		const reasons: Array<[TimeTrackingSnapshot["reason"], string]> = [
 			["DISABLED", "时长：未启用"],
@@ -61,7 +71,7 @@ describe("时长状态展示", () => {
 
 		expect(description).toContain("当前笔记：临床医学/内科学/心律失常.md");
 		expect(description).toContain(
-			"今日累计：1小时1分1秒，按当前全局采集范围，多端汇总"
+			"今日累计：1小时1分1秒，当前笔记采集范围及 YOLO 对话，多端汇总"
 		);
 		expect(description).toContain(
 			"其中本机今日暂计：2分10秒，已含在今日累计中"

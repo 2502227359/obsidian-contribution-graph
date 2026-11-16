@@ -31,6 +31,35 @@ describe("时长统计的保存与查询", () => {
 			wall += 15000; mono += 15000; service.checkpointTimeActivity();
 		}
 	};
+	it("YOLO 独立活动不归笔记，全部时长包含它且范围筛选、暂停和空闲回撤口径一致", async () => {
+		await service.setTrackedFolders(["临床医学"]);
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("activity://yolo-chat"); advance(30);
+		expect(service.getTimeTrackingSnapshot()).toMatchObject({ reason: "ACTIVE", todaySeconds: 30, todayPendingSeconds: 30 });
+		service.recordTimeActivity("范围外/甲.md");
+		expect(service.getTimeTrackingSnapshot().reason).toBe("OUT_OF_SCOPE");
+		service.recordTimeActivity("临床医学/甲.md"); advance(15);
+		expect(service.getDailyTimeStats()[0].seconds).toBe(45);
+		expect(service.getDailyTimeStats({ folders: ["临床医学"] })[0].seconds).toBe(15);
+		expect(service.getTimeTrackingSnapshot().todaySeconds).toBe(45);
+		await service.pauseTimeTrackingForSession();
+		service.recordTimeActivity("activity://yolo-chat"); advance(15);
+		expect(service.getTimeTrackingSnapshot()).toMatchObject({ reason: "MANUAL", todaySeconds: 45 });
+		await service.resumeTimeTrackingForSession();
+		service.recordTimeActivity("activity://yolo-chat"); advance(15);
+		expect(service.getTimeTrackingSnapshot().todaySeconds).toBe(60);
+		advance(285);
+		expect(service.getTimeTrackingSnapshot()).toMatchObject({ reason: "IDLE", todaySeconds: 45,
+			lastDiscard: { path: "activity://yolo-chat", recordedSeconds: 285, unrecordedSeconds: 15 } });
+		expect(service.getDailyTimeStats()[0].documents).toContainEqual({ path: "activity://yolo-chat", seconds: 30 });
+		expect(service.getDailyEditStats()).toEqual([]);
+		const exported = service.exportData();
+		await service.importData(exported);
+		expect(service.getDailyTimeStats()[0].documents).toContainEqual({ path: "activity://yolo-chat", seconds: 30 });
+		await service.setTimeTrackingEnabled(false);
+		service.recordTimeActivity("activity://yolo-chat"); advance(15);
+		expect(service.getDailyTimeStats()[0].seconds).toBe(45);
+	});
 	it("临时暂停保存并关闭覆盖，正文与后台事件不能恢复，显式恢复不补计", async () => {
 		await service.setTimeTrackingEnabled(true);
 		service.recordTimeActivity("笔记/甲.md"); advance(30);

@@ -112,7 +112,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		new Setting(section)
 			.setName("启用时长统计")
 			.setDesc(
-				"自动累计 Markdown 笔记的阅读和编辑时长，与字符统计独立。后台、弹窗和空闲时暂停；自动汇总同步到仓库的统计，不保存正文。"
+				"累计 Markdown 笔记及 YOLO 对话活动时长，与字符统计独立。目录范围只限制笔记，YOLO 独立归类；后台、弹窗和空闲时暂停，不保存正文或对话内容。"
 			)
 			.addToggle((toggle) =>
 				toggle

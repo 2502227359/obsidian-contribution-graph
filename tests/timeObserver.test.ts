@@ -153,6 +153,136 @@ function createCallbacks(
 }
 
 describe("时间活动事件策略", () => {
+	it.each(["主窗口", "独立窗口"])("YOLO 对话在%s的可信操作也应产生时长活动", placement => {
+		const note = createView("临床医学/测试笔记.md");
+		const chat = createView();
+		chat.view.getViewType = () => "yolo-chat-view";
+		chat.view.file = undefined as any;
+		const documents = [createDocumentTarget()];
+		if (placement === "独立窗口") documents.push(createDocumentTarget());
+		const { plugin } = createPlugin([note, chat], documents);
+		plugin.app.workspace.activeLeaf = chat;
+		const activity = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity }));
+		try {
+			observer.start();
+			const before = activity.mock.calls.length;
+			chat.root.ownerDocument.dispatch("wheel", chat.root);
+			expect(activity.mock.calls.length).toBeGreaterThan(before);
+			expect(activity).toHaveBeenLastCalledWith("activity://yolo-chat");
+		} finally {
+			observer.stop();
+		}
+	});
+	it("侧栏 YOLO 不依赖 activeLeaf，心跳、焦点和暂停仍按交互所在窗口判断", () => {
+		vi.useFakeTimers();
+		const note = createView("临床医学/测试笔记.md"), chat = createView();
+		chat.view.getViewType = () => "yolo-chat-view";
+		chat.view.file = undefined as any;
+		const main = createDocumentTarget(), popout = createDocumentTarget();
+		main.documentTarget.hasFocus = () => false;
+		const { plugin } = createPlugin([note, chat], [main, popout]);
+		let manualPaused = false;
+		const activity = vi.fn(), pause = vi.fn(), context = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause, context,
+			snapshot: () => createSnapshot({ manualPaused }) }));
+		try {
+			observer.start();
+			popout.documentTarget.dispatch("wheel", chat.root);
+			expect(activity).toHaveBeenLastCalledWith("activity://yolo-chat");
+			const count = activity.mock.calls.length, pauses = pause.mock.calls.length;
+			main.windowTarget.dispatch("blur");
+			vi.advanceTimersByTime(15_000);
+			expect(pause).toHaveBeenCalledTimes(pauses);
+			expect(context).toHaveBeenLastCalledWith({ reason: "READY", path: "activity://yolo-chat" });
+			popout.documentTarget.dispatch("wheel", chat.root, false);
+			popout.documentTarget.dispatch("scroll", chat.root);
+			manualPaused = true;
+			popout.documentTarget.dispatch("input", chat.root);
+			expect(activity).toHaveBeenCalledTimes(count);
+			popout.documentTarget.hasFocus = () => false;
+			popout.windowTarget.dispatch("blur");
+			expect(context).toHaveBeenLastCalledWith({ reason: "BACKGROUND", path: "activity://yolo-chat" });
+			manualPaused = false;
+			popout.documentTarget.hasFocus = () => true;
+			popout.documentTarget.activeElement = chat.root;
+			popout.windowTarget.dispatch("focus");
+			expect(activity).toHaveBeenCalledTimes(count + 1);
+			popout.documentTarget.querySelector = () => ({});
+			popout.documentTarget.dispatch("input", chat.root);
+			expect(context).toHaveBeenLastCalledWith({ reason: "MODAL", path: "activity://yolo-chat" });
+		} finally {
+			observer.stop();
+			vi.useRealTimers();
+		}
+	});
+	it("观察器启动后新开的 YOLO 侧栏通过布局变化接入", () => {
+		const note = createView(), chat = createView();
+		chat.view.getViewType = () => "yolo-chat-view";
+		chat.view.file = undefined as any;
+		const leaves = [note];
+		const { plugin, documentTarget, handlers } = createPlugin(leaves);
+		chat.root.ownerDocument = documentTarget;
+		const activity = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity }));
+		try {
+			observer.start();
+			leaves.push(chat);
+			for (const callback of handlers.get("layout-change") || []) callback();
+			documentTarget.dispatch("wheel", chat.root);
+			expect(activity).toHaveBeenLastCalledWith("activity://yolo-chat");
+		} finally {
+			observer.stop();
+		}
+	});
+	it.each(["切到其他笔记", "隐藏侧栏"])("YOLO 在%s时停止，不依赖迟到的活动叶事件", action => {
+		const note = createView(), chat = createView();
+		chat.view.getViewType = () => "yolo-chat-view";
+		chat.view.file = undefined as any;
+		const { plugin, documentTarget } = createPlugin([note, chat]);
+		plugin.app.workspace.activeLeaf = chat;
+		const pause = vi.fn(), activity = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ pause, activity }));
+		try {
+			observer.start();
+			documentTarget.dispatch("wheel", chat.root);
+			const pauses = pause.mock.calls.length, activities = activity.mock.calls.length;
+			if (action === "切到其他笔记") documentTarget.dispatch("pointerdown", note.root);
+			else {
+				documentTarget.activeElement = chat.root;
+				Object.assign(chat.root, { getClientRects: () => [] });
+				observer.refreshCurrentContext();
+			}
+			expect(pause.mock.calls.length).toBeGreaterThan(pauses);
+			expect(activity).toHaveBeenCalledTimes(activities);
+		} finally {
+			observer.stop();
+		}
+	});
+	it("多个窗口都报告文档焦点时，以宿主活动文档排除旧 YOLO 窗口", () => {
+		const note = createView(), chat = createView();
+		chat.view.getViewType = () => "yolo-chat-view";
+		chat.view.file = undefined as any;
+		const main = createDocumentTarget(), popout = createDocumentTarget();
+		const { plugin } = createPlugin([note, chat], [main, popout]);
+		popout.documentTarget.activeElement = chat.root;
+		const activity = vi.fn(), pause = vi.fn();
+		const observer = new TimeActivityObserver(plugin as any, createCallbacks({ activity, pause }));
+		vi.stubGlobal("activeDocument", popout.documentTarget);
+		try {
+			observer.start();
+			popout.documentTarget.dispatch("input", chat.root);
+			expect(activity).toHaveBeenLastCalledWith("activity://yolo-chat");
+			const pauses = pause.mock.calls.length;
+			vi.stubGlobal("activeDocument", main.documentTarget);
+			main.windowTarget.dispatch("focus");
+			expect(pause.mock.calls.length).toBeGreaterThan(pauses);
+			expect(activity).toHaveBeenLastCalledWith("Notes/Test.md");
+		} finally {
+			observer.stop();
+			vi.unstubAllGlobals();
+		}
+	});
 	it("文件后缀为 Markdown 的其他插件视图不计入阅读", () => {
 		const view = createView("思维导图.md");
 		view.view.getViewType = () => "mindmap";

@@ -4,6 +4,7 @@ import {
 	getTimeTrackingStatusText,
 } from "./timeTrackingPresentation";
 import type { TimeTrackingContext, TimeTrackingSnapshot } from "./types";
+import { isYoloChatActivity, YOLO_CHAT_ACTIVITY_PATH, YOLO_CHAT_VIEW_TYPE } from "./timeActivitySource";
 
 export interface TimeActivityObserverCallbacks {
 	activity: (path: string) => void;
@@ -21,6 +22,7 @@ interface MarkdownViewLike {
 	containerEl?: {
 		contains?: (target: unknown) => boolean;
 		ownerDocument?: Document;
+		getClientRects?: () => ArrayLike<DOMRect>;
 	};
 }
 
@@ -93,10 +95,16 @@ function isVisibleDocument(document: Document | undefined): boolean {
 }
 
 function isFocusedWindow(document: Document | undefined): boolean {
-	return Boolean(document && document.hasFocus());
+	const focusedDocument = typeof activeDocument === "undefined" ? undefined : activeDocument;
+	return Boolean(document && document.hasFocus() && (!focusedDocument || focusedDocument === document));
+}
+
+function isVisibleRoot(root: ViewBinding["root"]): boolean {
+	return !root.getClientRects || root.getClientRects().length > 0;
 }
 
 function getPath(view: MarkdownViewLike | undefined): string | undefined {
+	if (view?.getViewType() === YOLO_CHAT_VIEW_TYPE) return YOLO_CHAT_ACTIVITY_PATH;
 	if (view?.getViewType() !== "markdown") return undefined;
 	const path = view.file?.path;
 	return isMarkdownFilePath(path) ? path : undefined;
@@ -113,7 +121,7 @@ function sameView(first: ViewBinding | undefined, second: ViewBinding | undefine
 }
 
 /**
- * 将 Markdown 视图中的可信交互转换为活动回调。
+ * 将 Markdown 与 YOLO 对话视图中的可信交互转换为活动回调。
  * 观察器不监听 scroll 或 mousemove：滚轮和触摸事件代表用户滚动，
  * 程序滚动保持静默。状态栏只通过自己的控件监听器执行暂停/恢复。
  */
@@ -128,6 +136,7 @@ export class TimeActivityObserver {
 	private unsubscribe?: () => void;
 	private started = false;
 	private currentView?: ViewBinding;
+	private interactionView?: ViewBinding;
 	private currentContext?: TimeTrackingContext;
 	private activitySessionStarted = false;
 
@@ -163,6 +172,7 @@ export class TimeActivityObserver {
 		this.callbacks.pause();
 		this.activitySessionStarted = false;
 		this.currentView = undefined;
+		this.interactionView = undefined;
 		this.currentContext = undefined;
 		if (this.checkpointTimer !== undefined) {
 			clearInterval(this.checkpointTimer);
@@ -242,11 +252,14 @@ export class TimeActivityObserver {
 	private bindWorkspaceEvents(): void {
 		const workspace = this.plugin.app.workspace;
 		this.bindWorkspaceEvent(workspace, "active-leaf-change", () => {
+			this.interactionView = undefined;
 			this.refreshCurrentContext();
 		});
 		this.bindWorkspaceEvent(workspace, "file-open", () => {
+			this.interactionView = undefined;
 			this.refreshCurrentContext();
 		});
+		this.bindWorkspaceEvent(workspace, "layout-change", () => this.refreshCurrentContext());
 		this.bindWorkspaceEvent(workspace, "window-open", (_workspaceWindow, window) => {
 			this.bindDocument(window?.document);
 			this.refreshCurrentContext();
@@ -292,8 +305,8 @@ export class TimeActivityObserver {
 	}
 
 	private handleWindowBlur(document: Document): void {
-		const activeView = this.getActiveViewBinding();
-		const activeDocument = this.plugin.app.workspace.activeLeaf?.view?.containerEl?.ownerDocument || this.statusBarItem?.ownerDocument;
+		const activeView = this.currentView || this.getActiveViewBinding();
+		const activeDocument = activeView?.ownerDocument || this.plugin.app.workspace.activeLeaf?.view?.containerEl?.ownerDocument || this.statusBarItem?.ownerDocument;
 		if (activeDocument !== document) return;
 		this.emitContext({ reason: "BACKGROUND", path: activeView?.path });
 		this.pauseCurrentActivity();
@@ -342,7 +355,11 @@ export class TimeActivityObserver {
 		if ("isTrusted" in event && event.isTrusted === false) return;
 		if (this.isStatusBarTarget(event.target)) return;
 
-		const active = this.getActiveContext();
+		const eventView = this.views.find(candidate => this.contains(candidate.root, event.target));
+		this.interactionView = eventView && isYoloChatActivity(eventView.path) ? eventView : undefined;
+		const eventIsActive = eventView && (isYoloChatActivity(eventView.path) ||
+			eventView.root === this.plugin.app.workspace.activeLeaf?.view?.containerEl);
+		const active = this.getActiveContext(eventIsActive ? eventView : undefined);
 		if (active.context.reason !== "READY") {
 			this.emitContext(active.context);
 			this.pauseCurrentActivity(true);
@@ -350,9 +367,8 @@ export class TimeActivityObserver {
 			return;
 		}
 		const activeView = active.view;
-		const eventView = this.views.find(candidate => this.contains(candidate.root, event.target));
 		if (!eventView || !sameView(eventView, activeView)) {
-			if (eventView) return;
+			if (eventView && !isYoloChatActivity(this.currentView?.path)) return;
 			this.emitContext({ reason: "OUTSIDE_EDITOR", path: activeView?.path });
 			this.pauseCurrentActivity(true);
 			this.updateStatus();
@@ -416,32 +432,35 @@ export class TimeActivityObserver {
 	private pauseCurrentActivity(force = false): void {
 		if (force || this.activitySessionStarted) this.callbacks.pause();
 		this.currentView = undefined;
+		this.interactionView = undefined;
 		this.activitySessionStarted = false;
 	}
 
-	private getActiveContext(): ActiveContext {
+	private getActiveContext(eventView?: ViewBinding): ActiveContext {
 		const view = this.plugin.app.workspace.activeLeaf?.view;
-		const root = view?.containerEl;
-		const path = getPath(view);
+		const binding = eventView || this.getActiveViewBinding();
+		const root = binding?.root || view?.containerEl;
+		const path = binding?.path;
 		const document = root?.ownerDocument || this.statusBarItem?.ownerDocument;
 		if (document && (!isVisibleDocument(document) || !isFocusedWindow(document))) {
 			return { context: { reason: "BACKGROUND", path } };
 		}
 		if (this.hasBlockingModal(document)) return { context: { reason: "MODAL", path } };
 		if (!path || !root) return { context: { reason: "NO_MARKDOWN" } };
-		const binding = this.views.find(candidate => candidate.root === root) || {
-			path,
-			root,
-			ownerDocument: document,
-		};
 		return { context: { reason: "READY", path }, view: binding };
 	}
 
 	private getActiveViewBinding(): ViewBinding | undefined {
+		// 侧栏滚轮不一定改变 activeLeaf 或输入焦点，以最近的可信交互为准。
+		const interaction = this.views.find(candidate => sameView(candidate, this.interactionView));
+		if (interaction && isVisibleRoot(interaction.root) && isFocusedWindow(interaction.ownerDocument)) return interaction;
+		const focusedChat = this.views.find(candidate => isYoloChatActivity(candidate.path) &&
+			isVisibleRoot(candidate.root) && isFocusedWindow(candidate.ownerDocument) && this.contains(candidate.root, candidate.ownerDocument?.activeElement || null));
+		if (focusedChat) return focusedChat;
 		const view = this.plugin.app.workspace.activeLeaf?.view;
 		const path = getPath(view);
 		const root = view?.containerEl;
-		if (!path || !root) return undefined;
+		if (!path || !root || !isVisibleRoot(root)) return undefined;
 		return this.views.find(candidate => candidate.root === root) || {
 			path,
 			root,

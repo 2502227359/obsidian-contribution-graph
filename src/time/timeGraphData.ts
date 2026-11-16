@@ -7,6 +7,7 @@ import type { Contribution, ContributionCellData, ContributionItem } from "../ty
 import { diffCalendarDays, parseDate, toFormattedDate } from "../util/dateUtils";
 import { formatDuration } from "./timeData";
 import { TimeStats } from "./types";
+import { isYoloChatActivity, YOLO_CHAT_ACTIVITY_LABEL } from "./timeActivitySource";
 
 export interface TimeGraphSelection {
 	dates: readonly string[];
@@ -82,6 +83,9 @@ function toTimeContribution(stats: TimeStats, app: App): Contribution {
 }
 
 function timeDocumentItem(document: { path: string; seconds: number }, app: App): ContributionItem {
+	if (isYoloChatActivity(document.path)) {
+		return { label: YOLO_CHAT_ACTIVITY_LABEL, value: document.seconds / 60, description: formatDuration(document.seconds) };
+	}
 	const file = app.vault.getAbstractFileByPath(document.path);
 	const exists = file && "extension" in file;
 	return { label: document.path, value: document.seconds / 60,
