@@ -22,6 +22,7 @@ import { EditActivitySettingTab } from "./activity/EditActivitySettingTab";
 import { TimeActivityObserver } from "./time/TimeActivityObserver";
 import { WeeklyReviewModal } from "./view/WeeklyReviewModal";
 import "../style/weeklyReview.css";
+import "../style/weeklyReviewCharts.css";
 
 export default class ContributionGraph extends Plugin {
 	activityService: EditActivityService;

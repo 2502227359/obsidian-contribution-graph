@@ -1,17 +1,17 @@
 import { App, Modal, Scope, TFile, TFolder } from "obsidian";
-import { normalizeTrackedFolderPath } from "../activity/folderScope";
-import { isYoloChatActivity, YOLO_CHAT_ACTIVITY_LABEL } from "../time/timeActivitySource";
+import { normalizeTrackedFolderPath, normalizeTrackedFolders } from "../activity/folderScope";
+import { isYoloChatActivity } from "../time/timeActivitySource";
 import { formatDuration } from "../time/timeData";
-import { getReviewWeekStart, getWeeklyReviewGoal, getWeeklyReviewGroups, shiftReviewDate } from "../time/weeklyReview";
+import { getReviewWeekStart, getWeeklyReviewGoal, shiftReviewDate } from "../time/weeklyReview";
 import type {
-	WeeklyReviewComparison,
 	WeeklyReviewDay,
 	WeeklyReviewGoalState,
-	WeeklyReviewGroup,
 	WeeklyReviewQuery,
 	WeeklyReviewSnapshot,
 } from "../time/weeklyReviewTypes";
 import { mountDatePicker } from "./datePicker/DatePicker";
+import { WeeklyReviewCharts, WeeklyReviewChartSelection } from "./weeklyReviewCharts";
+import type { TimeDocumentStats } from "../time/types";
 
 interface WeeklyReviewService {
 	getWeeklyReview(query?: WeeklyReviewQuery): WeeklyReviewSnapshot;
@@ -50,7 +50,10 @@ export class WeeklyReviewModal extends Modal {
 	private depth: 1 | 2 = 1;
 	private goalText = "60";
 	private goalError = "";
-	private selectedGroupKey?: string;
+	private charts?: WeeklyReviewCharts;
+	private chartSelection?: WeeklyReviewChartSelection;
+	private comparisonPeriod: "current" | "previous" = "current";
+	private dailyOpen = false;
 	private errorMessage = "";
 	private failedRequest?: {query: WeeklyReviewQuery; state?: RequestedReviewState};
 	private rootEl?: HTMLElement;
@@ -89,6 +92,9 @@ export class WeeklyReviewModal extends Modal {
 		if (this.closed) return;
 		this.closed = true;
 		this.closeDatePicker();
+		this.charts?.dispose();
+		this.charts = undefined;
+		this.chartSelection = undefined;
 		this.contentEl.empty();
 		if (this.originalFocus?.isConnected) this.originalFocus.focus({ preventScroll: true });
 		this.rootEl = undefined;
@@ -149,6 +155,7 @@ export class WeeklyReviewModal extends Modal {
 		const focused = this.rootEl.contains(this.rootEl.ownerDocument.activeElement)
 			? this.rootEl.ownerDocument.activeElement as HTMLElement : undefined;
 		this.closeDatePicker();
+		this.charts?.el.remove();
 		this.rootEl.empty();
 		this.renderHeader();
 		this.renderError();
@@ -254,7 +261,7 @@ export class WeeklyReviewModal extends Modal {
 			button.dataset.reviewRoot = path;
 			button.onclick = () => {
 				this.rootPickerOpen = false;
-				this.selectedGroupKey = undefined;
+				this.resetAnalysisSelection();
 				this.refreshSnapshot(this.getQueryWithRoot(path), { root: path });
 				this.rootEl?.querySelector<HTMLElement>('[data-review-field="root"]')?.focus();
 			};
@@ -281,7 +288,7 @@ export class WeeklyReviewModal extends Modal {
 		select.value = String(this.depth);
 		select.onchange = () => {
 			this.depth = select.value === "2" ? 2 : 1;
-			this.selectedGroupKey = undefined;
+			this.resetAnalysisSelection();
 			this.render();
 		};
 	}
@@ -325,6 +332,7 @@ export class WeeklyReviewModal extends Modal {
 	private refreshReport(): void {
 		if (!this.rootEl || !this.snapshot || this.closed) return;
 		const scrollTop = this.scrollEl?.scrollTop || 0;
+		this.charts?.el.remove();
 		this.scrollEl?.querySelector(".cg-weekly-review-report")?.remove();
 		this.renderReport(this.snapshot);
 		if (this.scrollEl) this.scrollEl.scrollTop = scrollTop;
@@ -333,11 +341,40 @@ export class WeeklyReviewModal extends Modal {
 	private renderReport(snapshot: WeeklyReviewSnapshot): void {
 		const report = this.scrollEl!.createDiv({ cls: "cg-weekly-review-report" });
 		this.renderOverview(report, snapshot);
-		this.renderDailyTrend(report, snapshot);
-		this.renderComparison(report, snapshot.comparison);
-		this.renderGroups(report, snapshot);
+		if (!this.charts) this.charts = new WeeklyReviewCharts(report.ownerDocument, selection => this.selectAnalysis(selection));
+		report.appendChild(this.charts.el);
+		const roots = normalizeTrackedFolders(this.service.getSettings().trackedFolders);
+		this.charts.update(snapshot, {groupingRoot: snapshot.root || (roots.length === 1 ? roots[0] : ""), depth: this.depth});
 		this.renderDocuments(report, snapshot);
+		const daily = report.createEl("details", { cls: "cg-weekly-review-daily-details" });
+		daily.open = this.dailyOpen;
+		daily.ontoggle = () => { this.dailyOpen = daily.open; };
+		const summary = daily.createEl("summary", { text: "每日记录与参考目标" });
+		summary.dataset.reviewAction = "daily-details";
+		this.renderDailyTrend(daily, snapshot);
 		this.renderNotes(report, snapshot);
+	}
+
+	private selectAnalysis(selection: WeeklyReviewChartSelection | undefined): void {
+		this.chartSelection = selection;
+		this.comparisonPeriod = selection?.period || "current";
+		this.refreshDocuments();
+	}
+
+	private resetAnalysisSelection(): void {
+		this.chartSelection = undefined;
+		this.comparisonPeriod = "current";
+		this.charts?.clearSelection();
+	}
+
+	private refreshDocuments(): void {
+		const previous = this.scrollEl?.querySelector<HTMLElement>(".cg-weekly-review-documents-section");
+		if (!previous || !this.snapshot) return;
+		const focused = previous.ownerDocument.activeElement as HTMLElement | null;
+		const container = previous.ownerDocument.createElement("div");
+		this.renderDocuments(container, this.snapshot);
+		previous.replaceWith(container.firstElementChild!);
+		if (focused) this.restoreControlFocus(focused);
 	}
 
 	private renderOverview(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
@@ -401,75 +438,48 @@ export class WeeklyReviewModal extends Modal {
 		if (day.timezoneWarning) detail.createSpan({ cls: "cg-weekly-review-alert", text: "时区需确认" });
 	}
 
-	private renderComparison(parent: HTMLElement, comparison: WeeklyReviewComparison): void {
-		const section = this.createSection(parent, this.snapshot?.isCurrentWeek ? "上周同期" : "与上一周相比", "");
-		const result = section.createDiv({ cls: "cg-weekly-review-comparison-result" });
-		if (comparison.state !== "READY") {
-			result.textContent = this.getComparisonResult(comparison);
-			return;
-		}
-		if (comparison.deltaSeconds !== undefined) result.createEl("strong", { text: formatSignedDuration(comparison.deltaSeconds) });
-		if (comparison.percentage !== undefined) result.createSpan({ text: formatPercentage(comparison.percentage, true) });
-		const range = section.createDiv({ cls: "cg-weekly-review-comparison-range" });
-		range.textContent = `${getComparisonRange(comparison.fromDate, comparison.toDate)}：${formatDuration(comparison.currentSeconds)} · 上期 ${formatDuration(comparison.previousSeconds)}`;
-		if (comparison.percentage === undefined) section.createDiv({ cls: "cg-weekly-review-control-hint", text: this.getComparisonResult(comparison) });
-	}
-
-	private renderGroups(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
-		const groups = getWeeklyReviewGroups(snapshot, this.depth).filter(group => group.seconds > 0);
-		const section = this.createSection(parent, snapshot.root ? "学科分布" : "活动分布", groups.length ? "" : "暂无记录");
-		if (!groups.length) return;
-		const list = section.createDiv({ cls: "cg-weekly-review-groups", attr: { role: "group", "aria-label": "学科与独立活动分布" } });
-		for (const group of groups) this.renderGroup(list, group, snapshot.totalSeconds);
-	}
-
-	private renderGroup(parent: HTMLElement, group: WeeklyReviewGroup, totalSeconds: number): void {
-		const selected = this.selectedGroupKey === group.key;
-		const button = parent.createEl("button", { cls: "cg-weekly-review-group", attr: { type: "button", "aria-pressed": String(selected) } });
-		button.dataset.reviewAction = "group";
-		button.dataset.reviewGroupKey = group.key;
-		button.classList.toggle("is-selected", selected);
-		button.classList.toggle("is-activity", group.activity);
-		button.onclick = () => {
-			this.selectedGroupKey = selected ? undefined : group.key;
-			this.render();
-		};
-		const heading = button.createDiv({ cls: "cg-weekly-review-group-heading" });
-		heading.createSpan({ text: group.activity ? YOLO_CHAT_ACTIVITY_LABEL : group.label });
-		if (group.activity) heading.createSpan({ cls: "cg-weekly-review-activity-badge", text: "独立活动" });
-		const meta = button.createDiv({ cls: "cg-weekly-review-group-meta" });
-		meta.createSpan({ text: formatDuration(group.seconds) });
-		if (totalSeconds > 0) meta.createSpan({ text: formatPercentage(group.seconds / totalSeconds * 100) });
-		const bar = button.createDiv({ cls: "cg-weekly-review-group-bar" });
-		bar.createDiv({ cls: "cg-weekly-review-group-bar-fill" }).style.width = `${Math.min(100, group.seconds / Math.max(totalSeconds, 1) * 100)}%`;
-	}
 
 	private renderDocuments(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
-		const selectedGroup = this.getSelectedGroup(snapshot);
-		const documents = (selectedGroup?.documents || snapshot.documents)
-			.filter(document => !isYoloChatActivity(document.path) && document.seconds > 0)
-			.sort((left, right) => right.seconds - left.seconds || left.path.localeCompare(right.path))
-			.slice(0, 10);
-		const section = this.createSection(parent, "重点笔记", "");
-		if (selectedGroup) {
-			const clear = section.createEl("button", { cls: "cg-weekly-review-clear-filter", text: `${selectedGroup.label} ×`, attr: {type: "button", "aria-label": "清除笔记分组筛选"} });
-			clear.dataset.reviewAction = "clear-group";
-			clear.onclick = () => {
-				this.selectedGroupKey = undefined;
-				this.render();
-				Array.from(this.rootEl!.querySelectorAll<HTMLElement>("[data-review-group-key]"))
-					.find(button => button.dataset.reviewGroupKey === selectedGroup.key)?.focus({preventScroll: true});
-			};
-		}
+		const selection = this.chartSelection;
+		const source: readonly TimeDocumentStats[] = selection?.kind === "comparison" && this.comparisonPeriod === "previous"
+			? selection.previousDocuments || [] : selection?.documents || snapshot.documents;
+		const documents = source.filter(document => !isYoloChatActivity(document.path) && document.seconds > 0)
+			.slice().sort((left, right) => right.seconds - left.seconds || left.path.localeCompare(right.path)).slice(0, 10);
+		const section = this.createSection(parent, "重点笔记", "时长 · 占当前选择");
+		section.addClass("cg-weekly-review-documents-section");
+		if (selection) this.renderSelectionLabel(section, selection);
+		if (selection?.kind === "comparison") this.renderComparisonPeriods(section, selection);
 		if (!documents.length) {
-			section.createDiv({ cls: "cg-weekly-review-empty-inline", text: selectedGroup?.activity ? "YOLO 对话活动不对应笔记。" : "暂无可显示的笔记记录。" });
+			section.createDiv({ cls: "cg-weekly-review-empty-inline", text: selection?.activity ? "YOLO 对话活动不对应笔记。" : "当前选择未见可显示的笔记记录。" });
 			return;
 		}
+		const denominator = source.reduce((sum, document) => sum + document.seconds, 0);
 		const list = section.createDiv({ cls: "cg-weekly-review-documents" });
-		for (const document of documents) this.renderDocument(list, document.path, document.seconds);
+		for (const document of documents) this.renderDocument(list, document.path, document.seconds, denominator);
 	}
 
-	private renderDocument(parent: HTMLElement, path: string, seconds: number): void {
+	private renderSelectionLabel(parent: HTMLElement, selection: WeeklyReviewChartSelection): void {
+		const clear = parent.createEl("button", { cls: "cg-weekly-review-clear-filter", text: `${selection.label} ×`, attr: {type: "button", "aria-label": "清除笔记筛选"} });
+		clear.dataset.reviewAction = "clear-group";
+		clear.onclick = () => {
+			this.resetAnalysisSelection();
+			this.charts?.el.querySelector<HTMLElement>("[data-analysis-node], [data-analysis-comparison]")?.focus({preventScroll: true});
+		};
+	}
+
+	private renderComparisonPeriods(parent: HTMLElement, selection: WeeklyReviewChartSelection): void {
+		const controls = parent.createDiv({ cls: "cg-weekly-review-note-periods", attr: {role: "group", "aria-label": "笔记所属对照区间"} });
+		for (const period of ["current", "previous"] as const) {
+			const start = period === "current" ? selection.fromDate : selection.previousFromDate;
+			const end = period === "current" ? selection.toDate : selection.previousToDate;
+			const label = `${period === "current" ? "本期" : "上期"} ${start?.slice(5) || "—"}—${end?.slice(5) || "—"}`;
+			const button = controls.createEl("button", { text: label, attr: {type: "button", "aria-pressed": String(this.comparisonPeriod === period)} });
+			button.dataset.reviewAction = `comparison-${period}`;
+			button.onclick = () => { this.comparisonPeriod = period; this.refreshDocuments(); };
+		}
+	}
+
+	private renderDocument(parent: HTMLElement, path: string, seconds: number, denominator: number): void {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		const row = parent.createDiv({ cls: "cg-weekly-review-document" });
 		row.dataset.reviewAction = "open-document";
@@ -477,7 +487,9 @@ export class WeeklyReviewModal extends Modal {
 		const label = row.createDiv({ cls: "cg-weekly-review-document-label" });
 		label.createDiv({ cls: "cg-weekly-review-document-name", text: getFileName(path) });
 		label.createDiv({ cls: "cg-weekly-review-document-path", text: path, attr: {title: path} });
-		row.createDiv({ cls: "cg-weekly-review-document-duration", text: formatDuration(seconds) });
+		const value = row.createDiv({ cls: "cg-weekly-review-document-duration" });
+		value.createDiv({ text: formatDuration(seconds) });
+		if (denominator > 0) value.createDiv({ cls: "cg-weekly-review-document-share", text: formatPercentage(seconds / denominator * 100) });
 		if (file instanceof TFile) {
 			row.classList.add("is-openable");
 			row.tabIndex = 0;
@@ -557,10 +569,6 @@ export class WeeklyReviewModal extends Modal {
 		return [...paths].sort((left, right) => left.localeCompare(right));
 	}
 
-	private getSelectedGroup(snapshot: WeeklyReviewSnapshot): WeeklyReviewGroup | undefined {
-		if (!this.selectedGroupKey) return undefined;
-		return getWeeklyReviewGroups(snapshot, this.depth).find(group => group.key === this.selectedGroupKey);
-	}
 
 	private getGoalMinutes(): number | undefined {
 		return this.goalError || !this.goalText ? undefined : Number(this.goalText);
@@ -579,14 +587,6 @@ export class WeeklyReviewModal extends Modal {
 
 
 
-	private getComparisonResult(comparison: WeeklyReviewComparison): string {
-		switch (comparison.state) {
-			case "READY": return comparison.previousSeconds > 0 ? "已记录时长可比较" : comparison.currentSeconds > 0 ? "上期已采集但无活动，本期新增已记录时长" : "已记录时长持平";
-			case "NO_COMPLETED_DAYS": return "本周尚无完整日期可比较";
-			case "POLICY_CHANGED": return "比较口径可能不同，暂不计算变化率";
-			default: return "记录不完整，暂不计算变化率";
-		}
-	}
 
 	private isPreviousDisabled(snapshot: WeeklyReviewSnapshot): boolean {
 		if (!snapshot.earliestDate) return false;
@@ -596,18 +596,18 @@ export class WeeklyReviewModal extends Modal {
 	private shiftWeek(days: number): void {
 		if (!this.snapshot) return;
 		const date = shiftReviewDate(this.snapshot.weekStart, days);
-		this.selectedGroupKey = undefined;
+		this.resetAnalysisSelection();
 		this.refreshSnapshot(this.getQueryWithDate(date), { date });
 	}
 
 	private selectDate(date: string): void {
 		const weekStart = getReviewWeekStart(date);
-		this.selectedGroupKey = undefined;
+		this.resetAnalysisSelection();
 		this.refreshSnapshot(this.getQueryWithDate(weekStart), { date: weekStart });
 	}
 
 	private selectCurrentWeek(): void {
-		this.selectedGroupKey = undefined;
+		this.resetAnalysisSelection();
 		this.refreshSnapshot(this.getQueryWithDate(undefined), { date: undefined });
 	}
 
@@ -660,15 +660,6 @@ function getWeekday(date: string): string {
 function formatTimestamp(timestamp: number): string {
 	if (!Number.isFinite(timestamp)) return "时间未知";
 	return new Date(timestamp).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function getComparisonRange(fromDate: string, toDate?: string): string {
-	return toDate ? `${fromDate} — ${toDate}` : `${fromDate} 起`;
-}
-
-function formatSignedDuration(seconds: number): string {
-	if (Math.abs(seconds) < 1) return "约等于 0 分钟";
-	return `${seconds > 0 ? "增加" : "减少"} ${formatDuration(Math.abs(seconds))}`;
 }
 
 function formatPercentage(value: number, signed = false): string {

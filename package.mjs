@@ -22,7 +22,7 @@ if (manifest.version !== packageJson.version) {
 	);
 }
 
-const files = ["manifest.json", "main.js", "styles.css", "LICENSE"];
+const files = ["manifest.json", "main.js", "styles.css", "LICENSE", "THIRD-PARTY-NOTICES.txt"];
 for (const file of files) {
 	if (!existsSync(resolve(projectRoot, file))) {
 		throw new Error(`Missing release file: ${file}`);
@@ -36,7 +36,7 @@ for (const file of files) {
 }
 
 const checksums = files
-	.filter((file) => file !== "LICENSE")
+	.filter((file) => !["LICENSE", "THIRD-PARTY-NOTICES.txt"].includes(file))
 	.map((file) => {
 		const hash = createHash("sha256")
 			.update(readFileSync(resolve(outputDir, file)))

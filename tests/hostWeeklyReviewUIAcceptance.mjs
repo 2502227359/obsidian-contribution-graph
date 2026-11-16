@@ -44,6 +44,7 @@ try {
 	assert.ok((await evaluate("app.vault.adapter.basePath.replaceAll('\\\\','/')")).endsWith('/dist/time-acceptance/vault'), "禁止在正式库运行界面验收");
 	await evaluate(`(()=>{const p=app.plugins.plugins['contribution-graph-local'];window.__reviewUI={query:p.activityService.getWeeklyReview,settings:JSON.stringify(p.activityService.getSettings()),dark:document.body.classList.contains('theme-dark'),light:document.body.classList.contains('theme-light'),font:document.body.style.getPropertyValue('--font-text')};for(const m of p.weeklyReviewModals.values())m.close();return true})()`);
 	initialized = true;
+	await evaluate("app.setting.close()");
 	await evaluate("app.workspace.getLeaf(false).openFile(app.vault.getAbstractFileByPath('验收.md'),{state:{mode:'preview'}})");
 	await wait(600);
 	assert.ok(await evaluate("document.querySelector('.cg-weekly-review-entry')!==null"), "时长图标题必须有周回顾入口");
@@ -76,10 +77,11 @@ try {
 	await key('ArrowDown'); await key('ArrowDown'); await key('Enter');
 	assert.equal((await read()).root,directory);
 	await click('[data-review-field="root"]'); await click('[data-review-root=""]'); assert.equal((await read()).root,''); assert.equal((await read()).total,first.total);
+	await click('[data-review-action="daily-details"]');
 	await click('.cg-weekly-review-day'); await key('ArrowRight'); await key('Enter');
 	assert.ok(await evaluate("document.querySelector('.cg-weekly-review-day[aria-pressed=true]')?.dataset.reviewDay===document.activeElement?.dataset.reviewDay"));
-	const group = await evaluate("document.querySelector('[data-review-group-key]')?.dataset.reviewGroupKey");
-	if(group){await click('[data-review-group-key]');assert.ok(await evaluate("document.querySelector('[data-review-action=clear-group]')!==null"));await click('[data-review-action=clear-group]');}
+	const group = await evaluate("document.querySelector('[data-analysis-node]')?.dataset.analysisNode");
+	if(group){await click('[data-analysis-node]');assert.ok(await evaluate("document.querySelector('[data-review-action=clear-group]')!==null"));await click('[data-review-action=clear-group]');}
 	evidence.filtersAndKeyboard = true;
 	await evaluate("app.plugins.plugins['contribution-graph-local'].activityService.getWeeklyReview=()=>{throw Error('界面验收读取失败')}");
 	await click('[data-review-action="refresh"]'); assert.ok((await read()).error.includes('上一次成功快照')); assert.equal((await read()).total,first.total);
@@ -97,8 +99,8 @@ try {
 		await call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
 		await evaluate(`(()=>{const m=${modal};const day=m.snapshot.days.find(d=>d.date===m.snapshot.today)||m.snapshot.days[0];m.selectedDay=day.date;m.render();m.scrollEl.scrollTop=0;m.modalEl.focus()})()`);
 		await evaluate(`document.body.classList.toggle('theme-dark',${dark});document.body.classList.toggle('theme-light',${!dark});document.body.style.setProperty('--font-text','霞鹜文楷等宽')`); await wait(100);
-		const layout=await evaluate(`(()=>{const m=${modal},r=m.rootEl,b=m.scrollEl,header=r.querySelector('.cg-weekly-review-header');return {width:r.clientWidth,overflow:r.scrollWidth>r.clientWidth+1||b.scrollWidth>b.clientWidth+1,font:getComputedStyle(r).fontFamily,trendBottom:r.querySelector('.cg-weekly-review-day-detail').getBoundingClientRect().bottom,bodyBottom:b.getBoundingClientRect().bottom,headerTop:header.getBoundingClientRect().top}})()`);
-		assert.ok(!layout.overflow,`${width}px 不能横向溢出`);assert.ok(layout.font.includes('霞鹜文楷'));if(width===1200)assert.ok(layout.trendBottom<=layout.bodyBottom,'桌面首屏应显示完整趋势');
+		const layout=await evaluate(`(()=>{const m=${modal},r=m.rootEl,b=m.scrollEl,header=r.querySelector('.cg-weekly-review-header');return {width:r.clientWidth,overflow:r.scrollWidth>r.clientWidth+1||b.scrollWidth>b.clientWidth+1,font:getComputedStyle(r).fontFamily,structureBottom:r.querySelector('.cg-weekly-sunburst').getBoundingClientRect().bottom,bodyBottom:b.getBoundingClientRect().bottom,headerTop:header.getBoundingClientRect().top}})()`);
+		assert.ok(!layout.overflow,`${width}px 不能横向溢出`);assert.ok(layout.font.includes('霞鹜文楷'));if(width===1200)assert.ok(layout.structureBottom<=layout.bodyBottom,'桌面首屏应显示投入结构图');
 		evidence[`layout${width}`]=layout;
 		const screenshot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile(`dist/weekly-review-ui-${width}.png`,Buffer.from(screenshot.data,'base64'));
 	}
