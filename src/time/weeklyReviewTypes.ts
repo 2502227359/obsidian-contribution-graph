@@ -27,7 +27,25 @@ export interface WeeklyReviewComparison {
 	previousDays: readonly WeeklyReviewDay[];
 }
 
+export interface WeeklyReviewHour {
+	date: string;
+	hour: number;
+	seconds: number;
+	documents: readonly TimeDocumentStats[];
+	coverage: WeeklyReviewCoverage;
+	future: boolean;
+	timezoneWarning: boolean;
+}
+
+export interface WeeklyReviewTimeline {
+	fromDate: string;
+	toDate: string;
+	days: readonly WeeklyReviewDay[];
+	hours: readonly WeeklyReviewHour[];
+}
+
 export interface WeeklyReviewSnapshot {
+	timeline?: WeeklyReviewTimeline;
 	generatedAt: number;
 	today: string;
 	weekStart: string;

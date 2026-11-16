@@ -172,7 +172,7 @@ function buildComparison(
 function aggregatePeriod(days: readonly WeeklyReviewDay[], groupingRoot: string, groupingDepth: 1 | 2): Map<string, PeriodGroup> {
 	const groups = new Map<string, PeriodGroup>();
 	for (const day of days) for (const item of day.documents) {
-		const descriptor = describeGroup(item.path, groupingRoot, groupingDepth);
+		const descriptor = getWeeklyReviewPathGroup(item.path, groupingRoot, groupingDepth);
 		const group = groups.get(descriptor.id) || { descriptor, seconds: 0, documents: new Map(), hasPositiveRecord: false };
 		group.seconds += item.seconds;
 		group.documents.set(item.path, (group.documents.get(item.path) || 0) + item.seconds);
@@ -207,7 +207,7 @@ function compareRows(left: WeeklyReviewComparisonRow, right: WeeklyReviewCompari
 	return Math.max(right.currentSeconds, right.previousSeconds) - Math.max(left.currentSeconds, left.previousSeconds) || left.id.localeCompare(right.id);
 }
 
-function describeGroup(rawPath: string, groupingRoot: string, groupingDepth: 1 | 2): GroupDescriptor {
+export function getWeeklyReviewPathGroup(rawPath: string, groupingRoot: string, groupingDepth: 1 | 2): GroupDescriptor {
 	if (isYoloChatActivity(rawPath)) return { id: "activity:yolo", name: YOLO_CHAT_ACTIVITY_LABEL, path: YOLO_CHAT_ACTIVITY_PATH, activity: true };
 	const path = normalizePath(rawPath);
 	const parts = splitPath(path), directories = parts.slice(0, -1);

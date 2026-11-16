@@ -39,6 +39,11 @@ describe("时长统计的保存与查询", () => {
 		const report = service.getWeeklyReview({root: "笔记"});
 		expect(report.totalSeconds).toBe(15);
 		expect(report.days).toHaveLength(7);
+		const extended = service.getWeeklyReview({root: "笔记"}, true);
+		expect(extended.timeline?.days).toHaveLength(28);
+		expect(extended.timeline?.hours).toHaveLength(168);
+		expect(extended.totalSeconds).toBe(report.totalSeconds);
+		extended.timeline!.hours.find(hour => hour.documents.length)!.documents[0].seconds = 888;
 		report.documents[0].seconds = 999;
 		expect(service.getDailyTimeStats()).toEqual(before);
 		expect(plugin.app.vault.adapter.write).toHaveBeenCalledTimes(writes);

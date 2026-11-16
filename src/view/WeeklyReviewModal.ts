@@ -11,10 +11,11 @@ import type {
 } from "../time/weeklyReviewTypes";
 import { mountDatePicker } from "./datePicker/DatePicker";
 import { WeeklyReviewCharts, WeeklyReviewChartSelection } from "./weeklyReviewCharts";
+import { WeeklyReviewTimelineCharts } from "./weeklyReviewTimelineCharts";
 import type { TimeDocumentStats } from "../time/types";
 
 interface WeeklyReviewService {
-	getWeeklyReview(query?: WeeklyReviewQuery): WeeklyReviewSnapshot;
+	getWeeklyReview(query?: WeeklyReviewQuery, includeTimeline?: boolean): WeeklyReviewSnapshot;
 	getSettings(): { trackedFolders: string[]; timeTrackingEnabled: boolean };
 }
 
@@ -51,6 +52,8 @@ export class WeeklyReviewModal extends Modal {
 	private goalText = "60";
 	private goalError = "";
 	private charts?: WeeklyReviewCharts;
+	private timelineCharts?: WeeklyReviewTimelineCharts;
+	private panel: "analysis" | "timeline" = "analysis";
 	private chartSelection?: WeeklyReviewChartSelection;
 	private comparisonPeriod: "current" | "previous" = "current";
 	private dailyOpen = false;
@@ -94,6 +97,8 @@ export class WeeklyReviewModal extends Modal {
 		this.closeDatePicker();
 		this.charts?.dispose();
 		this.charts = undefined;
+		this.timelineCharts?.dispose();
+		this.timelineCharts = undefined;
 		this.chartSelection = undefined;
 		this.contentEl.empty();
 		if (this.originalFocus?.isConnected) this.originalFocus.focus({ preventScroll: true });
@@ -124,7 +129,7 @@ export class WeeklyReviewModal extends Modal {
 		if (this.closed) return;
 		const request = query || this.getQuery();
 		try {
-			const next = this.service.getWeeklyReview(request);
+			const next = this.service.getWeeklyReview(request, true);
 			this.snapshot = next;
 			this.errorMessage = "";
 			this.failedRequest = undefined;
@@ -156,6 +161,7 @@ export class WeeklyReviewModal extends Modal {
 			? this.rootEl.ownerDocument.activeElement as HTMLElement : undefined;
 		this.closeDatePicker();
 		this.charts?.el.remove();
+		this.timelineCharts?.el.remove();
 		this.rootEl.empty();
 		this.renderHeader();
 		this.renderError();
@@ -333,6 +339,7 @@ export class WeeklyReviewModal extends Modal {
 		if (!this.rootEl || !this.snapshot || this.closed) return;
 		const scrollTop = this.scrollEl?.scrollTop || 0;
 		this.charts?.el.remove();
+		this.timelineCharts?.el.remove();
 		this.scrollEl?.querySelector(".cg-weekly-review-report")?.remove();
 		this.renderReport(this.snapshot);
 		if (this.scrollEl) this.scrollEl.scrollTop = scrollTop;
@@ -341,10 +348,22 @@ export class WeeklyReviewModal extends Modal {
 	private renderReport(snapshot: WeeklyReviewSnapshot): void {
 		const report = this.scrollEl!.createDiv({ cls: "cg-weekly-review-report" });
 		this.renderOverview(report, snapshot);
-		if (!this.charts) this.charts = new WeeklyReviewCharts(report.ownerDocument, selection => this.selectAnalysis(selection));
-		report.appendChild(this.charts.el);
+		this.renderChartTabs(report);
 		const roots = normalizeTrackedFolders(this.service.getSettings().trackedFolders);
-		this.charts.update(snapshot, {groupingRoot: snapshot.root || (roots.length === 1 ? roots[0] : ""), depth: this.depth});
+		const options = {groupingRoot: snapshot.root || (roots.length === 1 ? roots[0] : ""), depth: this.depth};
+		if (this.panel === "analysis") {
+			if (!this.charts) this.charts = new WeeklyReviewCharts(report.ownerDocument, selection => this.selectAnalysis(selection));
+			report.appendChild(this.charts.el);
+			this.charts.update(snapshot, options);
+		} else {
+			if (!this.timelineCharts) this.timelineCharts = new WeeklyReviewTimelineCharts(report.ownerDocument, selection => this.selectAnalysis(selection));
+			report.appendChild(this.timelineCharts.el);
+			this.timelineCharts.update(snapshot, options);
+		}
+		const panel = this.panel === "analysis" ? this.charts!.el : this.timelineCharts!.el;
+		panel.id="cg-weekly-review-chart-panel";
+		panel.setAttribute("role","tabpanel");
+		panel.setAttribute("aria-label",this.panel === "analysis" ? "投入分析" : "趋势与时段");
 		this.renderDocuments(report, snapshot);
 		const daily = report.createEl("details", { cls: "cg-weekly-review-daily-details" });
 		daily.open = this.dailyOpen;
@@ -353,6 +372,22 @@ export class WeeklyReviewModal extends Modal {
 		summary.dataset.reviewAction = "daily-details";
 		this.renderDailyTrend(daily, snapshot);
 		this.renderNotes(report, snapshot);
+	}
+
+	private renderChartTabs(parent: HTMLElement): void {
+		const tabs = parent.createDiv({cls:"cg-weekly-review-tabs",attr:{role:"tablist","aria-label":"分析视图"}});
+		for (const [id, label] of [["analysis","投入分析"],["timeline","趋势与时段"]] as const) {
+			const button = tabs.createEl("button",{text:label,attr:{type:"button",role:"tab","aria-selected":String(this.panel===id),tabindex:this.panel===id?"0":"-1"}});
+			button.dataset.reviewAction=`panel-${id}`;
+			button.setAttribute("aria-controls","cg-weekly-review-chart-panel");
+			button.onclick=()=>{this.resetAnalysisSelection();this.panel=id;this.refreshReport();this.rootEl?.querySelector<HTMLElement>(`[data-review-action="panel-${id}"]`)?.focus({preventScroll:true});};
+			button.onkeydown=event=>{
+				if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key)) return;
+				event.preventDefault();
+				const next=event.key==="Home"?"analysis":event.key==="End"?"timeline":id==="analysis"?"timeline":"analysis";
+				tabs.querySelector<HTMLButtonElement>(`[data-review-action="panel-${next}"]`)?.click();
+			};
+		}
 	}
 
 	private selectAnalysis(selection: WeeklyReviewChartSelection | undefined): void {
@@ -365,6 +400,7 @@ export class WeeklyReviewModal extends Modal {
 		this.chartSelection = undefined;
 		this.comparisonPeriod = "current";
 		this.charts?.clearSelection();
+		this.timelineCharts?.clearSelection();
 	}
 
 	private refreshDocuments(): void {
@@ -463,7 +499,8 @@ export class WeeklyReviewModal extends Modal {
 		clear.dataset.reviewAction = "clear-group";
 		clear.onclick = () => {
 			this.resetAnalysisSelection();
-			this.charts?.el.querySelector<HTMLElement>("[data-analysis-node], [data-analysis-comparison]")?.focus({preventScroll: true});
+			const active = this.panel === "analysis" ? this.charts?.el : this.timelineCharts?.el;
+			active?.querySelector<HTMLElement>("button, select")?.focus({preventScroll: true});
 		};
 	}
 
