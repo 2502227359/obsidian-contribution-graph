@@ -1,4 +1,13 @@
 const PALETTE = ["#85a1d5", "#69aca3", "#ae99c9", "#cea477", "#c891a0", "#9caf82", "#89acba", "#bc9b84"];
+let chartHeadingSequence = 0;
+
+/** 宿主把 aria-label 当作悬浮提示，改用标题关联保留可读名称。 */
+export function labelReviewChart(host:HTMLElement,heading:HTMLElement):void {
+	if(!heading.id)heading.id=`cg-review-chart-heading-${++chartHeadingSequence}`;
+	host.setAttribute("role","img");
+	host.setAttribute("aria-labelledby",heading.id);
+}
+
 export function colorFor(id:string):string {if(id==="notes")return "#85a1d5";if(id==="activity:yolo")return "#69aca3";let hash=0;for(let i=0;i<id.length;i++)hash=(hash*31+id.charCodeAt(i))>>>0;return PALETTE[hash%PALETTE.length];}
 export function axisDuration(seconds: number): string {
 	if (!seconds) return "0";

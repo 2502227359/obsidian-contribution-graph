@@ -1,13 +1,13 @@
 import * as echarts from "echarts/core";
 import { LineChart, ScatterChart } from "echarts/charts";
-import { AriaComponent, GridComponent, TooltipComponent } from "echarts/components";
+import { GridComponent, TooltipComponent } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import type { WeeklyReviewRankPoint, WeeklyReviewRanking, WeeklyReviewRankingGroup, WeeklyReviewRankingWindow } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewChartSelection } from "./weeklyReviewCharts";
-import { colorFor, detailDuration } from "./weeklyReviewChartStyle";
+import { colorFor, detailDuration, labelReviewChart } from "./weeklyReviewChartStyle";
 
-echarts.use([LineChart, ScatterChart, GridComponent, TooltipComponent, AriaComponent, SVGRenderer]);
+echarts.use([LineChart, ScatterChart, GridComponent, TooltipComponent, SVGRenderer]);
 
 interface Theme { text: string; muted: string; border: string; background: string; font: string; }
 interface PointRef { series: WeeklyReviewRankingGroup; point: WeeklyReviewRankPoint; window: WeeklyReviewRankingWindow; index: number; }
@@ -37,14 +37,14 @@ export class WeeklyReviewRankingChart {
 		this.win = owner.defaultView as Window & typeof globalThis;
 		this.el = owner.createElement("section"); this.el.className = "cg-review-ranking";
 		const heading = this.el.appendChild(owner.createElement("div")); heading.className = "cg-review-ranking-heading";
-		heading.appendChild(owner.createElement("h3")).textContent = "四周排名";
+		const title=heading.appendChild(owner.createElement("h3"));title.textContent = "四周排名";
 		heading.appendChild(owner.createElement("span")).textContent = "相同周进度 · 空心点需核对";
 		const controls = this.el.appendChild(owner.createElement("div")); controls.className = "cg-review-ranking-controls";
 		this.groupSelect = this.createSelect(controls, "排名分组", "group", () => this.changeGroup());
 		this.windowSelect = this.createSelect(controls, "排名区间", "window", () => this.changeWindow());
 		this.legend = this.el.appendChild(owner.createElement("div")); this.legend.className = "cg-review-ranking-legend";
 		this.host = this.el.appendChild(owner.createElement("div")); this.host.className = "cg-review-ranking-chart";
-		this.host.setAttribute("role", "img"); this.host.setAttribute("aria-label", "四周投入排名轨迹");
+		labelReviewChart(this.host,title);
 		this.detail = this.el.appendChild(owner.createElement("div")); this.detail.className = "cg-review-ranking-detail"; this.detail.setAttribute("aria-live", "polite");
 		this.motion = this.win.matchMedia("(prefers-reduced-motion: reduce)"); this.motion.addEventListener("change", this.motionChanged);
 		this.resizeObserver = new this.win.ResizeObserver(() => this.scheduleResize()); this.resizeObserver.observe(this.host);
@@ -116,7 +116,7 @@ export class WeeklyReviewRankingChart {
 		const maxRank = Math.max(1, ...model.groups.map(series => series.points.reduce((max, point) => Math.max(max, point.rank || 0), 0)));
 		const line: object[] = [], dots: object[] = [];
 		for (const series of groups) { for (const run of comparableRuns(series, model.windows)) line.push(this.lineSeries(series, run)); dots.push(this.dotSeries(series, model.windows)); }
-		return {animation:!this.motion.matches, animationDuration:520, animationDurationUpdate:300, animationEasing:"cubicOut", animationEasingUpdate:"cubicOut", backgroundColor:"transparent", textStyle:{fontFamily:theme.font,color:theme.text}, aria:{enabled:true},
+		return {animation:!this.motion.matches, animationDuration:520, animationDurationUpdate:300, animationEasing:"cubicOut", animationEasingUpdate:"cubicOut", backgroundColor:"transparent", textStyle:{fontFamily:theme.font,color:theme.text}, aria:{enabled:false},
 			grid:{left:38,right:14,top:18,bottom:38}, xAxis:{type:"category",data:model.windows.map(window => periodLabel(window.fromDate, window.toDate)),axisTick:{show:false},axisLine:{lineStyle:{color:theme.border}},axisLabel:{color:theme.muted,interval:0,rotate:model.windows.length > 3 ? 18 : 0}},
 			yAxis:{type:"value",inverse:true,min:1,max:Math.max(2,maxRank),interval:Math.max(1,Math.ceil(maxRank/6)),axisLabel:{color:theme.muted,formatter:(value:number) => `第${value}名`},splitLine:{lineStyle:{color:theme.border,type:"dashed"}}},
 			tooltip:{confine:true,renderMode:"richText",backgroundColor:theme.background,borderColor:theme.border,textStyle:{fontFamily:theme.font},formatter:(params:unknown) => this.tooltip(params)},

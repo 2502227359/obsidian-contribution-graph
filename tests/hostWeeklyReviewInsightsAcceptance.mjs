@@ -39,6 +39,13 @@ async function key(key, code = key) {
 
 const modal="app.plugins.plugins['contribution-graph-local'].weeklyReviewModals.values().next().value";
 const evidence={};let initialized=false;
+async function assertChartName(selector,name){
+	const {root}=await call('DOM.getDocument');
+	const {nodeId}=await call('DOM.querySelector',{nodeId:root.nodeId,selector});
+	assert.ok(nodeId,selector);
+	const {nodes}=await call('Accessibility.getPartialAXTree',{nodeId,fetchRelatives:false});
+	assert.equal(nodes[0].name?.value,name,'图表保留简洁无障碍名称');
+}
 function fixture(base,root,mode){
 	const stamp=index=>{const d=new Date('2026-10-26T12:00:00');d.setDate(d.getDate()+index);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 	const days=Array.from({length:28},(_,index)=>{
@@ -61,6 +68,7 @@ try{
 	await evaluate(`(()=>{const p=app.plugins.plugins['contribution-graph-local'];window.__insightsQA={query:p.activityService.getWeeklyReview,settings:JSON.stringify(p.activityService.getSettings()),font:document.body.style.getPropertyValue('--font-text'),dark:document.body.classList.contains('theme-dark'),light:document.body.classList.contains('theme-light'),reads:0,mode:'ready',base:p.activityService.getWeeklyReview({},true)};for(const m of p.weeklyReviewModals.values())m.close();app.setting.close();return true})()`);initialized=true;
 	await evaluate(`(()=>{const s=app.plugins.plugins['contribution-graph-local'].activityService;s.getWeeklyReview=function(query={}){window.__insightsQA.reads++;return (${fixture.toString()})(window.__insightsQA.base,query.root||'',window.__insightsQA.mode)};document.body.style.setProperty('--font-text','霞鹜文楷等宽');app.commands.executeCommandById('contribution-graph-local:weekly-review');const m=app.plugins.plugins['contribution-graph-local'].weeklyReviewModals.values().next().value;m.service={getWeeklyReview:(...args)=>s.getWeeklyReview(...args),getSettings:()=>({...s.getSettings(),trackedFolders:['临床医学']})};m.refreshSnapshot();return true})()`);await wait(600);
 	assert.equal(await evaluate(`${modal}.rootEl.querySelectorAll('[data-review-observation]').length`),3);
+	await assertChartName('.cg-weekly-sunburst','投入结构');await assertChartName('.cg-weekly-comparison','同期对比');
 	await call('Emulation.setDeviceMetricsOverride',{width:1200,height:850,deviceScaleFactor:1,mobile:false});
 	await evaluate(`${modal}.scrollEl.scrollTop=0`);await wait(600);
 	await writeFile('dist/weekly-insights-overview-1200.png',Buffer.from((await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})).data,'base64'));
@@ -79,6 +87,14 @@ try{
 	await click('[data-review-observation="hour"]');
 	assert.ok(await evaluate(`${modal}.panel==='timeline'&&${modal}.chartSelection.kind==='hour'&&${modal}.chartSelection.documents.reduce((s,d)=>s+d.seconds,0)===2800`));
 	assert.ok(await evaluate(`${modal}.timelineCharts.heatmap.getOption().series[0].data.some(d=>d.itemStyle.opacity<1)`));
+	await assertChartName('.cg-weekly-timeline .cg-timeline-chart','四周趋势');
+	await assertChartName('.cg-weekly-timeline .cg-timeline-section:nth-child(2) .cg-timeline-chart','一周时段');
+	const hover=await evaluate(`(()=>{const c=${modal}.timelineCharts;c.heat.host.scrollIntoView({block:'center'});const r=c.heat.host.getBoundingClientRect(),p=c.heatmap.convertToPixel({seriesIndex:0},[18,0]);return {x:r.left+p[0],y:r.top+p[1]}})()`);
+	await call('Input.dispatchMouseEvent',{type:'mouseMoved',...hover});await wait(800);
+	assert.ok(await evaluate(`${modal}.timelineCharts.heat.host.textContent.includes('2026-11-16 18:00–19:00')`),'保留日期及小时明细提示');
+	assert.equal(await evaluate(`document.querySelectorAll('.tooltip').length`),0,'图表悬浮不再出现第二层宿主提示');
+	await writeFile('dist/weekly-review-simple-tooltip.png',Buffer.from((await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})).data,'base64'));
+	await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0});evidence.simpleTooltipAndAccessibleNames=true;
 	await evaluate(`(()=>{const c=${modal}.timelineCharts;c.modeSelect.value='groups';c.modeSelect.dispatchEvent(new Event('change'));c.groupSelect.value='activity:yolo';c.groupSelect.dispatchEvent(new Event('change'));c.trend.host.scrollIntoView({block:'center'});return true})()`);await wait(600);
 	const area=await evaluate(`(()=>{const c=${modal}.timelineCharts,r=c.trend.host.getBoundingClientRect(),p=c.area.convertToPixel({seriesIndex:0},[21,300]);return {x:r.left+p[0],y:r.top+p[1]}})()`);
 	await call('Input.dispatchMouseEvent',{type:'mousePressed',...area,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...area,button:'left',clickCount:1});await wait(80);
@@ -88,6 +104,7 @@ try{
 	await click('[data-review-action="compare-view-ranking"]');await wait(600);
 	const ranking=await evaluate(`(()=>{const m=${modal},c=m.rankingChart;window.__insightsQA.chart=c.chart;return {svg:c.el.querySelectorAll('svg').length,font:c.chart.getOption().textStyle.fontFamily,lines:c.chart.getOption().series.filter(s=>s.type==='line').length,windows:c.model.windows.map(w=>[w.fromDate,w.toDate]),animation:c.chart.getOption().animationDuration}})()`);
 	assert.equal(ranking.svg,1);assert.ok(ranking.font.includes('霞鹜文楷'));assert.ok(ranking.lines>0);assert.equal(ranking.animation,520);evidence.ranking=ranking;
+	await assertChartName('.cg-review-ranking-chart','四周排名');
 	const point=await evaluate(`(()=>{const c=${modal}.rankingChart;c.host.scrollIntoView({block:'center'});const o=c.chart.getOption(),index=o.series.findIndex(s=>s.id==='dots-activity:yolo'),r=c.host.getBoundingClientRect(),p=c.chart.convertToPixel({seriesIndex:index},[3,c.model.groups.find(g=>g.activity).points[3].rank]);return {x:r.left+p[0],y:r.top+p[1]}})()`);
 	await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});await wait(80);
 	assert.ok(await evaluate(`${modal}.chartSelection?.kind==='ranking'&&${modal}.chartSelection.activity&&${modal}.rootEl.querySelectorAll('[data-review-path]').length===0`));

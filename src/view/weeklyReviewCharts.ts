@@ -1,6 +1,6 @@
 import * as echarts from "echarts/core";
 import { CustomChart, ScatterChart, SunburstChart } from "echarts/charts";
-import { AriaComponent, GridComponent, TooltipComponent } from "echarts/components";
+import { GridComponent, TooltipComponent } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { EChartsType, EChartsCoreOption } from "echarts/core";
 import type { CustomSeriesRenderItem } from "echarts";
@@ -9,12 +9,12 @@ import type { WeeklyReviewAnalysis, WeeklyReviewAnalysisNode, WeeklyReviewCompar
 import type { WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { TimeDocumentStats } from "../time/types";
 import { formatDuration } from "../time/timeData";
-import { colorFor, axisDuration, detailDuration } from "./weeklyReviewChartStyle";
+import { colorFor, axisDuration, detailDuration, labelReviewChart } from "./weeklyReviewChartStyle";
 import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import { renderWeeklyChangeGroups } from "./weeklyReviewInsightDetails";
 
-echarts.use([SunburstChart, ScatterChart, CustomChart, GridComponent, TooltipComponent, AriaComponent, SVGRenderer]);
+echarts.use([SunburstChart, ScatterChart, CustomChart, GridComponent, TooltipComponent, SVGRenderer]);
 
 export interface WeeklyReviewChartSelection {
 	kind: "structure" | "comparison" | "trend" | "hour" | "ranking";
@@ -127,11 +127,11 @@ export class WeeklyReviewCharts {
 	private createSection(title: string, description: string): Section {
 		const section = this.owner.createElement("section"); section.className = "cg-weekly-analysis-section";
 		const header = section.appendChild(this.owner.createElement("div")); header.className = "cg-weekly-analysis-heading";
-		header.appendChild(this.owner.createElement("h3")).textContent = title;
+		const heading=header.appendChild(this.owner.createElement("h3"));heading.textContent = title;
 		const hint = header.appendChild(this.owner.createElement("span")); hint.className = "cg-weekly-analysis-hint"; hint.textContent = description;
 		const body = section.appendChild(this.owner.createElement("div")); body.className = "cg-weekly-analysis-body";
 		const wrap = body.appendChild(this.owner.createElement("div")); wrap.className = "cg-analysis-chart-wrap";
-		const host = wrap.appendChild(this.owner.createElement("div")); host.setAttribute("role", "img"); host.setAttribute("aria-label",title);
+		const host = wrap.appendChild(this.owner.createElement("div")); labelReviewChart(host,heading);
 		const list = body.appendChild(this.owner.createElement("div")); list.className = "cg-weekly-analysis-list";
 		this.el.appendChild(section);
 		return {hint,host,list};
@@ -148,7 +148,7 @@ export class WeeklyReviewCharts {
 		const theme = this.theme();
 		return {animation:!this.motion.matches, animationDuration:520, animationDurationUpdate:300,
 			animationEasing:"cubicOut", animationEasingUpdate:"cubicOut", backgroundColor:"transparent",
-			textStyle:{fontFamily:theme.font,color:theme.text}, aria:{enabled:true},
+			textStyle:{fontFamily:theme.font,color:theme.text}, aria:{enabled:false},
 			tooltip:{confine:true,renderMode:"richText",textStyle:{fontFamily:theme.font},formatter:(params:unknown)=>this.tooltipText(params)}};
 	}
 

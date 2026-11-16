@@ -1,15 +1,15 @@
 import * as echarts from "echarts/core";
 import { HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
-import { AriaComponent, GridComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
+import { GridComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import { buildWeeklyTrendGroups, groupWeeklyReviewHours } from "../time/weeklyReviewTimeline";
 import type { WeeklyReviewTimeBin, WeeklyTrendGroup } from "../time/weeklyReviewTimeline";
 import type { WeeklyReviewDay, WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { WeeklyReviewChartSelection } from "./weeklyReviewCharts";
-import { axisDuration, colorFor, detailDuration } from "./weeklyReviewChartStyle";
+import { axisDuration, colorFor, detailDuration, labelReviewChart } from "./weeklyReviewChartStyle";
 
-echarts.use([LineChart, HeatmapChart, ScatterChart, GridComponent, TooltipComponent, VisualMapComponent, AriaComponent, SVGRenderer]);
+echarts.use([LineChart, HeatmapChart, ScatterChart, GridComponent, TooltipComponent, VisualMapComponent, SVGRenderer]);
 
 interface ChartSection { host: HTMLElement; controls: HTMLElement; detail: HTMLElement; }
 interface Theme { text:string; muted:string; border:string; background:string; font:string; }
@@ -98,11 +98,11 @@ export class WeeklyReviewTimelineCharts {
 	private section(title:string,hint:string):ChartSection {
 		const section=this.el.appendChild(this.owner.createElement("section"));section.className="cg-timeline-section";
 		const header=section.appendChild(this.owner.createElement("div"));header.className="cg-timeline-heading";
-		header.appendChild(this.owner.createElement("h3")).textContent=title;
+		const heading=header.appendChild(this.owner.createElement("h3"));heading.textContent=title;
 		header.appendChild(this.owner.createElement("span")).textContent=hint;
 		const controls=section.appendChild(this.owner.createElement("div"));controls.className="cg-timeline-controls";
 		const host=section.appendChild(this.owner.createElement("div"));host.className="cg-timeline-chart";
-		host.setAttribute("role","img");host.setAttribute("aria-label",title);
+		labelReviewChart(host,heading);
 		const detail=section.appendChild(this.owner.createElement("div"));detail.className="cg-timeline-detail";detail.setAttribute("aria-live","polite");
 		return {host,controls,detail};
 	}
@@ -130,7 +130,7 @@ export class WeeklyReviewTimelineCharts {
 	private baseOption():EChartsCoreOption {
 		const theme=this.theme();
 		return {animation:!this.motion.matches,animationDuration:520,animationDurationUpdate:300,animationEasing:"cubicOut",animationEasingUpdate:"cubicOut",
-			backgroundColor:"transparent",textStyle:{fontFamily:theme.font,color:theme.text},aria:{enabled:true},
+			backgroundColor:"transparent",textStyle:{fontFamily:theme.font,color:theme.text},aria:{enabled:false},
 			tooltip:{confine:true,renderMode:"richText",backgroundColor:theme.background,borderColor:theme.border,textStyle:{fontFamily:theme.font,color:theme.text}}};
 	}
 
