@@ -172,6 +172,13 @@ function comparisonState(data: StoredTimeActivity, coverageData: StoredTimeActiv
 	return "READY";
 }
 
+/** 扩展报告的同进度窗口复用原比较规则，不重算或改写累计。 */
+export function getWeeklyReviewComparisonState(data: StoredTimeActivity, comparison: WeeklyReviewComparison, root: string, now: number): WeeklyReviewComparison["state"] {
+	if (!comparison.currentDays.length) return "NO_COMPLETED_DAYS";
+	const range = createRange({date:comparison.fromDate,root},now);
+	return comparisonState(data,reviewCoverageData(data,range),comparison);
+}
+
 function documentRows(values: Map<string, number>): TimeDocumentStats[] {
 	return [...values].map(([path, seconds]) => ({ path, seconds }))
 		.sort((a, b) => b.seconds - a.seconds || a.path.localeCompare(b.path));

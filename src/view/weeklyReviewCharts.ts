@@ -10,11 +10,14 @@ import type { WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { TimeDocumentStats } from "../time/types";
 import { formatDuration } from "../time/timeData";
 import { colorFor, axisDuration, detailDuration } from "./weeklyReviewChartStyle";
+import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
+import type { WeeklyReviewInsights } from "../time/weeklyReviewInsights";
+import { renderWeeklyChangeGroups } from "./weeklyReviewInsightDetails";
 
 echarts.use([SunburstChart, ScatterChart, CustomChart, GridComponent, TooltipComponent, AriaComponent, SVGRenderer]);
 
 export interface WeeklyReviewChartSelection {
-	kind: "structure" | "comparison" | "trend" | "hour";
+	kind: "structure" | "comparison" | "trend" | "hour" | "ranking";
 	id: string;
 	label: string;
 	activity: boolean;
@@ -43,6 +46,7 @@ export class WeeklyReviewCharts {
 	private sunburst?: EChartsType;
 	private points?: EChartsType;
 	private analysis?: WeeklyReviewAnalysis;
+	private insights?: WeeklyReviewInsights;
 	private snapshot?: WeeklyReviewSnapshot;
 	private options?: {groupingRoot: string; depth: 1 | 2};
 	private readonly nodes = new Map<string, WeeklyReviewAnalysisNode>();
@@ -77,13 +81,14 @@ export class WeeklyReviewCharts {
 		for (const target of [owner.documentElement, owner.body]) this.themeObserver.observe(target, {attributes:true, attributeFilter:["class","style"]});
 	}
 
-	update(snapshot: WeeklyReviewSnapshot, options: {groupingRoot: string; depth: 1 | 2}): void {
+	update(snapshot: WeeklyReviewSnapshot, options: {groupingRoot: string; depth: 1 | 2}, insights?:WeeklyReviewInsights): void {
 		if (this.disposed) return;
 		if (snapshot === this.snapshot && options.groupingRoot === this.options?.groupingRoot && options.depth === this.options?.depth) { this.scheduleResize(); return; }
 		const changedRange = snapshot.weekStart !== this.snapshot?.weekStart || snapshot.root !== this.snapshot?.root || options.depth !== this.options?.depth;
 		this.snapshot = snapshot;
 		this.options = options;
 		this.analysis = buildWeeklyReviewAnalysis(snapshot, {groupingRoot: options.groupingRoot, groupingDepth: options.depth});
+		this.insights = insights || buildWeeklyReviewInsights(snapshot,options);
 		this.nodes.clear();
 		indexNodes(this.analysis.tree, this.nodes);
 		if (changedRange || !this.nodes.has(this.focusId)) this.focusId = "root";
@@ -100,6 +105,9 @@ export class WeeklyReviewCharts {
 		this.onSelect(undefined);
 	}
 
+	revealStructure(id: string): void { this.selectNode(id); }
+	revealComparison(id: string, period: "current" | "previous" = "current"): void { this.selectRow(id,period); }
+
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -112,6 +120,7 @@ export class WeeklyReviewCharts {
 		this.el.remove();
 		this.nodes.clear();
 		this.analysis = undefined;
+		this.insights = undefined;
 		this.snapshot = undefined;
 	}
 
@@ -215,7 +224,9 @@ export class WeeklyReviewCharts {
 			this.points.on("click",event=>{const id=clickedId(event);if(id)this.selectRow(id,event.seriesName==="上期"?"previous":"current");});
 		}
 		this.points.setOption(this.comparisonOption(rows),{replaceMerge:["series"]});
-		for(const row of rows)this.renderComparisonRow(row);
+		renderWeeklyChangeGroups(this.comparison.list,this.insights!.changes,(target,group)=>{
+			const row=rows.find(item=>item.id===group.id);if(row)this.renderComparisonRow(row,target);
+		});
 	}
 
 	private comparisonOption(rows: readonly WeeklyReviewComparisonRow[]): EChartsCoreOption {
@@ -233,7 +244,7 @@ export class WeeklyReviewCharts {
 				{id:"previous",type:"scatter",name:"上期",symbol:"emptyCircle",symbolSize:12,data:data("previous")} ]};
 	}
 
-	private renderComparisonRow(row: WeeklyReviewComparisonRow): void {
+	private renderComparisonRow(row: WeeklyReviewComparisonRow,parent:HTMLElement): void {
 		const item=this.owner.createElement("div");item.className="cg-analysis-comparison-row";
 		const name=item.appendChild(this.owner.createElement("span"));name.textContent=row.name;name.title=row.path||row.name;
 		for(const period of ["current","previous"] as const){
@@ -246,8 +257,8 @@ export class WeeklyReviewCharts {
 			button.setAttribute("aria-pressed",String(this.selection?.kind==="comparison"&&this.selection.id===row.id&&this.selection.period===period));
 			button.onclick=()=>this.selectRow(row.id,period);
 		}
-		if(row.deltaSeconds!==undefined)item.appendChild(this.owner.createElement("small")).textContent=`差额 ${row.deltaSeconds>=0?"+":"−"}${detailDuration(Math.abs(row.deltaSeconds))}`;
-		this.comparison.list.appendChild(item);
+		if(row.deltaSeconds!==undefined)item.appendChild(this.owner.createElement("small")).textContent=`${row.deltaSeconds>0&&!row.previousSeconds?"本期新增记录":"差额"} ${row.deltaSeconds>=0?"+":"−"}${detailDuration(Math.abs(row.deltaSeconds))}`;
+		parent.appendChild(item);
 	}
 
 	private selectRow(id:string,period:"current"|"previous"):void {
@@ -267,7 +278,7 @@ export class WeeklyReviewCharts {
 		const {id,kind,period}=this.selection;
 		if(kind==="structure"){
 			const node=this.nodes.get(id)!;
-			this.onSelect({kind,id,label:node.name,activity:node.activity,documents:node.documents});return;
+			this.onSelect({kind,id,label:node.name,activity:node.activity,documents:node.documents,fromDate:this.snapshot!.weekStart,toDate:this.snapshot!.weekEnd});return;
 		}
 		const row=this.analysis!.comparison.rows.find(r=>r.id===id)!;const c=this.analysis!.comparison;
 		this.onSelect({kind,id,label:row.name,activity:row.activity,period,documents:row.currentDocuments,previousDocuments:row.previousDocuments,

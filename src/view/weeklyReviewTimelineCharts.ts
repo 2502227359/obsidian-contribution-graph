@@ -36,7 +36,8 @@ export class WeeklyReviewTimelineCharts {
 	private groups: WeeklyTrendGroup[] = [];
 	private bins: WeeklyReviewTimeBin[] = [];
 	private step: 1|2 = 1;
-	private selection?: "trend"|"hour";
+	private selection?: "trend"|"hour"|"range";
+	private hourRangeSelection?: {start:number;end:number};
 	private frame?: number;
 	private disposed = false;
 
@@ -73,12 +74,17 @@ export class WeeklyReviewTimelineCharts {
 		this.fill(this.groupSelect,[["all","全部分组"],...this.groups.map(group=>[group.id,group.name] as [string,string])]);
 		this.fill(this.dateSelect,(snapshot.timeline?.days||[]).map(day=>[day.date,day.date]));
 		this.fill(this.heatDateSelect,snapshot.days.map(day=>[day.date,day.date]));
-		if(changed){this.selection=undefined;this.dateSelect.value=latestDate(snapshot.timeline?.days||[]);this.heatDateSelect.value=latestDate(snapshot.days);}
+		if(changed){this.selection=undefined;this.hourRangeSelection=undefined;this.dateSelect.value=latestDate(snapshot.timeline?.days||[]);this.heatDateSelect.value=latestDate(snapshot.days);}
 		this.updateBins(); this.paint();
 		if(this.selection) this.emitSelection();
 	}
 
-	clearSelection():void { this.selection=undefined; this.onSelect(undefined); }
+	clearSelection():void { this.selection=undefined;this.hourRangeSelection=undefined;if(this.el.isConnected&&this.snapshot?.timeline)this.paintHeatmap();this.describeHour();this.onSelect(undefined); }
+
+	revealHours(start:number,end:number):void {
+		if(!this.snapshot?.timeline)return;
+		this.hourRangeSelection={start,end};this.selection="range";this.paintHeatmap();this.describeHour();this.emitSelection();
+	}
 
 	dispose():void {
 		if(this.disposed)return;
@@ -135,6 +141,7 @@ export class WeeklyReviewTimelineCharts {
 		if(!this.area){
 			this.area=echarts.init(this.trend.host,undefined,{renderer:"svg"});
 			this.area.on("click",event=>{if(event.componentType!=="series")return;const index=event.dataIndex as number;
+				if(this.modeSelect.value==="groups"&&this.groups.some(group=>group.id===event.seriesId)){this.groupSelect.value=String(event.seriesId);this.paintArea();}
 				this.dateSelect.value=daysAt(this.snapshot,index);this.selectTrend();});
 		}
 		const series=this.areaSeries();
@@ -187,14 +194,16 @@ export class WeeklyReviewTimelineCharts {
 			yAxis:{type:"category",inverse:true,data:days,axisTick:{show:false},axisLine:{show:false},axisLabel:{color:theme.muted,formatter:(date:string)=>date.slice(5).replace("-","/")}},
 			visualMap:{show:false,seriesIndex:[0],dimension:2,min:0,max:Math.max(1,...known.map(bin=>bin.seconds)),inRange:{color:[theme.border,"#c5d4ed","#849fc9","#546f9a"]}},
 			tooltip:{...this.baseOption().tooltip as object,formatter:(event:unknown)=>{const id=(event as {data?:{id?:string}}).data?.id;const bin=this.bins.find(item=>item.id===id);return bin?this.binDescription(bin):"";}},
-			series:[{type:"heatmap",data:known.map(bin=>({id:bin.id,value:value(bin)})),itemStyle:{borderRadius:4,borderColor:theme.background,borderWidth:3},emphasis:{itemStyle:{borderColor:theme.text,borderWidth:2}}},
+			series:[{type:"heatmap",data:known.map(bin=>({id:bin.id,value:value(bin),itemStyle:{opacity:this.binOpacity(bin)}})),itemStyle:{borderRadius:4,borderColor:theme.background,borderWidth:3},emphasis:{itemStyle:{borderColor:theme.text,borderWidth:2}}},
 				{type:"scatter",symbol:"roundRect",symbolSize:[width,height],data:unknown.map(bin=>({id:bin.id,value:value(bin),
-					itemStyle:{color:theme.background,borderColor:bin.future?theme.background:theme.border,borderWidth:1},label:{show:true,formatter:bin.future?"·":"—",color:theme.muted,fontFamily:theme.font,fontSize:11}}))}]},true);
+					itemStyle:{color:theme.background,borderColor:bin.future?theme.background:theme.border,borderWidth:1,opacity:this.binOpacity(bin)},label:{show:true,formatter:bin.future?"·":"—",color:theme.muted,fontFamily:theme.font,fontSize:11}}))}]},true);
 	}
 
+	private binOpacity(bin:WeeklyReviewTimeBin):number {return !this.hourRangeSelection||(bin.startHour>=this.hourRangeSelection.start&&bin.endHour<=this.hourRangeSelection.end)?1:.22;}
+
 	private changeTrend():void {this.paintArea();this.selectTrend();}
-	private selectTrend():void {this.selection="trend";this.describeTrend();this.emitSelection();}
-	private selectHour():void {this.selection="hour";this.describeHour();this.emitSelection();}
+	private selectTrend():void {this.selection="trend";this.hourRangeSelection=undefined;this.paintHeatmap();this.describeTrend();this.describeHour();this.emitSelection();}
+	private selectHour():void {this.selection="hour";this.hourRangeSelection=undefined;this.paintHeatmap();this.describeHour();this.emitSelection();}
 
 	private describeTrend():void {
 		const day=this.snapshot?.timeline?.days.find(item=>item.date===this.dateSelect.value);if(!day)return;
@@ -206,6 +215,7 @@ export class WeeklyReviewTimelineCharts {
 	}
 
 	private describeHour():void {
+		if(this.selection==="range"){const value=this.rangeSelection();if(value)this.heat.detail.textContent=`${value.label}　已记录 ${detailDuration(value.documents.reduce((sum,d)=>sum+d.seconds,0))}`;return;}
 		const bin=this.selectedBin();if(bin)this.heat.detail.textContent=this.binDescription(bin).split("\n").join("　");
 	}
 
@@ -217,7 +227,8 @@ export class WeeklyReviewTimelineCharts {
 	private selectedBin():WeeklyReviewTimeBin|undefined {return this.bins.find(bin=>bin.date===this.heatDateSelect.value&&bin.startHour===Number(this.hourSelect.value));}
 
 	private emitSelection():void {
-		if(this.selection==="hour"){
+		if(this.selection==="range"){this.onSelect(this.rangeSelection());}
+		else if(this.selection==="hour"){
 			const bin=this.selectedBin();if(bin)this.onSelect({kind:"hour",id:bin.id,label:`${bin.date} ${hourRange(bin.startHour,bin.endHour)}`,activity:false,documents:bin.documents});
 		}else if(this.selection==="trend"){
 			const day=this.snapshot?.timeline?.days.find(item=>item.date===this.dateSelect.value);if(!day)return;
@@ -225,6 +236,14 @@ export class WeeklyReviewTimelineCharts {
 			this.onSelect({kind:"trend",id:`${day.date}/${group?.id||"all"}`,label:`${day.date} · ${group?.name||"全部记录"}`,activity:group?.activity||false,
 				documents:group?.points.find(point=>point.date===day.date)?.documents||day.documents});
 		}
+	}
+
+	private rangeSelection():WeeklyReviewChartSelection|undefined {
+		const range=this.hourRangeSelection;if(!range||!this.snapshot)return;
+		const values=new Map<string,number>();
+		for(const bin of this.bins.filter(bin=>bin.startHour>=range.start&&bin.endHour<=range.end))for(const d of bin.documents)values.set(d.path,(values.get(d.path)||0)+d.seconds);
+		return {kind:"hour",id:`range:${range.start}/${range.end}`,label:`${this.snapshot.weekStart}—${this.snapshot.weekEnd} · ${hourRange(range.start,range.end)}`,activity:false,
+			documents:[...values].map(([path,seconds])=>({path,seconds}))};
 	}
 
 	private scheduleResize():void {

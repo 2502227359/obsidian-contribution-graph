@@ -12,6 +12,10 @@ import type {
 import { mountDatePicker } from "./datePicker/DatePicker";
 import { WeeklyReviewCharts, WeeklyReviewChartSelection } from "./weeklyReviewCharts";
 import { WeeklyReviewTimelineCharts } from "./weeklyReviewTimelineCharts";
+import { WeeklyReviewRankingChart } from "./weeklyReviewRankingChart";
+import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
+import type { WeeklyReviewInsights, WeeklyReviewInsightAction, WeeklyReviewChangeDocument } from "../time/weeklyReviewInsights";
+import { renderWeeklyObservations, renderWeeklyDocumentChanges } from "./weeklyReviewInsightDetails";
 import type { TimeDocumentStats } from "../time/types";
 
 interface WeeklyReviewService {
@@ -53,6 +57,9 @@ export class WeeklyReviewModal extends Modal {
 	private goalError = "";
 	private charts?: WeeklyReviewCharts;
 	private timelineCharts?: WeeklyReviewTimelineCharts;
+	private rankingChart?: WeeklyReviewRankingChart;
+	private insights?: WeeklyReviewInsights;
+	private comparisonView: "comparison" | "ranking" = "comparison";
 	private panel: "analysis" | "timeline" = "analysis";
 	private chartSelection?: WeeklyReviewChartSelection;
 	private comparisonPeriod: "current" | "previous" = "current";
@@ -99,6 +106,9 @@ export class WeeklyReviewModal extends Modal {
 		this.charts = undefined;
 		this.timelineCharts?.dispose();
 		this.timelineCharts = undefined;
+		this.rankingChart?.dispose();
+		this.rankingChart = undefined;
+		this.insights = undefined;
 		this.chartSelection = undefined;
 		this.contentEl.empty();
 		if (this.originalFocus?.isConnected) this.originalFocus.focus({ preventScroll: true });
@@ -347,14 +357,17 @@ export class WeeklyReviewModal extends Modal {
 
 	private renderReport(snapshot: WeeklyReviewSnapshot): void {
 		const report = this.scrollEl!.createDiv({ cls: "cg-weekly-review-report" });
-		this.renderOverview(report, snapshot);
-		this.renderChartTabs(report);
 		const roots = normalizeTrackedFolders(this.service.getSettings().trackedFolders);
 		const options = {groupingRoot: snapshot.root || (roots.length === 1 ? roots[0] : ""), depth: this.depth};
+		this.insights = buildWeeklyReviewInsights(snapshot,options);
+		this.renderOverview(report, snapshot);
+		renderWeeklyObservations(report,this.insights.observations,action=>this.revealObservation(action));
+		this.renderChartTabs(report);
 		if (this.panel === "analysis") {
 			if (!this.charts) this.charts = new WeeklyReviewCharts(report.ownerDocument, selection => this.selectAnalysis(selection));
 			report.appendChild(this.charts.el);
-			this.charts.update(snapshot, options);
+			this.charts.update(snapshot, options,this.insights);
+			this.renderComparisonView();
 		} else {
 			if (!this.timelineCharts) this.timelineCharts = new WeeklyReviewTimelineCharts(report.ownerDocument, selection => this.selectAnalysis(selection));
 			report.appendChild(this.timelineCharts.el);
@@ -372,6 +385,34 @@ export class WeeklyReviewModal extends Modal {
 		summary.dataset.reviewAction = "daily-details";
 		this.renderDailyTrend(daily, snapshot);
 		this.renderNotes(report, snapshot);
+	}
+
+	private renderComparisonView(): void {
+		const section=this.charts!.el.querySelector<HTMLElement>(".cg-weekly-comparison")!.closest<HTMLElement>(".cg-weekly-analysis-section")!;
+		section.querySelector(".cg-review-comparison-modes")?.remove();
+		const controls=section.ownerDocument.createElement("div");controls.className="cg-review-comparison-modes";controls.setAttribute("role","group");controls.setAttribute("aria-label","比较视图");section.prepend(controls);
+		for(const [mode,label] of [["comparison","同期对比"],["ranking","四周排名"]] as const){
+			const button=controls.createEl("button",{text:label,attr:{type:"button","aria-pressed":String(this.comparisonView===mode)}});button.dataset.reviewAction=`compare-view-${mode}`;
+			button.onclick=()=>{this.resetAnalysisSelection();this.comparisonView=mode;this.refreshReport();this.rootEl?.querySelector<HTMLElement>(`[data-review-action="compare-view-${mode}"]`)?.focus({preventScroll:true});};
+		}
+		for(const element of Array.from(section.querySelectorAll<HTMLElement>(":scope > .cg-weekly-analysis-heading, :scope > .cg-weekly-analysis-body")))element.hidden=this.comparisonView==="ranking";
+		if(this.comparisonView==="ranking"){
+			if(!this.rankingChart)this.rankingChart=new WeeklyReviewRankingChart(section.ownerDocument,selection=>this.selectAnalysis(selection));
+			section.appendChild(this.rankingChart.el);this.rankingChart.el.hidden=false;this.rankingChart.update(this.insights!.ranking);
+		}else if(this.rankingChart)this.rankingChart.el.hidden=true;
+	}
+
+	private revealObservation(action:WeeklyReviewInsightAction):void {
+		this.resetAnalysisSelection();this.panel=action.kind==="hour"?"timeline":"analysis";this.comparisonView="comparison";this.refreshReport();
+		let target:HTMLElement|undefined;
+		if(action.kind==="hour"){
+			const [start,end]=action.id.split("-").map(Number);this.timelineCharts?.revealHours(start,end);
+			target=this.timelineCharts?.el.querySelector<HTMLElement>('[data-timeline-control="heat-date"]')?.closest<HTMLElement>(".cg-timeline-section")||undefined;
+		}else{
+			if(action.kind==="structure")this.charts?.revealStructure(action.id);else this.charts?.revealComparison(action.id,action.period);
+			target=this.charts?.el.querySelector<HTMLElement>(action.kind==="structure"?".cg-weekly-sunburst":".cg-weekly-comparison")?.closest<HTMLElement>(".cg-weekly-analysis-section")||undefined;
+		}
+		target?.scrollIntoView({block:"start"});target?.querySelector<HTMLElement>("select, button:not(:disabled)")?.focus({preventScroll:true});
 	}
 
 	private renderChartTabs(parent: HTMLElement): void {
@@ -401,6 +442,7 @@ export class WeeklyReviewModal extends Modal {
 		this.comparisonPeriod = "current";
 		this.charts?.clearSelection();
 		this.timelineCharts?.clearSelection();
+		this.rankingChart?.clearSelection();
 	}
 
 	private refreshDocuments(): void {
@@ -485,6 +527,10 @@ export class WeeklyReviewModal extends Modal {
 		section.addClass("cg-weekly-review-documents-section");
 		if (selection) this.renderSelectionLabel(section, selection);
 		if (selection?.kind === "comparison") this.renderComparisonPeriods(section, selection);
+		if (selection?.kind === "comparison") {
+			const group=this.insights?.changes.groups.find(group=>group.id===selection.id);
+			if(group)renderWeeklyDocumentChanges(section,group,(note,period)=>this.selectComparisonNote(note,period));
+		}
 		if (!documents.length) {
 			section.createDiv({ cls: "cg-weekly-review-empty-inline", text: selection?.activity ? "YOLO 对话活动不对应笔记。" : "当前选择未见可显示的笔记记录。" });
 			return;
@@ -495,13 +541,24 @@ export class WeeklyReviewModal extends Modal {
 	}
 
 	private renderSelectionLabel(parent: HTMLElement, selection: WeeklyReviewChartSelection): void {
-		const clear = parent.createEl("button", { cls: "cg-weekly-review-clear-filter", text: `${selection.label} ×`, attr: {type: "button", "aria-label": "清除笔记筛选"} });
+		const start=selection.kind==="comparison"&&this.comparisonPeriod==="previous"?selection.previousFromDate:selection.fromDate;
+		const end=selection.kind==="comparison"&&this.comparisonPeriod==="previous"?selection.previousToDate:selection.toDate;
+		const label=start?`${start}${end&&end!==start?`—${end}`:""} · ${selection.label}`:selection.label;
+		const clear = parent.createEl("button", { cls: "cg-weekly-review-clear-filter", text: `${label} ×`, attr: {type: "button", "aria-label": "清除笔记筛选"} });
 		clear.dataset.reviewAction = "clear-group";
 		clear.onclick = () => {
 			this.resetAnalysisSelection();
 			const active = this.panel === "analysis" ? this.charts?.el : this.timelineCharts?.el;
 			active?.querySelector<HTMLElement>("button, select")?.focus({preventScroll: true});
 		};
+	}
+
+	private selectComparisonNote(note:WeeklyReviewChangeDocument,period:"current"|"previous"):void {
+		const selection=this.chartSelection;if(selection?.kind!=="comparison")return;
+		const group=this.insights?.changes.groups.find(group=>group.id===selection.id);if(!group)return;
+		this.chartSelection={...selection,label:`${group.name} · ${getFileName(note.path)}`,
+			documents:note.currentSeconds>0?[{path:note.path,seconds:note.currentSeconds}]:[],previousDocuments:note.previousSeconds>0?[{path:note.path,seconds:note.previousSeconds}]:[]};
+		this.comparisonPeriod=period;this.refreshDocuments();
 	}
 
 	private renderComparisonPeriods(parent: HTMLElement, selection: WeeklyReviewChartSelection): void {

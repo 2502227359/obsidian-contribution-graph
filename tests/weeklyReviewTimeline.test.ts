@@ -11,6 +11,18 @@ function put(d:ReturnType<typeof data>,date:string,hour:number,documents:Record<
 }
 
 describe("周回顾趋势与时段的只读派生",()=>{
+ it("排名窗口四周取同一已结束进度，并沿用覆盖与规则检查",()=>{
+  const d=data(),weekly=buildWeeklyReview(d,{root:"医"},now),timeline=buildWeeklyReviewTimeline(d,weekly,now);
+  expect(timeline.windows?.map(window=>window.days.length)).toEqual([2,2,2,2]);
+  expect(timeline.windows?.map(window=>window.toDate)).toEqual(["2026-10-27","2026-11-03","2026-11-10","2026-11-17"]);
+  expect(timeline.windows?.[3]?.previousState).toBe("READY");
+  const history=buildWeeklyReviewTimeline(d,buildWeeklyReview(d,{date:"2026-11-09",root:"医"},now),now);
+  expect(history.windows?.map(window=>window.days.length)).toEqual([7,7,7,7]);
+  d.policyChanges.push({at:stamp("2026-11-12"),idleTimeoutMinutes:5});
+  expect(buildWeeklyReviewTimeline(d,buildWeeklyReview(d,{root:"医"},now),now).windows?.[3]?.previousState).toBe("POLICY_CHANGED");
+  const monday=stamp("2026-11-16",12),empty=buildWeeklyReviewTimeline(d,buildWeeklyReview(d,{root:"医"},monday),monday);
+  expect(empty.windows?.every(window=>window.days.length===0&&window.previousState==="NO_COMPLETED_DAYS")).toBe(true);
+ });
  it("最近四个自然周共28天，所选周与原快照一致，不修改原统计",()=>{
   const d=data();put(d,"2026-10-26",9,{"医/内/甲.md":30});put(d,"2026-11-16",10,{"医/内/甲.md":90});
   const before=JSON.stringify(d),weekly=buildWeeklyReview(d,{},now),timeline=buildWeeklyReviewTimeline(d,weekly,now);

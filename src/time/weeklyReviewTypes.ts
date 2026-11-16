@@ -38,10 +38,18 @@ export interface WeeklyReviewHour {
 }
 
 export interface WeeklyReviewTimeline {
+	windows?: readonly WeeklyReviewWindow[];
 	fromDate: string;
 	toDate: string;
 	days: readonly WeeklyReviewDay[];
 	hours: readonly WeeklyReviewHour[];
+}
+
+export interface WeeklyReviewWindow {
+	fromDate: string;
+	toDate?: string;
+	days: readonly WeeklyReviewDay[];
+	previousState: WeeklyReviewComparison["state"];
 }
 
 export interface WeeklyReviewSnapshot {

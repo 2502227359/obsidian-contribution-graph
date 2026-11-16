@@ -24,6 +24,7 @@ import { WeeklyReviewModal } from "./view/WeeklyReviewModal";
 import "../style/weeklyReview.css";
 import "../style/weeklyReviewCharts.css";
 import "../style/weeklyReviewTimeline.css";
+import "../style/weeklyReviewInsights.css";
 
 export default class ContributionGraph extends Plugin {
 	activityService: EditActivityService;

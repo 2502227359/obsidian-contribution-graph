@@ -1,0 +1,37 @@
+.cg-review-ranking { min-width: 0; padding: 20px 0; border-top: 1px solid var(--background-modifier-border); }
+.cg-review-ranking-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin-bottom: 12px; }
+.cg-review-ranking-heading h3 { margin: 0; font-size: .96em; font-weight: 600; }
+.cg-review-ranking-heading span { color: var(--text-muted); font-size: .76em; }
+.cg-review-ranking-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.cg-weekly-review-modal .cg-review-ranking-controls select { min-width: 0; max-width: 100%; min-height: 32px; height: auto; border: 1px solid var(--background-modifier-border); border-radius: 7px; box-shadow: none; background: var(--background-primary); color: var(--text-normal); font: inherit; font-size: .8em; }
+.cg-review-ranking-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px; }
+.cg-weekly-review-modal .cg-review-ranking-legend button { min-height: 28px; height: auto; padding: 3px 0; border: 0; box-shadow: none; background: transparent; color: var(--text-muted); font: inherit; font-size: .76em; }
+.cg-review-ranking-legend button::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--ranking-color); }
+.cg-review-ranking-legend button[aria-pressed=true] { color: var(--text-normal); }
+.cg-review-ranking-chart { width: 100%; min-width: 0; height: 280px; }
+.cg-review-ranking-detail { min-height: 22px; color: var(--text-muted); font-size: .78em; line-height: 1.7; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+ .cg-review-ranking-controls select { flex: 1 1 120px; }
+ .cg-review-ranking-chart { height: 250px; }
+}
+@media (prefers-reduced-motion: reduce) { .cg-review-ranking * { transition: none !important; } }
+.cg-review-ranking [hidden] { display: none !important; }
+.cg-weekly-analysis-section > .cg-review-ranking { padding: 0; border: 0; }
+.cg-review-observations { display: grid; gap: 3px; padding: 0 0 16px; }
+.cg-review-observations h3 { margin: 0 0 5px; font-size: .8em; font-weight: 500; color: var(--text-muted); }
+.cg-weekly-review-modal .cg-review-observations button { display: block; width: 100%; min-height: 32px; height: auto; padding: 6px 0; border: 0; box-shadow: none; background: transparent; color: var(--text-normal); text-align: left; white-space: normal; font: inherit; font-size: .82em; line-height: 1.6; }
+.cg-review-observations button::after { content: " ›"; color: var(--text-faint); }
+.cg-review-observations button:hover { color: var(--text-accent); }
+.cg-review-comparison-modes { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 12px; }
+.cg-weekly-review-modal .cg-review-comparison-modes button { height: auto; min-height: 30px; padding: 5px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); font: inherit; font-size: .82em; }
+.cg-weekly-review-modal .cg-review-comparison-modes button[aria-pressed=true] { background: var(--background-secondary); color: var(--text-normal); }
+.cg-review-comparison-modes + .cg-weekly-analysis-heading h3 { display: none; }
+.cg-review-changes h4, .cg-review-note-changes h4 { margin: 0 0 8px; font-size: .82em; font-weight: 500; }
+.cg-review-changes h5 { margin: 12px 0 3px; font-size: .76em; color: var(--text-muted); font-weight: 500; }
+.cg-review-change-total, .cg-review-change-hint { color: var(--text-muted); font-size: .76em; line-height: 1.6; }
+.cg-review-changes summary, .cg-review-note-changes summary { font-size: .76em; color: var(--text-muted); padding: 8px 0; cursor: pointer; }
+.cg-review-note-changes { padding: 14px 0; }
+.cg-review-note-change { display: flex; flex-wrap: wrap; gap: 5px 12px; padding: 9px 0; border-bottom: 1px solid var(--background-modifier-border); }
+.cg-review-change-path { flex: 1 1 100%; overflow-wrap: anywhere; color: var(--text-muted); font-size: .76em; }
+.cg-weekly-review-modal .cg-review-note-change button { height: auto; min-height: 30px; padding: 5px 7px; border: 0; border-radius: 6px; background: var(--background-secondary); color: var(--text-normal); font: inherit; font-size: .76em; white-space: normal; }
+.cg-review-note-change small { align-self: center; color: var(--text-muted); font-size: .76em; }

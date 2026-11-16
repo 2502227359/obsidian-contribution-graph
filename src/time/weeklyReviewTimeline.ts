@@ -1,8 +1,8 @@
-import { buildWeeklyReview, shiftReviewDate } from "./weeklyReview";
+import { buildWeeklyReview, getWeeklyReviewComparisonState, shiftReviewDate } from "./weeklyReview";
 import { getTimeTrackingState, queryTimeStats } from "./timeData";
 import { getWeeklyReviewPathGroup } from "./weeklyReviewAnalysis";
 import type { StoredTimeActivity, TimeDocumentStats, TimeStats } from "./types";
-import type { WeeklyReviewCoverage, WeeklyReviewDay, WeeklyReviewHour, WeeklyReviewSnapshot, WeeklyReviewTimeline } from "./weeklyReviewTypes";
+import type { WeeklyReviewCoverage, WeeklyReviewDay, WeeklyReviewHour, WeeklyReviewSnapshot, WeeklyReviewTimeline, WeeklyReviewWindow } from "./weeklyReviewTypes";
 import { parseDate } from "../util/dateUtils";
 
 export interface WeeklyReviewTimeBin extends Omit<WeeklyReviewHour,"hour"> {
@@ -24,11 +24,19 @@ interface DayGroup {id:string;name:string;activity:boolean;seconds:number;docume
 /** 同一份统计、同一生成时间派生四周及小时数据，不结算或写入。 */
 export function buildWeeklyReviewTimeline(data:StoredTimeActivity, weekly:WeeklyReviewSnapshot, now:number):WeeklyReviewTimeline {
 	const fromDate=shiftReviewDate(weekly.weekStart,-21);
-	const days=Array.from({length:4},(_,index)=>index===3?weekly.days:buildWeeklyReview(data,{date:shiftReviewDate(fromDate,index*7),root:weekly.root},now).days).flat();
+	const reports=Array.from({length:4},(_,index)=>index===3?weekly:buildWeeklyReview(data,{date:shiftReviewDate(fromDate,index*7),root:weekly.root},now));
+	const days=reports.flatMap(report=>report.days);
+	const windows=reports.map(report=>rankingWindow(data,report,{count:weekly.comparison.currentDays.length,now}));
 	const rows=queryTimeStats(data,{fromDate:weekly.weekStart,toDate:weekly.weekEnd,folders:weekly.root?[weekly.root]:[]},now,true);
 	const index=new Map(rows.map(row=>[`${row.date}/${row.hour}`,row]));
 	const hours=weekly.days.flatMap(day=>Array.from({length:24},(_,hour)=>makeHour(data,day,hour,index.get(`${day.date}/${hour}`),{now,root:weekly.root})));
-	return {fromDate,toDate:weekly.weekEnd,days,hours};
+	return {fromDate,toDate:weekly.weekEnd,days,hours,windows};
+}
+
+function rankingWindow(data:StoredTimeActivity,report:WeeklyReviewSnapshot,context:{count:number;now:number}):WeeklyReviewWindow {
+	const days=report.days.slice(0,context.count),previous=report.comparison.previousDays.slice(0,context.count);
+	const comparison={...report.comparison,currentDays:days,previousDays:previous,toDate:days[days.length-1]?.date,referenceToDate:previous[previous.length-1]?.date};
+	return {fromDate:report.weekStart,toDate:comparison.toDate,days,previousState:getWeeklyReviewComparisonState(data,comparison,report.root,context.now)};
 }
 
 function makeHour(data:StoredTimeActivity,day:WeeklyReviewDay,hour:number,row:TimeStats|undefined,context:{now:number;root:string}):WeeklyReviewHour {
