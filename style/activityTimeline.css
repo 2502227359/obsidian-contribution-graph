@@ -54,8 +54,8 @@
 	margin-bottom: 10px;
 }
 
-.cg-activity-timeline-header h3,
-.cg-activity-timeline-chart-heading {
+.cg-activity-timeline .cg-activity-timeline-header h3,
+.cg-activity-timeline .cg-activity-timeline-chart-heading {
 	margin: 0;
 	font-size: .98em;
 	font-weight: 650;
@@ -114,11 +114,25 @@
 }
 
 .cg-activity-timeline-groups button {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
 	min-height: 27px;
 	padding: 3px 8px;
 	border-color: transparent;
 	background: var(--background-secondary);
 	font-size: .76em;
+}
+
+.cg-activity-timeline-group-swatch,
+.cg-activity-timeline-detail-swatch {
+	display: inline-block;
+	flex: 0 0 auto;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--cg-group-color, var(--cg-detail-color));
+	box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .cg-activity-timeline-selection {
@@ -132,7 +146,7 @@
 	font-size: .78em;
 }
 
-.cg-activity-timeline-chart-heading {
+.cg-activity-timeline .cg-activity-timeline-chart-heading {
 	margin: 6px 2px 3px;
 	color: var(--text-muted);
 	font-size: .78em;
@@ -175,6 +189,7 @@
 .cg-activity-timeline-detail-card {
 	padding: 11px 12px;
 	border: 1px solid var(--background-modifier-border);
+	border-inline-start: 3px solid var(--cg-detail-color, var(--interactive-accent));
 	border-radius: 10px;
 	background: color-mix(in srgb, var(--background-secondary) 54%, var(--background-primary));
 }

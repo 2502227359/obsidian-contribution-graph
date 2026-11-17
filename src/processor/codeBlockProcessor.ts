@@ -129,7 +129,7 @@ export class CodeBlockProcessor {
 			const contributionConfig = YamlGraphConfig.toContributionGraphConfig(this.buildRenderConfig(graphConfig));
 			contributionConfig.openWeeklyReview = this.openWeeklyReview;
 			this.bindActivityState(contributionConfig, graphConfig, el, app);
-			if(graphConfig.graphType==="timeline")contributionConfig.activityTimeline=createActivityTimelineOptions(app,this.activityService,contributionConfig,el.ownerDocument);
+			if(graphConfig.graphType==="timeline")contributionConfig.activityTimeline={...createActivityTimelineOptions(app,this.activityService,contributionConfig,el.ownerDocument),hostOwnsLifecycle:true};
 			if (!this.currentConfig || !Renders.update(el, contributionConfig)) Renders.render(el, contributionConfig);
 			this.currentConfig = contributionConfig;
 			this.requestedView = undefined;

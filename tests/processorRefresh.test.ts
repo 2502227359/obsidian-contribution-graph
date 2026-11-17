@@ -4,11 +4,12 @@ import { Renders } from "src/render/renders";
 import type { EditActivityChangeEvent } from "../src/activity/EditActivityService";
 
 vi.mock("obsidian-dataview", () => ({getAPI: () => undefined}));
+vi.mock("../src/view/ActivityTimelineModal", () => ({createActivityTimelineOptions: () => ({})}));
 vi.mock("obsidian", () => ({
 	MarkdownRenderChild: class { constructor(public containerEl: unknown) {} },
 	TFile: class {}, TFolder: class {}, parseYaml: JSON.parse,
 }));
-vi.mock("src/render/renders", () => ({Renders: {render: vi.fn(), update: vi.fn(() => true), renderErrorTips: vi.fn()}}));
+vi.mock("src/render/renders", () => ({Renders: {render: vi.fn(), update: vi.fn(() => true), renderErrorTips: vi.fn(), dispose: vi.fn()}}));
 
 describe("统计代码块的局部刷新接线", () => {
 	const children: {onload?: () => void; onunload?: () => void}[] = [];
@@ -17,6 +18,18 @@ describe("统计代码块的局部刷新接线", () => {
 		Object.defineProperty(globalThis, "window", {configurable: true, value: {localStorage: {getItem: () => "zh"}}});
 	});
 	afterEach(() => {children.splice(0).forEach(child => child.onunload?.()); vi.useRealTimers();});
+	it("时间轴由代码块宿主卸载，注册一个生命周期且不重复订阅", async () => {
+		const service:any={getSettings:()=>({trackedFolders:[]}),subscribe:vi.fn()};
+		const el:any={querySelector:()=>null,ownerDocument:{}};
+		const ctx:any={addChild(child:typeof children[number]){children.push(child);child.onload?.();}};
+		const config={graphType:"timeline",dateRangeType:"LATEST_DAYS",dateRangeValue:30,dataSource:{type:"TIME_ACTIVITY"}};
+		await new CodeBlockProcessor(service).renderFromCodeBlock(JSON.stringify(config),el,ctx,{} as any);
+		expect(vi.mocked(Renders.render).mock.calls[0][1].activityTimeline).toMatchObject({hostOwnsLifecycle:true});
+		expect(children).toHaveLength(1);
+		expect(service.subscribe).not.toHaveBeenCalled();
+		children.splice(0).forEach(child=>child.onunload?.());
+		expect(Renders.dispose).toHaveBeenCalledWith(el);
+	});
 
 	it("无关时长不查询，相关时长只查询变化日并接入更新入口", async () => {
 		let notify: (event: EditActivityChangeEvent) => void = () => undefined;

@@ -470,6 +470,12 @@
 	max-height: 90vh;
 	display: flex;
 	flex-direction: column;
+	box-sizing: border-box;
+	padding: 0;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-card);
+	background: var(--cg-surface);
+	box-shadow: var(--cg-shadow-float);
 	overflow: hidden;
 }
 
@@ -482,10 +488,10 @@
 	flex: 1 1 auto;
 	flex-direction: column;
 	padding: 0;
-	border: 1px solid var(--cg-border);
-	border-radius: var(--cg-radius-card);
-	background: var(--cg-surface);
-	box-shadow: var(--cg-shadow-float);
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
 	overflow: hidden;
 }
 
@@ -982,7 +988,7 @@
 @media (prefers-contrast: more) {
 	.contribution-graph .main,
 	.contribution-graph .activity-container,
-	.contribution-graph-editor-modal .modal-content,
+	.contribution-graph-editor-modal,
 	.contribution-graph-settings .cg-settings-section,
 	.contribution-graph-settings .contribution-graph-settings-section {
 		border-color: var(--background-modifier-border-hover);

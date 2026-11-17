@@ -1,6 +1,7 @@
 import type { EditActivityChangeEvent } from "../activity/EditActivityService";
 import { GraphRefreshScheduler } from "../processor/graphRefreshScheduler";
 import type { ActivityTimelineBlock, ActivityTimelineDay, ActivityTimelineViewOptions, ActivityTimelineViewState } from "../time/activityTimelineTypes";
+import { activityColor } from "./activityColors";
 import { ActivityTimelineChart } from "./activityTimelineChart";
 import type { ActivityTimelineChartRow } from "./activityTimelineChart";
 import { ActivityTimelineDetails } from "./activityTimelineDetails";
@@ -223,8 +224,9 @@ export class ActivityTimelineView {
 	}
 
 	private bindDetachObserver():void {
-		this.everConnected=this.el.isConnected;
 		this.win.addEventListener("unload",this.windowClosed);
+		if(this.options.hostOwnsLifecycle)return;
+		this.everConnected=this.el.isConnected;
 		this.detachObserver=new this.win.MutationObserver(()=>{
 			if(this.el.isConnected)this.everConnected=true;
 			else if(this.everConnected)this.dispose();
@@ -280,11 +282,21 @@ export class ActivityTimelineView {
 			const button = this.owner.createElement("button");
 			button.type = "button";
 			button.textContent = `${group.expanded ? "⌄" : "›"} ${group.name}`;
+			const marker = this.owner.createElement("span");
+			marker.className = "cg-activity-timeline-group-swatch";
+			marker.setAttribute("aria-hidden", "true");
+			const colorPath = group.id === "activity:yolo" ? "activity://yolo-chat" : group.id.replace(/^folder:/, "");
+			marker.style.setProperty("--cg-group-color", activityColor(colorPath, this.isDarkTheme()).fill);
+			button.prepend(marker);
 			button.dataset.timelineGroup = group.id;
 			button.setAttribute("aria-pressed", String(group.expanded));
 			button.onclick = () => this.toggleGroup(group.id);
 			this.groupControls.appendChild(button);
 		}
+	}
+
+	private isDarkTheme(): boolean {
+		return this.owner.documentElement.classList.contains("theme-dark") || this.owner.body?.classList.contains("theme-dark") || false;
 	}
 
 	private renderSegmentSelect(blocks: readonly ActivityTimelineBlock[]): void {

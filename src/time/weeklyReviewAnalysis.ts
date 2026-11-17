@@ -135,15 +135,30 @@ function createMutableNode(id: string, name: string, path: string | undefined, a
 
 function materialize(node: MutableNode): WeeklyReviewAnalysisNode {
 	const children = [...node.children.values()].map(materialize);
-	if (children.length && node.documents.length) {
-		const own = documentRows(node.documents);
-		children.push({ id: `direct:${node.path}`, name: "本目录直属笔记", path: node.path,
-			activity: false, seconds: sumSeconds(own), documents: own, children: [] });
+	const own = documentRows(node.documents);
+	const leaves = own.map(noteLeaf);
+	if (leaves.length) {
+		if (children.length) {
+			children.push({ id: `direct:${node.path || "workspace"}`, name: "本目录直属笔记", path: node.path,
+				activity: false, seconds: sumSeconds(own), documents: own, children: leaves });
+		} else {
+			children.push(...leaves);
+		}
 	}
-	const documents = children.length ? documentRows(children.flatMap(child => child.documents)) : documentRows(node.documents);
+	const documents = children.length ? documentRows(children.flatMap(child => child.documents)) : own;
 	children.sort(compareNodes);
 	return { id: node.id, name: node.name, ...(node.path ? {path:node.path} : {}), activity: node.activity,
 		seconds: sumSeconds(documents), documents, children };
+}
+
+function noteLeaf(document: TimeDocumentStats): WeeklyReviewAnalysisNode {
+	const path = normalizePath(document.path);
+	return { id: `note:${path}`, name: noteName(path), path, activity: false,
+		seconds: document.seconds, documents: [document], children: [] };
+}
+
+function noteName(path: string): string {
+	return (path.split("/").pop() || path).replace(/\.md$/i, "");
 }
 
 function compareNodes(left: WeeklyReviewAnalysisNode, right: WeeklyReviewAnalysisNode): number {

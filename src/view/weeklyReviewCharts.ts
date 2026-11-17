@@ -10,6 +10,7 @@ import type { WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { TimeDocumentStats } from "../time/types";
 import { formatDuration } from "../time/timeData";
 import { colorFor, detailDuration, labelReviewChart, timeAxisOptions } from "./weeklyReviewChartStyle";
+import { activityColor } from "./activityColors";
 import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import { renderWeeklyChangeGroups } from "./weeklyReviewInsightDetails";
@@ -39,6 +40,7 @@ export class WeeklyReviewCharts {
 	private readonly comparison: Section;
 	private readonly center: HTMLElement;
 	private readonly back: HTMLButtonElement;
+	private readonly root: HTMLButtonElement;
 	private readonly motion: MediaQueryList;
 	private readonly resizeObserver: ResizeObserver;
 	private readonly themeObserver: MutationObserver;
@@ -69,7 +71,13 @@ export class WeeklyReviewCharts {
 		this.back.textContent = "返回上层";
 		this.back.dataset.analysisBack = "true";
 		this.back.onclick = () => this.goBack();
-		this.structure.hint.parentElement!.append(this.back);
+		this.root = owner.createElement("button");
+		this.root.type = "button";
+		this.root.className = "cg-analysis-root";
+		this.root.textContent = "返回全部";
+		this.root.dataset.analysisRoot = "true";
+		this.root.onclick = () => this.goRoot();
+		this.structure.hint.parentElement!.append(this.back, this.root);
 		this.comparison = this.createSection("同期对比", "同一日期范围的已记录时长");
 		this.comparison.host.className = "cg-weekly-comparison";
 		this.motion = this.win.matchMedia("(prefers-reduced-motion: reduce)");
@@ -157,7 +165,8 @@ export class WeeklyReviewCharts {
 		this.structure.host.hidden = !node.seconds;
 		this.center.hidden = !node.seconds;
 		this.back.hidden = this.focusId === "root";
-		this.structure.hint.textContent = this.focusId === "root" ? "笔记与 YOLO · 点击分区下钻" : node.path || node.name;
+		this.root.hidden = this.focusId === "root";
+		this.structure.hint.textContent = breadcrumb(this.analysis!.tree, this.focusId);
 		this.center.replaceChildren();
 		const selected = this.selection?.kind === "structure" ? this.nodes.get(this.selection.id) : undefined;
 		this.center.appendChild(this.owner.createElement("strong")).textContent = formatDuration((selected || node).seconds);
@@ -169,8 +178,8 @@ export class WeeklyReviewCharts {
 		}
 		const entries = node.children.filter(child=>child.seconds>0);
 		this.sunburst.setOption({...this.baseOption(),series:[{id:"structure",type:"sunburst",nodeClick:false,
-			data:(entries.length?entries:[node]).map(child=>sunburstData(child,3)),radius:["35%","94%"],sort:null,
-			label:{fontFamily:this.theme().font,fontSize:11,color:"#263447",rotate:"tangential",minAngle:16,overflow:"truncate"},
+			data:(entries.length?entries:[node]).map(child=>sunburstData(child,3,node.seconds,this.darkTheme())),radius:["35%","94%"],sort:null,
+			label:{fontFamily:this.theme().font,fontSize:11,color:this.theme().text,rotate:"tangential",minAngle:16,overflow:"truncate"},
 			itemStyle:{borderColor:this.theme().background,borderWidth:2,borderRadius:4},emphasis:{focus:"ancestor"}}]}, {replaceMerge:["series"]});
 		this.renderNodeList(node,entries);
 	}
@@ -186,7 +195,7 @@ export class WeeklyReviewCharts {
 			name.title=node.path||node.name;
 			const value=button.appendChild(this.owner.createElement("strong")); value.textContent=detailDuration(node.seconds);
 			const share=button.appendChild(this.owner.createElement("small")); share.textContent=`${(node.seconds/parent.seconds*100).toFixed(1)}%`;
-			button.style.setProperty("--analysis-color",colorFor(node.id));
+			button.style.setProperty("--analysis-color",activityColor(node.path || node.id,this.darkTheme()).fill);
 			button.onclick=()=>this.selectNode(node.id);
 			this.structure.list.appendChild(button);
 		}
@@ -203,12 +212,21 @@ export class WeeklyReviewCharts {
 	}
 
 	private goBack(): void {
+		if (this.focusId === "root") return;
 		const parent=findParent(this.analysis!.tree,this.focusId);
 		this.focusId=parent?.id||"root";
 		this.selection=this.focusId==="root"?undefined:{kind:"structure",id:this.focusId,period:"current"};
 		this.paintStructure();
 		this.emitSelection();
 		if(this.back.hidden)this.structure.list.querySelector<HTMLButtonElement>("button")?.focus({preventScroll:true});
+	}
+
+	private goRoot(): void {
+		this.focusId="root";
+		this.selection=undefined;
+		this.paintStructure();
+		this.emitSelection();
+		this.structure.list.querySelector<HTMLButtonElement>("button")?.focus({preventScroll:true});
 	}
 
 	private paintComparison(): void {
@@ -288,13 +306,16 @@ export class WeeklyReviewCharts {
 	}
 
 	private tooltipText(params: unknown): string {
-		const event=params as {data?:{id?:string};seriesName?:string};
+		const event=(Array.isArray(params)?params[0]:params) as {data?:{id?:string;percentOf?:number};seriesName?:string};
 		const id=event.data?.id;if(!id)return "";
 		if(event.seriesName==="本期"||event.seriesName==="上期"){
 			const row=this.analysis?.comparison.rows.find(item=>item.id===id);if(!row)return "";
 			return `${row.name}\n${event.seriesName}：${detailDuration(event.seriesName==="本期"?row.currentSeconds:row.previousSeconds)}`;
 		}
-		const node=this.nodes.get(id);return node?`${node.path||node.name}\n${detailDuration(node.seconds)}`:"";
+		const node=this.nodes.get(id);if(!node)return "";
+		const total=event.data?.percentOf || this.nodes.get(this.focusId)?.seconds || node.seconds;
+		const share=total ? `${(node.seconds/total*100).toFixed(1)}%` : "0.0%";
+		return `${node.name}\n${detailDuration(node.seconds)} · 占当前目录 ${share}\n${node.path||node.name}`;
 	}
 
 	private scheduleResize(): void {
@@ -307,12 +328,29 @@ export class WeeklyReviewCharts {
 		return {text:s.getPropertyValue("--text-normal").trim(),muted:s.getPropertyValue("--text-muted").trim(),border:s.getPropertyValue("--background-modifier-border").trim(),
 			background:s.getPropertyValue("--background-primary").trim(),font:s.fontFamily};
 	}
+
+	private darkTheme(): boolean {
+		return this.owner.documentElement.classList.contains("theme-dark") || this.owner.body.classList.contains("theme-dark");
+	}
 }
 
 function indexNodes(node:WeeklyReviewAnalysisNode,index:Map<string,WeeklyReviewAnalysisNode>):void {index.set(node.id,node);for(const child of node.children)indexNodes(child,index);}
 function findParent(root:WeeklyReviewAnalysisNode,id:string):WeeklyReviewAnalysisNode|undefined {for(const child of root.children){if(child.id===id)return root;const found=findParent(child,id);if(found)return found;}return undefined;}
-function sunburstData(node:WeeklyReviewAnalysisNode,depth:number):Record<string,unknown> {
-	return {id:node.id,name:node.name,value:node.seconds,label:{show:depth>1,formatter:node.activity?"YOLO":node.name.length>5?node.name.slice(0,4)+"…":node.name},itemStyle:{color:colorFor(node.id)},children:depth>1?node.children.filter(c=>c.seconds>0).map(c=>sunburstData(c,depth-1)):undefined};
+function breadcrumb(root:WeeklyReviewAnalysisNode,id:string):string {
+		if (id === "root") return "笔记与 YOLO · 点击分区下钻";
+		const chain=findNodePath(root,id);
+		return chain.length ? `本周投入 / ${chain.slice(1).map(node=>node.name).join(" / ")}` : "笔记与 YOLO · 点击分区下钻";
+}
+function findNodePath(root:WeeklyReviewAnalysisNode,id:string):WeeklyReviewAnalysisNode[] {
+		if (root.id === id) return [root];
+		for (const child of root.children) { const path=findNodePath(child,id); if (path.length) return [root,...path]; }
+		return [];
+}
+function sunburstData(node:WeeklyReviewAnalysisNode,depth:number,percentOf:number,dark:boolean):Record<string,unknown> {
+	const color=activityColor(node.path || node.id,dark);
+	return {id:node.id,name:node.name,value:node.seconds,path:node.path,activity:node.activity,percentOf,
+		label:{show:depth>0,color:color.text,formatter:node.activity?"YOLO":node.name.length>6?node.name.slice(0,5)+"…":node.name},itemStyle:{color:color.fill},
+		children:depth>1?node.children.filter(c=>c.seconds>0).map(c=>sunburstData(c,depth-1,percentOf,dark)):undefined};
 }
 
 function comparisonHint(analysis:WeeklyReviewAnalysis):string {

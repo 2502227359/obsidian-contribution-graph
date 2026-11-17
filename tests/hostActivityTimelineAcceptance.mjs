@@ -147,8 +147,10 @@ try{
  assert.ok(await evaluate(`!${weekly}.rootEl.hidden&&!${weekly}.activityHost&&${weekly}.snapshot===${qa}.snapshot&&document.activeElement.dataset.reviewAction==='open-activity-timeline'`));
  await evaluate(`(()=>{${weekly}.close();${qa}.beforeDispose=${plugin}.activityService.listeners.size;document.getElementById('timeline-acceptance-a').remove();document.getElementById('timeline-acceptance-b').remove();return true})()`);await wait(200);
  const disposal=await evaluate(`({before:${qa}.beforeDispose,after:${plugin}.activityService.listeners.size})`);
- assert.ok(disposal.after<=disposal.before-2,"两个嵌入容器移除均释放订阅："+JSON.stringify(disposal));
- await evaluate(`${qa}.leaf.detach()`);evidence.disposal=disposal;
+ assert.ok(disposal.after<=disposal.before-1,"全局 API 嵌入移除后释放订阅："+JSON.stringify(disposal));
+ const beforeLeaf=await evaluate(`(()=>{${qa}.beforeLeaf=[...${plugin}.activityService.listeners];${qa}.leaf.detach();return ${qa}.beforeLeaf.length})()`);await wait(150);
+ const releasedOnLeaf=await evaluate(`${qa}.beforeLeaf.filter(listener=>!${plugin}.activityService.listeners.has(listener)).length`);
+ assert.ok(releasedOnLeaf>=1,"代码块在笔记卸载时释放订阅");evidence.disposal={...disposal,beforeLeaf,releasedOnLeaf};
  assert.ok(await evaluate(`JSON.stringify(${plugin}.activityService.getSettings())===${qa}.settings`),"交互不改采集设置");
  evidence.embedAndInteractions=true;evidence.oldHistoryAndWeeklyEntry=true;evidence.passed=true;
  await writeFile("dist/activity-timeline-host-evidence.json",JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence));

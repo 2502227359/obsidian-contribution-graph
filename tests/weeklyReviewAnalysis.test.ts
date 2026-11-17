@@ -104,6 +104,29 @@ describe("周回顾分析模型", () => {
 		};
 		check(tree);
 	});
+	it("旭日树为笔记保留完整路径叶子，直属笔记与子目录不重复计时", () => {
+		const report = snapshot(documents({
+			"医/妇产科学/产科/甲.md": 30, "医/妇产科学/产科/乙.md": 10,
+			"医/妇产科学/妇科/甲.md": 7, "医/妇产科学/总览.md": 5,
+			"其他/总览.md": 3, "activity://yolo-chat": 11,
+		}));
+		const tree = buildWeeklyReviewAnalysis(report, {groupingRoot:"医"}).tree;
+		const notes = tree.children.find(node => node.id === "notes")!;
+		const subject = notes.children.find(node => node.path === "医/妇产科学")!;
+		const direct = subject.children.find(node => node.id === "direct:医/妇产科学")!;
+		const directNote = direct.children.find(node => node.path === "医/妇产科学/总览.md")!;
+		const obstetrics = subject.children.find(node => node.path === "医/妇产科学/产科")!;
+		const gynecology = subject.children.find(node => node.path === "医/妇产科学/妇科")!;
+
+		expect(subject.children.map(node => node.name)).toContain("本目录直属笔记");
+		expect(directNote).toMatchObject({name: "总览", seconds: 5, documents: [{path: "医/妇产科学/总览.md", seconds: 5}], children: []});
+		expect(obstetrics.children.map(node => node.path)).toEqual(["医/妇产科学/产科/甲.md", "医/妇产科学/产科/乙.md"]);
+		expect(gynecology.children.map(node => node.path)).toEqual(["医/妇产科学/妇科/甲.md"]);
+		expect(obstetrics.children[0].id).not.toBe(gynecology.children[0].id);
+		expect(subject.seconds).toBe(52);
+		expect(subject.children.reduce((sum, node) => sum + node.seconds, 0)).toBe(subject.seconds);
+		expect(tree.children.find(node => node.activity)?.children).toEqual([]);
+	});
 	it("不完整期未出现的学科不当作已确认零，可靠期零值可比较", () => {
 		const current = day("2026-11-16", {"医/内/甲.md": 5}); current.coverage="PARTIAL";
 		const previous = day("2026-11-09", {"医/外/乙.md": 3});

@@ -1,4 +1,5 @@
 import type { ActivityTimelineBlock, ActivityTimelineDay } from "../time/activityTimelineTypes";
+import { activityColor } from "./activityColors";
 
 export interface ActivityTimelineDetailsActions {
 	onSelect(id: string): void;
@@ -57,7 +58,13 @@ export class ActivityTimelineDetails {
 	private renderSelected(selected: ActivityTimelineBlock, blocks: readonly ActivityTimelineBlock[], actions: ActivityTimelineDetailsActions): void {
 		const card = this.owner.createElement("div");
 		card.className = "cg-activity-timeline-detail-card";
+		const color = activityColor(selected.path, this.isDarkTheme());
+		card.style.setProperty("--cg-detail-color", color.fill);
 		const heading = card.createDiv({cls: "cg-activity-timeline-detail-heading"});
+		const marker = this.owner.createElement("span");
+		marker.className = "cg-activity-timeline-detail-swatch";
+		marker.setAttribute("aria-hidden", "true");
+		heading.prepend(marker);
 		heading.createEl("strong", {text: blockLabel(selected)});
 		if (selected.activity) heading.createSpan({cls: "cg-activity-timeline-detail-kind", text: "独立活动"});
 		if (selected.provisional) heading.createSpan({cls: "cg-activity-timeline-detail-kind", text: "含暂计尾段"});
@@ -68,6 +75,10 @@ export class ActivityTimelineDetails {
 		this.renderActions(card, selected, blocks, actions);
 		this.renderRelated(card, selected, blocks, actions);
 		this.el.appendChild(card);
+	}
+
+	private isDarkTheme(): boolean {
+		return this.owner.documentElement.classList.contains("theme-dark") || this.owner.body?.classList.contains("theme-dark") || false;
 	}
 
 	private renderActions(parent: HTMLElement, selected: ActivityTimelineBlock, blocks: readonly ActivityTimelineBlock[], actions: ActivityTimelineDetailsActions): void {

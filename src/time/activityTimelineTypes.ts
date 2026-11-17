@@ -78,6 +78,8 @@ export interface ActivityTimelineViewState {
 }
 
 export interface ActivityTimelineViewOptions {
+	/** 代码块或表单宿主负责卸载，临时离开文档时不销毁视图。 */
+	hostOwnsLifecycle?: boolean;
 	getDateRange?: () => {fromDate:string;toDate:string};
 	title?: string;
  service: ActivityTimelineService;

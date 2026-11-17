@@ -5,7 +5,8 @@ import { SVGRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import type { CustomSeriesRenderItem } from "echarts";
 import type { ActivityTimelineBlock, ActivityTimelineDay } from "../time/activityTimelineTypes";
-import { colorFor, labelReviewChart } from "./weeklyReviewChartStyle";
+import { activityColor } from "./activityColors";
+import { labelReviewChart } from "./weeklyReviewChartStyle";
 
 echarts.use([CustomChart, DataZoomComponent, DataZoomSliderComponent, GridComponent, TooltipComponent, SVGRenderer]);
 
@@ -28,7 +29,7 @@ export interface ActivityTimelineChartCallbacks {
 	onWindowChange(window: [number, number]): void;
 }
 
-interface Theme { text: string; muted: string; border: string; background: string; font: string; }
+interface Theme { text: string; muted: string; border: string; background: string; font: string; dark: boolean; }
 
 const renderBlock: CustomSeriesRenderItem = (params, api) => {
 	const row = Number(api.value(0));
@@ -96,7 +97,7 @@ export class ActivityTimelineChart {
 	private option(blocks: readonly ActivityTimelineBlock[], rows: readonly ActivityTimelineChartRow[], state: ActivityTimelineChartState): EChartsCoreOption {
 		const theme = this.theme();
 		const rowIndex = new Map(rows.flatMap((row, index) => row.blockIds.map(id => [id, index] as const)));
-		const data = blocks.flatMap(block => this.blockData(block, rowIndex.get(block.id) ?? 0, state));
+		const data = blocks.flatMap(block => this.blockData(block, rowIndex.get(block.id) ?? 0, state, theme));
 		return {
 			animation: !this.motion.matches,
 			animationDuration: 260,
@@ -114,12 +115,11 @@ export class ActivityTimelineChart {
 		};
 	}
 
-	private blockData(block: ActivityTimelineBlock, row: number, state: ActivityTimelineChartState): object {
-		const color = colorFor(block.activity ? "activity:yolo" : block.groupId);
+	private blockData(block: ActivityTimelineBlock, row: number, state: ActivityTimelineChartState, theme: Theme): object {
+		const color = activityColor(block.path, theme.dark);
 		const highlighted = !state.highlightedPath || state.highlightedPath === block.path;
 		const selected = state.selectedId === block.id;
-		const theme=this.theme();
-		return {value: [row, block.startMinute, block.endMinute,blockLabel(block),theme.font,"#202b39"], blockId: block.id, itemStyle: {color, opacity: highlighted ? 1 : .18, borderColor: selected ? theme.text : color, borderWidth: selected ? 2 : 1, borderType: block.provisional ? "dashed" : "solid"}};
+		return {value: [row, block.startMinute, block.endMinute, blockLabel(block), theme.font, color.text], blockId: block.id, itemStyle: {color: color.fill, opacity: highlighted ? 1 : .34, borderColor: selected ? theme.text : color.stroke, borderWidth: selected ? 2 : 1, borderType: block.provisional ? "dashed" : "solid"}};
 	}
 
 	private tooltip(params: unknown, blocks: readonly ActivityTimelineBlock[]): string {
@@ -164,7 +164,8 @@ export class ActivityTimelineChart {
 	private theme(): Theme {
 		const style = this.win.getComputedStyle(this.el);
 		const value = (key: string, fallback: string) => style.getPropertyValue(key).trim() || fallback;
-		return {text: value("--text-normal", "#454b54"), muted: value("--text-muted", "#858990"), border: value("--background-modifier-border", "#dedede"), background: value("--background-primary", "#fff"), font: style.fontFamily || value("--font-text", "inherit")};
+		const dark = this.owner.documentElement.classList.contains("theme-dark") || this.owner.body?.classList.contains("theme-dark") || value("--background-primary", "#fff").startsWith("#1");
+		return {text: value("--text-normal", "#454b54"), muted: value("--text-muted", "#858990"), border: value("--background-modifier-border", "#dedede"), background: value("--background-primary", "#fff"), font: style.fontFamily || value("--font-text", "inherit"), dark};
 	}
 }
 
