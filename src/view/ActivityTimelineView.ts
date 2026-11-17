@@ -28,6 +28,9 @@ export class ActivityTimelineView {
 	private chartHost!: HTMLElement;
 	private detailsHost!: HTMLElement;
 	private segmentSelect!: HTMLSelectElement;
+	private displayOptions!: HTMLDetailsElement;
+	private displaySummary!: HTMLElement;
+	private displayPanel!: HTMLElement;
 	private dateInput!: HTMLInputElement;
 	private dateCaption!: HTMLElement;
 	private status!: HTMLElement;
@@ -46,6 +49,7 @@ export class ActivityTimelineView {
 	private detachObserver?:MutationObserver;
 	private everConnected=false;
 	private readonly windowClosed=()=>this.dispose();
+	private readonly dismissDisplay=(event:PointerEvent)=>{if(!this.displayOptions.contains(event.target as Node))this.displayOptions.open=false;};
 	private disposed = false;
 	private needsFit = true;
 	private selectionRemoved = false;
@@ -126,6 +130,7 @@ export class ActivityTimelineView {
 		this.themeObserver?.disconnect();
 		this.detachObserver?.disconnect();
 		this.win.removeEventListener("unload",this.windowClosed);
+		this.owner.removeEventListener("pointerdown",this.dismissDisplay);
 		this.chart?.dispose();
 		this.details?.dispose();
 		this.el.remove();
@@ -134,6 +139,11 @@ export class ActivityTimelineView {
 	focus(): void { this.dateInput.focus({preventScroll: true}); }
 
 	handleEscape(): boolean {
+		if (this.displayOptions.open) {
+			this.displayOptions.open = false;
+			this.displaySummary.focus({preventScroll: true});
+			return true;
+		}
 		const active = this.owner.activeElement;
 		if (active && this.el.contains(active) && (active.tagName === "INPUT" || active.tagName === "SELECT")) {
 			(active as HTMLElement).blur();
@@ -141,7 +151,7 @@ export class ActivityTimelineView {
 		}
 		if (!this.state.selectedId) return false;
 		this.clearSelection();
-		this.segmentSelect.focus({preventScroll: true});
+		this.displaySummary.focus({preventScroll: true});
 		return true;
 	}
 
@@ -163,8 +173,25 @@ export class ActivityTimelineView {
 	private buildToolbar(): void {
 		const toolbar = this.owner.createElement("div");
 		toolbar.className = "cg-activity-timeline-toolbar";
-		this.previousButton = this.addButton(toolbar, "‹", "上一天", "previous-date", () => this.shiftDate(-1));
-		this.dateInput = toolbar.appendChild(this.owner.createElement("input"));
+		const dates = toolbar.appendChild(this.owner.createElement("div"));
+		dates.className = "cg-activity-timeline-dates";
+		this.buildDateControls(dates);
+		const actions = toolbar.appendChild(this.owner.createElement("div"));
+		actions.className = "cg-activity-timeline-actions";
+		this.fitButton = this.addButton(actions, "适配", "适配当日记录", "fit", () => this.fit());
+		this.fullDayButton = this.addButton(actions, "全天", "显示全天", "full-day", () => this.setWindow([0, 1440]));
+		const zoom = actions.appendChild(this.owner.createElement("div"));
+		zoom.className = "cg-activity-timeline-zoom";
+		this.zoomOutButton = this.addButton(zoom, "−", "缩小时间窗口", "zoom-out", () => this.zoom(2));
+		this.zoomInButton = this.addButton(zoom, "+", "放大时间窗口", "zoom-in", () => this.zoom(.5));
+		this.buildDisplayOptions(actions);
+		if (this.options.onExpand) this.addButton(actions, "↗", "放大查看时间轴", "expand", () => this.options.onExpand?.(this.getState()));
+		this.el.appendChild(toolbar);
+	}
+
+	private buildDateControls(dates: HTMLElement): void {
+		this.previousButton = this.addButton(dates, "‹", "上一天", "previous-date", () => this.shiftDate(-1));
+		this.dateInput = dates.appendChild(this.owner.createElement("input"));
 		this.dateInput.type = "date";
 		this.dateInput.value = this.state.date;
 		this.dateInput.min = this.options.fromDate;
@@ -172,17 +199,23 @@ export class ActivityTimelineView {
 		this.dateInput.setAttribute("aria-label", "选择时间轴日期");
 		this.dateInput.dataset.timelineControl = "date";
 		this.dateInput.onchange = () => this.changeDate(this.dateInput.value);
-		this.nextButton = this.addButton(toolbar, "›", "下一天", "next-date", () => this.shiftDate(1));
-		this.todayButton = this.addButton(toolbar, "今天", "回到今天", "today", () => this.changeDate(todayDate()));
-		this.fitButton = this.addButton(toolbar, "适配记录", "适配当日记录", "fit", () => this.fit());
-		this.fullDayButton = this.addButton(toolbar, "全天", "显示全天", "full-day", () => this.setWindow([0, 1440]));
-		this.zoomOutButton = this.addButton(toolbar, "−", "缩小时间窗口", "zoom-out", () => this.zoom(2));
-		this.zoomInButton = this.addButton(toolbar, "+", "放大时间窗口", "zoom-in", () => this.zoom(.5));
-		this.depthSelect = this.createSelect(toolbar, "轨道层级", "depth", () => this.changeDepth());
+		this.nextButton = this.addButton(dates, "›", "下一天", "next-date", () => this.shiftDate(1));
+		this.todayButton = this.addButton(dates, "今天", "回到今天", "today", () => this.changeDate(todayDate()));
+	}
+
+	private buildDisplayOptions(actions: HTMLElement): void {
+		this.displayOptions = actions.appendChild(this.owner.createElement("details"));
+		this.displayOptions.className = "cg-activity-timeline-display";
+		this.displaySummary = this.displayOptions.appendChild(this.owner.createElement("summary"));
+		this.displaySummary.textContent = "显示";
+		this.displaySummary.dataset.timelineControl = "display";
+		this.displayPanel = this.displayOptions.appendChild(this.owner.createElement("div"));
+		this.displayPanel.className = "cg-activity-timeline-display-panel";
+		const label = this.displayPanel.appendChild(this.owner.createElement("label"));
+		label.textContent = "轨道层级";
+		this.depthSelect = this.createSelect(label, "轨道层级", "depth", () => this.changeDepth());
 		this.depthSelect.append(this.createOption("一级学科", "1"), this.createOption("二级分组", "2"));
 		this.depthSelect.value = String(this.state.depth);
-		if (this.options.onExpand) this.addButton(toolbar, "放大查看", "放大查看时间轴", "expand", () => this.options.onExpand?.(this.getState()));
-		this.el.appendChild(toolbar);
 	}
 
 	private buildChart(): void {
@@ -192,10 +225,11 @@ export class ActivityTimelineView {
 		this.groupControls = this.owner.createElement("div");
 		this.groupControls.className = "cg-activity-timeline-groups";
 		this.el.appendChild(this.groupControls);
-		const selectionBar = this.owner.createElement("div");
+		const selectionBar = this.owner.createElement("label");
 		selectionBar.className = "cg-activity-timeline-selection";
+		selectionBar.textContent = "片段定位";
 		this.segmentSelect = this.createSelect(selectionBar, "选择片段", "segment", () => this.selectBlock(this.segmentSelect.value));
-		this.el.appendChild(selectionBar);
+		this.displayPanel.appendChild(selectionBar);
 		const heading = this.owner.createElement("h4");
 		heading.className = "cg-activity-timeline-chart-heading";
 		heading.textContent = "当天轨迹";
@@ -210,6 +244,7 @@ export class ActivityTimelineView {
 	}
 
 	private bindObservers(): void {
+		this.owner.addEventListener("pointerdown",this.dismissDisplay);
 		const ResizeObserverCtor = this.win.ResizeObserver;
 		if (typeof ResizeObserverCtor === "function") {
 			this.resizeObserver = new ResizeObserverCtor(() => this.chart.resize());
@@ -267,7 +302,7 @@ export class ActivityTimelineView {
 		const target = Array.from(this.el.querySelectorAll<HTMLElement>("[data-timeline-action], [data-timeline-segment], [data-timeline-group], [data-timeline-control]"))
 			.find(element => focus.action ? element.dataset.timelineAction === focus.action : focus.segment ? element.dataset.timelineSegment === focus.segment : focus.group ? element.dataset.timelineGroup === focus.group : element.dataset.timelineControl === focus.control);
 		if (target && !(target as HTMLButtonElement).disabled) target.focus({preventScroll: true});
-		else (this.segmentSelect.disabled ? this.dateInput : this.segmentSelect).focus({preventScroll: true});
+		else (this.segmentSelect.disabled ? this.dateInput : this.displayOptions.open ? this.segmentSelect : this.displaySummary).focus({preventScroll: true});
 	}
 
 	private renderGroups(groups: readonly TimelineGroup[], blocks: readonly ActivityTimelineBlock[]): void {

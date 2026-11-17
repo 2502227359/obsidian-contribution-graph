@@ -5,7 +5,7 @@ import { SVGRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import type { CustomSeriesRenderItem } from "echarts";
 import type { ActivityTimelineBlock, ActivityTimelineDay } from "../time/activityTimelineTypes";
-import { activityColor } from "./activityColors";
+import { timelineActivityColor } from "./activityColors";
 import { labelReviewChart } from "./weeklyReviewChartStyle";
 
 echarts.use([CustomChart, DataZoomComponent, DataZoomSliderComponent, GridComponent, TooltipComponent, SVGRenderer]);
@@ -38,15 +38,17 @@ const renderBlock: CustomSeriesRenderItem = (params, api) => {
 	const first = api.coord([start, row]) as number[];
 	const last = api.coord([end, row]) as number[];
 	const size = (api.size ? api.size([0, 1]) : [0, 20]) as number[];
-	const height = Math.max(10, Math.min(28, Math.abs(Number(size[1]) || 20) * .62));
-	const shape = {x: first[0], y: first[1] - height / 2, width: Math.max(2, last[0] - first[0]), height};
+	const height = Math.max(10, Math.min(24, Math.abs(Number(size[1]) || 20) * .62));
+	const shape = {x: first[0], y: first[1] - height / 2, width: Math.max(0, last[0] - first[0]), height};
 	const clipped = echarts.graphic.clipRectByRect(shape, params.coordSys as unknown as {x: number; y: number; width: number; height: number});
 	if (!clipped) return undefined;
-	const rectangle={type:"rect" as const,shape:clipped,style:api.style()};
+	const left = clipped.x > shape.x ? 0 : 4, right = clipped.x + clipped.width < shape.x + shape.width ? 0 : 4;
+	const style = api.style();
+	const rectangle={type:"rect" as const,shape:{...clipped,r:[left,right,right,left]},style};
 	if(clipped.width<65)return rectangle;
 	return {type:"group",children:[rectangle,{type:"text",silent:true,style:{
 		text:String(api.value(3)),x:clipped.x+6,y:clipped.y+height/2,width:clipped.width-12,
-		fill:String(api.value(5)),fontFamily:String(api.value(4)),fontSize:12,verticalAlign:"middle",overflow:"truncate",
+		fill:String(api.value(5)),fontFamily:String(api.value(4)),fontSize:12,verticalAlign:"middle",overflow:"truncate",ellipsis:"…",opacity:style.opacity,
 	}}]};
 };
 
@@ -107,19 +109,19 @@ export class ActivityTimelineChart {
 			textStyle: {fontFamily: theme.font, color: theme.text},
 			aria: {enabled: false},
 			grid: {left: 12, right: 18, top: 18, bottom: 52, containLabel: true},
-			xAxis: {type: "value", min: 0, max: 1440, interval:clockInterval(state.window,this.el.clientWidth),boundaryGap: false, axisLine: {lineStyle: {color: theme.border}}, axisTick: {show: false}, axisLabel: {color: theme.muted, fontFamily: theme.font, formatter: clockLabel,hideOverlap:true}, splitLine: {lineStyle: {color: theme.border, type: "dashed"}}},
+			xAxis: {type: "value", min: 0, max: 1440, interval:clockInterval(state.window,this.el.clientWidth),boundaryGap: false, axisLine: {lineStyle: {color: theme.border}}, axisTick: {show: false}, axisLabel: {color: theme.muted, fontFamily: theme.font, formatter: clockLabel,hideOverlap:true}, splitLine: {lineStyle: {color: theme.border, opacity: .45, type: "dashed"}}},
 			yAxis: {type: "category", inverse: true, data: rows.map(row => row.label), axisLine: {show: false}, axisTick: {show: false}, axisLabel: {color: theme.text, fontFamily: theme.font, width: this.el.clientWidth<500?90:150, overflow: "truncate"}, splitLine: {show: true, lineStyle: {color: theme.border, opacity: .45}}},
 			dataZoom: [{type: "slider", xAxisIndex: 0, filterMode: "none", startValue: state.window[0], endValue: state.window[1], height: 22, bottom: 8, borderColor: theme.border, backgroundColor: "transparent", fillerColor: theme.border, handleStyle: {color: theme.text, opacity: .65}, moveHandleStyle: {color: theme.text, opacity: .35}, textStyle: {color: theme.muted, fontFamily: theme.font}}],
 			tooltip: {trigger: "item", confine: true, renderMode: "richText", backgroundColor: theme.background, borderColor: theme.border, textStyle: {fontFamily: theme.font, color: theme.text}, formatter: (params: unknown) => this.tooltip(params, blocks)},
-			series: [{id: "activity-timeline", type: "custom", coordinateSystem: "cartesian2d", renderItem: renderBlock, encode: {x: [1, 2], y: 0}, data}],
+			series: [{id: "activity-timeline", type: "custom", coordinateSystem: "cartesian2d", renderItem: renderBlock, encode: {x: [1, 2], y: 0}, emphasis: {itemStyle: {borderWidth: 2, borderColor: theme.text}}, data}],
 		};
 	}
 
 	private blockData(block: ActivityTimelineBlock, row: number, state: ActivityTimelineChartState, theme: Theme): object {
-		const color = activityColor(block.path, theme.dark);
+		const color = timelineActivityColor(block.path, theme.dark);
 		const highlighted = !state.highlightedPath || state.highlightedPath === block.path;
 		const selected = state.selectedId === block.id;
-		return {value: [row, block.startMinute, block.endMinute, blockLabel(block), theme.font, color.text], blockId: block.id, itemStyle: {color: color.fill, opacity: highlighted ? 1 : .34, borderColor: selected ? theme.text : color.stroke, borderWidth: selected ? 2 : 1, borderType: block.provisional ? "dashed" : "solid"}};
+		return {value: [row, block.startMinute, block.endMinute, blockLabel(block), theme.font, color.text], blockId: block.id, itemStyle: {color: color.fill, opacity: highlighted ? 1 : .76, borderColor: selected ? color.text : color.stroke, borderWidth: selected ? 2 : .6, borderType: block.provisional ? "dashed" : "solid"}};
 	}
 
 	private tooltip(params: unknown, blocks: readonly ActivityTimelineBlock[]): string {
@@ -164,7 +166,7 @@ export class ActivityTimelineChart {
 	private theme(): Theme {
 		const style = this.win.getComputedStyle(this.el);
 		const value = (key: string, fallback: string) => style.getPropertyValue(key).trim() || fallback;
-		const dark = this.owner.documentElement.classList.contains("theme-dark") || this.owner.body?.classList.contains("theme-dark") || value("--background-primary", "#fff").startsWith("#1");
+		const dark = this.owner.documentElement.classList.contains("theme-dark") || this.owner.body?.classList.contains("theme-dark") || false;
 		return {text: value("--text-normal", "#454b54"), muted: value("--text-muted", "#858990"), border: value("--background-modifier-border", "#dedede"), background: value("--background-primary", "#fff"), font: style.fontFamily || value("--font-text", "inherit"), dark};
 	}
 }

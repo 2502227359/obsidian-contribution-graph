@@ -10,20 +10,23 @@
 
 .cg-activity-timeline button,
 .cg-activity-timeline input,
-.cg-activity-timeline select {
+.cg-activity-timeline select,
+.cg-activity-timeline summary {
 	font: inherit;
 }
 
 .cg-activity-timeline button,
 .cg-activity-timeline input,
-.cg-activity-timeline select {
+.cg-activity-timeline select,
+.cg-activity-timeline summary {
 	min-height: 30px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
 	box-shadow: none;
 }
 
-.cg-activity-timeline button {
+.cg-activity-timeline button,
+.cg-activity-timeline summary {
 	padding: 4px 9px;
 	background: var(--background-primary);
 	color: var(--text-normal);
@@ -31,6 +34,8 @@
 }
 
 .cg-activity-timeline button:hover:not(:disabled),
+.cg-activity-timeline summary:hover,
+.cg-activity-timeline-display[open] > summary,
 .cg-activity-timeline button[aria-pressed="true"] {
 	border-color: color-mix(in srgb, var(--cg-timeline-accent) 48%, var(--background-modifier-border));
 	background: var(--cg-timeline-soft);
@@ -42,7 +47,7 @@
 	cursor: default;
 }
 
-.cg-activity-timeline :is(button, input, select):focus-visible {
+.cg-activity-timeline :is(button, input, select, summary):focus-visible {
 	outline: 2px solid var(--cg-timeline-accent);
 	outline-offset: 2px;
 }
@@ -70,23 +75,79 @@
 }
 
 .cg-activity-timeline-toolbar {
+	position: relative;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 6px;
-	margin-bottom: 10px;
+	justify-content: space-between;
+	gap: 8px 16px;
+	margin-bottom: 6px;
+	font-size: .86em;
+}
+
+.cg-activity-timeline-dates,
+.cg-activity-timeline-actions,
+.cg-activity-timeline-zoom {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.cg-activity-timeline-actions { margin-inline-start: auto; }
+
+.cg-activity-timeline-toolbar button { border-color: transparent; background: transparent; }
+.cg-activity-timeline-dates [data-timeline-control="today"] { margin-inline-start: 4px; }
+.cg-activity-timeline-zoom { gap: 0; margin-inline: 4px; border-inline-start: 1px solid var(--background-modifier-border); }
+.cg-activity-timeline-zoom button,
+.cg-activity-timeline-toolbar [data-timeline-control="expand"] { width: 30px; padding: 3px; font-size: 1.15em; }
+
+.cg-activity-timeline-display > summary {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	list-style: none;
+	border-color: transparent;
+}
+.cg-activity-timeline-display > summary::-webkit-details-marker { display: none; }
+.cg-activity-timeline-display > summary::after { content: "⌄"; color: var(--text-muted); }
+.cg-activity-timeline-display[open] > summary::after { content: "⌃"; }
+.cg-activity-timeline-display:not([open]) > .cg-activity-timeline-display-panel { display: none; }
+.cg-activity-timeline-display-panel {
+	position: absolute;
+	z-index: 5;
+	inset-inline-end: 0;
+	top: calc(100% + 6px);
+	display: grid;
+	gap: 12px;
+	box-sizing: border-box;
+	width: min(300px, 100%);
+	padding: 14px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	background: var(--background-primary);
+	box-shadow: 0 6px 24px #00000014;
+}
+.cg-activity-timeline-display-panel label {
+	display: grid;
+	gap: 5px;
+	min-width: 0;
+	color: var(--text-muted);
+}
+.cg-activity-timeline-display-panel select {
+	width: 100%;
+	min-width: 0;
+	color: var(--text-normal);
 }
 
 .cg-activity-timeline-toolbar input[type="date"] {
-	width: 142px;
-	padding: 4px 8px;
+	width: 136px;
+	padding: 4px 5px;
 	background: var(--background-primary);
 	color: var(--text-normal);
 	font-variant-numeric: tabular-nums;
 }
 
-.cg-activity-timeline-toolbar select,
-.cg-activity-timeline-selection select {
+.cg-activity-timeline-display-panel select {
 	max-width: 100%;
 	padding: 4px 8px;
 	background: var(--background-primary);
@@ -136,19 +197,12 @@
 }
 
 .cg-activity-timeline-selection {
-	display: flex;
-	justify-content: flex-end;
-	margin: 4px 0 7px;
+	margin: 0;
 }
 
 .cg-activity-timeline-group-swatch.is-multicolor {
 	width: 22px;
 	border-radius: 4px;
-}
-
-.cg-activity-timeline-selection select {
-	min-width: min(320px, 100%);
-	font-size: .78em;
 }
 
 .cg-activity-timeline .cg-activity-timeline-chart-heading {
@@ -271,10 +325,7 @@
 }
 
 @media (max-width: 620px) {
-	.cg-activity-timeline-toolbar > * { flex: 0 1 auto; }
 	.cg-activity-timeline-toolbar input[type="date"] { width: 130px; }
-	.cg-activity-timeline-selection { justify-content: stretch; }
-	.cg-activity-timeline-selection select { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
