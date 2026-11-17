@@ -8,7 +8,9 @@ export class ActivityTimelineGraphRender implements GraphRender {
  render(container:HTMLElement,config:ContributionGraphConfig):void {
   if(!config.activityTimeline)throw new Error("学习时间轴需要活跃时长服务");
   const root=container.createDiv({cls:"contribution-graph cg-activity-timeline-graph"});
-  this.views.set(container,new ActivityTimelineView(root,config.activityTimeline));
+  const main=root.createDiv({cls:"main cg-activity-timeline-surface"});
+  if(config.mainContainerStyle)Object.assign(main.style,config.mainContainerStyle);
+  this.views.set(container,new ActivityTimelineView(main,config.activityTimeline));
  }
  update(container:HTMLElement,config:ContributionGraphConfig):boolean {
   const view=this.views.get(container);

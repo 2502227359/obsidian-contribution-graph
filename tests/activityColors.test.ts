@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { color } from "echarts/core";
-import { activityColor, activityPalette, timelineActivityColor } from "../src/view/activityColors";
+import { activityColor, activityPalette, mutedActivityColor } from "../src/view/activityColors";
 
 describe("活动颜色", () => {
-	it("时间轴单独降低饱和度，文字对比度仍不低于四点五", () => {
+	it("回顾与时间轴共用低饱和度配色，文字对比度仍不低于四点五", () => {
 		for (const dark of [false,true]) for (const path of ["学科/笔记.md", "目录/另一篇.md", "activity://yolo-chat"]) {
-			const base = activityColor(path,dark), timeline = timelineActivityColor(path,dark);
+			const base = activityColor(path,dark), timeline = mutedActivityColor(path,dark);
 			const chroma = (fill:string) => {const rgb=color.parse(fill).slice(0,3);return Math.max(...rgb)-Math.min(...rgb);};
 			expect(chroma(timeline.fill)).toBeLessThan(chroma(base.fill));
 			expect(contrastRatio(timeline.fill,timeline.text)).toBeGreaterThanOrEqual(4.5);
@@ -14,7 +14,7 @@ describe("活动颜色", () => {
 	it("轨道色标取自真实笔记片段，不用上层目录重新取色", () => {
 		const paths=["临床医学/临床医学/妇产科学/甲.md","临床医学/临床医学/内科学/乙.md"];
 		for(const dark of [false,true]){
-			const expected=paths.map(path=>timelineActivityColor(path,dark).fill).sort();
+			const expected=paths.map(path=>mutedActivityColor(path,dark).fill).sort();
 			expect(activityPalette([...paths,paths[0]],dark)).toEqual(expected);
 			expect(activityPalette([...paths].reverse(),dark)).toEqual(expected);
 			expect(activityPalette([],dark)).toEqual([]);

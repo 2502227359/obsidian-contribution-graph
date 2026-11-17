@@ -118,7 +118,7 @@ export class WeeklyReviewRankingChart {
 		for (const series of groups) { for (const run of comparableRuns(series, model.windows)) line.push(this.lineSeries(series, run)); dots.push(this.dotSeries(series, model.windows)); }
 		return {animation:!this.motion.matches, animationDuration:520, animationDurationUpdate:300, animationEasing:"cubicOut", animationEasingUpdate:"cubicOut", backgroundColor:"transparent", textStyle:{fontFamily:theme.font,color:theme.text}, aria:{enabled:false},
 			grid:{left:38,right:14,top:18,bottom:38}, xAxis:{type:"category",data:model.windows.map(window => periodLabel(window.fromDate, window.toDate)),axisTick:{show:false},axisLine:{lineStyle:{color:theme.border}},axisLabel:{color:theme.muted,interval:0,rotate:model.windows.length > 3 ? 18 : 0}},
-			yAxis:{type:"value",inverse:true,min:1,max:Math.max(2,maxRank),interval:Math.max(1,Math.ceil(maxRank/6)),axisLabel:{color:theme.muted,formatter:(value:number) => `第${value}名`},splitLine:{lineStyle:{color:theme.border,type:"dashed"}}},
+			yAxis:{type:"value",inverse:true,min:1,max:Math.max(2,maxRank),interval:Math.max(1,Math.ceil(maxRank/6)),axisLabel:{color:theme.muted,formatter:(value:number) => `第${value}名`},splitLine:{lineStyle:{color:theme.border,opacity:.45,type:"dashed"}}},
 			tooltip:{confine:true,renderMode:"richText",backgroundColor:theme.background,borderColor:theme.border,textStyle:{fontFamily:theme.font},formatter:(params:unknown) => this.tooltip(params)},
 			series:[...line, ...dots]};
 	}

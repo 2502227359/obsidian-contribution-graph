@@ -10,7 +10,7 @@ import type { WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { TimeDocumentStats } from "../time/types";
 import { formatDuration } from "../time/timeData";
 import { colorFor, detailDuration, labelReviewChart, timeAxisOptions } from "./weeklyReviewChartStyle";
-import { activityColor } from "./activityColors";
+import { mutedActivityColor } from "./activityColors";
 import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import { renderWeeklyChangeGroups } from "./weeklyReviewInsightDetails";
@@ -180,7 +180,7 @@ export class WeeklyReviewCharts {
 		this.sunburst.setOption({...this.baseOption(),series:[{id:"structure",type:"sunburst",nodeClick:false,
 			data:(entries.length?entries:[node]).map(child=>sunburstData(child,3,node.seconds,this.darkTheme())),radius:["35%","94%"],sort:null,
 			label:{fontFamily:this.theme().font,fontSize:11,color:this.theme().text,rotate:"tangential",minAngle:16,overflow:"truncate"},
-			itemStyle:{borderColor:this.theme().background,borderWidth:2,borderRadius:4},emphasis:{focus:"ancestor"}}]}, {replaceMerge:["series"]});
+			itemStyle:{borderColor:this.theme().background,borderWidth:1,borderRadius:4},emphasis:{focus:"ancestor",itemStyle:{borderWidth:2}},blur:{itemStyle:{opacity:.72},label:{opacity:.8}}}]}, {replaceMerge:["series"]});
 		this.renderNodeList(node,entries);
 	}
 
@@ -195,7 +195,7 @@ export class WeeklyReviewCharts {
 			name.title=node.path||node.name;
 			const value=button.appendChild(this.owner.createElement("strong")); value.textContent=detailDuration(node.seconds);
 			const share=button.appendChild(this.owner.createElement("small")); share.textContent=`${(node.seconds/parent.seconds*100).toFixed(1)}%`;
-			button.style.setProperty("--analysis-color",activityColor(node.path || node.id,this.darkTheme()).fill);
+			button.style.setProperty("--analysis-color",mutedActivityColor(node.path || node.id,this.darkTheme()).fill);
 			button.onclick=()=>this.selectNode(node.id);
 			this.structure.list.appendChild(button);
 		}
@@ -256,7 +256,7 @@ export class WeeklyReviewCharts {
 			return known?[{id:row.id,value:[period==="current"?row.currentSeconds:row.previousSeconds,index],itemStyle:{color:colorFor(row.id)}}]:[];
 		});
 		return {...this.baseOption(),grid:{left:8,right:16,top:20,bottom:24,containLabel:true},
-			xAxis:{type:"value",...axis,axisLabel:{...axis.axisLabel,color:t.muted,fontFamily:t.font},splitLine:{lineStyle:{color:t.border}}},
+			xAxis:{type:"value",...axis,axisLabel:{...axis.axisLabel,color:t.muted,fontFamily:t.font},splitLine:{lineStyle:{color:t.border,opacity:.45}}},
 			yAxis:{type:"category",inverse:true,data:rows.map(r=>r.name),axisLabel:{color:t.text,fontFamily:t.font,width:92,overflow:"truncate"},axisLine:{show:false},axisTick:{show:false}},
 			series:[{id:"connections",type:"custom",silent:true,renderItem:connector,
 				data:rows.flatMap((r,i)=>r.currentKnown&&r.previousKnown?[{value:[r.currentSeconds,r.previousSeconds,i],itemStyle:{color:colorFor(r.id)}}]:[])},
@@ -347,7 +347,7 @@ function findNodePath(root:WeeklyReviewAnalysisNode,id:string):WeeklyReviewAnaly
 		return [];
 }
 function sunburstData(node:WeeklyReviewAnalysisNode,depth:number,percentOf:number,dark:boolean):Record<string,unknown> {
-	const color=activityColor(node.path || node.id,dark);
+	const color=mutedActivityColor(node.path || node.id,dark);
 	return {id:node.id,name:node.name,value:node.seconds,path:node.path,activity:node.activity,percentOf,
 		label:{show:depth>0,color:color.text,formatter:node.activity?"YOLO":node.name.length>6?node.name.slice(0,5)+"…":node.name},itemStyle:{color:color.fill},
 		children:depth>1?node.children.filter(c=>c.seconds>0).map(c=>sunburstData(c,depth-1,percentOf,dark)):undefined};

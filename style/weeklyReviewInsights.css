@@ -8,7 +8,7 @@
 .cg-weekly-review-modal .cg-review-ranking-legend button { min-height: 28px; height: auto; padding: 3px 0; border: 0; box-shadow: none; background: transparent; color: var(--text-muted); font: inherit; font-size: .76em; }
 .cg-review-ranking-legend button::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--ranking-color); }
 .cg-review-ranking-legend button[aria-pressed=true] { color: var(--text-normal); }
-.cg-review-ranking-chart { width: 100%; min-width: 0; height: 280px; }
+.cg-review-ranking-chart { width: 100%; min-width: 0; height: 260px; }
 .cg-review-ranking-detail { min-height: 22px; color: var(--text-muted); font-size: .78em; line-height: 1.7; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
  .cg-review-ranking-controls select { flex: 1 1 120px; }

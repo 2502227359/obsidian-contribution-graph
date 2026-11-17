@@ -2,6 +2,8 @@
 .cg-activity-timeline-modal .modal-content { margin: 0; padding: 22px; overflow: auto; font-family: var(--cg-font-family,var(--font-text)); }
 .cg-activity-timeline-mount { min-width: 0; width: 100%; }
 .cg-activity-timeline-graph { min-width: 0; }
+.contribution-graph .main.cg-activity-timeline-surface { overflow: visible; row-gap: 0; }
+.cg-activity-timeline-surface > .cg-activity-timeline { padding-top: 0; }
 .cg-activity-timeline-graph > h3 { margin: 0 0 12px; font-size: 1em; }
 .cg-activity-timeline-summary { min-width: 0; font-family: var(--cg-font-family,var(--font-text)); }
 .cg-activity-timeline-summary > button,.cg-weekly-activity-back { min-height: 30px; height: auto; padding: 5px 10px; border: 0; border-radius: 7px; box-shadow: none; font: inherit; font-size: .84em; background: var(--background-secondary); color: var(--text-normal); }

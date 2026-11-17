@@ -51,6 +51,8 @@ try {
 	assert.ok(await evaluate("[...document.querySelectorAll('.side-dock-ribbon-action')].some(e=>(e.getAttribute('aria-label')||'').includes('周回顾'))"), "左侧功能区必须有周回顾入口");
 	await click('.cg-weekly-review-entry');
 	let first = await read(); assert.equal(first.count,1); assert.equal(first.root, ""); assert.equal(first.days,7); assert.equal(first.options,false);
+	assert.ok(await evaluate("document.querySelector('.cg-weekly-review-options').contains(document.querySelector('[data-review-field=depth]'))"),'分组层级统一收纳到显示菜单');
+	assert.equal(await evaluate("document.querySelector('[data-review-field=depth]').getBoundingClientRect().height"),0,'低频分组控件默认不占行');
 	await evaluate("app.commands.executeCommandById('contribution-graph-local:weekly-review')"); assert.equal((await read()).count,1);
 	await key('Escape');
 	await click('.side-dock-ribbon-action[aria-label*="周回顾"]');
@@ -62,6 +64,9 @@ try {
 	assert.ok(await evaluate(`Math.abs(${modal}.rootEl.querySelector('.cg-weekly-review-header').getBoundingClientRect().top-window.__reviewUI.headerTop)<1`));
 	await evaluate(`${modal}.scrollEl.scrollTop=0`);
 	await click('[data-review-action="options"]'); assert.equal((await read()).options,true);
+	await evaluate("(()=>{const e=document.querySelector('[data-review-field=depth]');e.focus();e.value='2';e.dispatchEvent(new Event('change'));return true})()");
+	assert.ok(await evaluate("document.querySelector('.cg-weekly-review-options').open&&document.querySelector('[data-review-field=depth]').value==='2'&&document.activeElement.dataset.reviewField==='depth'"),'菜单内切换层级保留展开状态与焦点');
+	await evaluate("(()=>{const e=document.querySelector('[data-review-field=depth]');e.value='1';e.dispatchEvent(new Event('change'));return true})()");
 	await evaluate("document.querySelector('[data-review-field=goal]').focus();document.querySelector('[data-review-field=goal]').select()");
 	await call('Input.insertText',{text:'-3'}); await wait(90);
 	assert.ok(await evaluate("document.querySelector('[data-review-field=goal]').getAttribute('aria-invalid')==='true'&&document.querySelector('.cg-weekly-review-control-error').textContent.length>0"));
@@ -95,12 +100,17 @@ try {
 	await evaluate("app.plugins.plugins['contribution-graph-local'].activityService.getWeeklyReview=window.__reviewUI.query");
 	await click('[data-review-action="refresh"]');
 	evidence.errorAndEscape = true;
+	await evaluate(`${modal}.selectedRoot='临床医学/临床医学/用于检查非常长目录名称的展示与边界/下一级学科目录'`);
 	for(const [width,height,dark] of [[1200,800,true],[720,800,false],[320,760,false]]) {
 		await call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
 		await evaluate(`(()=>{const m=${modal};const day=m.snapshot.days.find(d=>d.date===m.snapshot.today)||m.snapshot.days[0];m.selectedDay=day.date;m.render();m.scrollEl.scrollTop=0;m.modalEl.focus()})()`);
 		await evaluate(`document.body.classList.toggle('theme-dark',${dark});document.body.classList.toggle('theme-light',${!dark});document.body.style.setProperty('--font-text','霞鹜文楷等宽')`); await wait(100);
 		const layout=await evaluate(`(()=>{const m=${modal},r=m.rootEl,b=m.scrollEl,header=r.querySelector('.cg-weekly-review-header');return {width:r.clientWidth,overflow:r.scrollWidth>r.clientWidth+1||b.scrollWidth>b.clientWidth+1,font:getComputedStyle(r).fontFamily,structureBottom:r.querySelector('.cg-weekly-sunburst').getBoundingClientRect().bottom,bodyBottom:b.getBoundingClientRect().bottom,headerTop:header.getBoundingClientRect().top}})()`);
 		assert.ok(!layout.overflow,`${width}px 不能横向溢出`);assert.ok(layout.font.includes('霞鹜文楷'));if(width===1200)assert.ok(layout.structureBottom<=layout.bodyBottom,'桌面首屏应显示投入结构图');
+		assert.ok(await evaluate("document.querySelector('[data-review-field=root]').getAttribute('aria-label').includes('下一级学科目录')"),'长目录完整名称保留在无障碍说明');
+		await click('[data-review-action="options"]');
+		const menu=await evaluate(`(()=>{const r=${modal}.rootEl.querySelector('.cg-weekly-review-controls').getBoundingClientRect(),p=document.querySelector('.cg-weekly-review-option-fields').getBoundingClientRect();return p.left>=r.left-1&&p.right<=r.right+1})()`);
+		assert.ok(menu,width+'px显示菜单不越界');await key('Escape');
 		evidence[`layout${width}`]=layout;
 		const screenshot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile(`dist/weekly-review-ui-${width}.png`,Buffer.from(screenshot.data,'base64'));
 	}

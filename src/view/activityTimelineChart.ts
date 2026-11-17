@@ -5,7 +5,7 @@ import { SVGRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import type { CustomSeriesRenderItem } from "echarts";
 import type { ActivityTimelineBlock, ActivityTimelineDay } from "../time/activityTimelineTypes";
-import { timelineActivityColor } from "./activityColors";
+import { mutedActivityColor } from "./activityColors";
 import { labelReviewChart } from "./weeklyReviewChartStyle";
 
 echarts.use([CustomChart, DataZoomComponent, DataZoomSliderComponent, GridComponent, TooltipComponent, SVGRenderer]);
@@ -118,7 +118,7 @@ export class ActivityTimelineChart {
 	}
 
 	private blockData(block: ActivityTimelineBlock, row: number, state: ActivityTimelineChartState, theme: Theme): object {
-		const color = timelineActivityColor(block.path, theme.dark);
+		const color = mutedActivityColor(block.path, theme.dark);
 		const highlighted = !state.highlightedPath || state.highlightedPath === block.path;
 		const selected = state.selectedId === block.id;
 		return {value: [row, block.startMinute, block.endMinute, blockLabel(block), theme.font, color.text], blockId: block.id, itemStyle: {color: color.fill, opacity: highlighted ? 1 : .76, borderColor: selected ? color.text : color.stroke, borderWidth: selected ? 2 : .6, borderType: block.provisional ? "dashed" : "solid"}};

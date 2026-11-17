@@ -171,7 +171,7 @@ export class WeeklyReviewTimelineCharts {
 		this.area.setOption({...this.baseOption(),grid:{left:12,right:16,top:18,bottom:28,containLabel:true},
 			xAxis:{type:"category",boundaryGap:false,data:days.map(day=>day.date),axisTick:{show:false},axisLine:{lineStyle:{color:theme.border}},
 				axisLabel:{color:theme.muted,interval:6,formatter:(date:string)=>date.slice(5).replace("-","/")}},
-			yAxis:{...axis,type:"value",axisLabel:{...axis.axisLabel,color:theme.muted},splitLine:{lineStyle:{color:theme.border,type:"dashed"}}},
+			yAxis:{...axis,type:"value",axisLabel:{...axis.axisLabel,color:theme.muted},splitLine:{lineStyle:{color:theme.border,opacity:.45,type:"dashed"}}},
 			tooltip:{...this.baseOption().tooltip as object,trigger:"axis",formatter:(params:unknown)=>this.trendTooltip(params)},series},true);
 	}
 
@@ -190,7 +190,8 @@ export class WeeklyReviewTimelineCharts {
 			[{id:"notes",name:"总时长",points:days.map(day=>day.seconds>0||(day.coverage==="TRACKED"&&!day.future&&!day.timezoneWarning)?day.seconds:null)}];
 		return values.map(group=>({id:group.id,name:group.name,type:"line",stack:"recorded",smooth:false,connectNulls:false,
 			showSymbol:true,symbol:"circle",symbolSize:5,emphasis:{focus:"series"},lineStyle:{width:2,color:colorFor(group.id)},itemStyle:{color:colorFor(group.id)},
-			areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:colorFor(group.id)},{offset:1,color:this.theme().background}]),opacity:.42},
+			blur:{lineStyle:{opacity:.72},itemStyle:{opacity:.72},areaStyle:{opacity:.22}},
+			areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:colorFor(group.id)},{offset:1,color:this.theme().background}]),opacity:.32},
 			data:group.points}));
 	}
 
@@ -229,7 +230,7 @@ export class WeeklyReviewTimelineCharts {
 					itemStyle:{color:theme.background,borderColor:bin.future?theme.background:theme.border,borderWidth:1,opacity:this.binOpacity(bin)},label:{show:true,formatter:bin.future?"·":"—",color:theme.muted,fontFamily:theme.font,fontSize:11}}))}]},true);
 	}
 
-	private binOpacity(bin:WeeklyReviewTimeBin):number {return !this.hourRangeSelection||(bin.startHour>=this.hourRangeSelection.start&&bin.endHour<=this.hourRangeSelection.end)?1:.22;}
+	private binOpacity(bin:WeeklyReviewTimeBin):number {return !this.hourRangeSelection||(bin.startHour>=this.hourRangeSelection.start&&bin.endHour<=this.hourRangeSelection.end)?1:.72;}
 
 	private changeTrend():void {this.paintArea();this.selectTrend();}
 	private selectTrend():void {this.leaveRange(true);this.selection="trend";this.paintHeatmap();this.describeTrend();this.describeHour();this.emitSelection();}

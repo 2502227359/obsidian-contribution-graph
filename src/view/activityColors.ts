@@ -5,10 +5,10 @@ export interface ActivityColor { fill: string; text: string; stroke: string; }
 const YOLO_PATH = "activity://yolo-chat";
 
 export function activityPalette(paths: readonly string[], dark: boolean): string[] {
-	return [...new Set([...new Set(paths)].map(path => timelineActivityColor(path, dark).fill))].sort();
+	return [...new Set([...new Set(paths)].map(path => mutedActivityColor(path, dark).fill))].sort();
 }
 
-export function timelineActivityColor(path: string, dark: boolean): ActivityColor {
+export function mutedActivityColor(path: string, dark: boolean): ActivityColor {
 	const base = activityColor(path, dark);
 	const fill = color.modifyHSL(base.fill, undefined, saturation => saturation * .72);
 	const stroke = color.modifyHSL(base.stroke, undefined, saturation => saturation * .72);

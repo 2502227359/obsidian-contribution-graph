@@ -221,7 +221,7 @@ export class WeeklyReviewModal extends Modal {
 		header.createEl("h2", { text: "周回顾" });
 		const actions = header.createDiv({ cls: "cg-weekly-review-header-actions" });
 		if (this.snapshot) actions.createSpan({ cls: "cg-weekly-review-generated", text: `更新于 ${formatTimestamp(this.snapshot.generatedAt)}` });
-		const refresh = actions.createEl("button", { cls: "cg-weekly-review-refresh", text: "刷新", attr: {type: "button", "aria-label": "刷新周回顾"} });
+		const refresh = actions.createEl("button", { cls: "cg-weekly-review-refresh", text: "↻", attr: {type: "button", "aria-label": "刷新周回顾"} });
 		refresh.dataset.reviewAction = "refresh";
 		refresh.onclick = () => this.refreshSnapshot();
 	}
@@ -247,13 +247,13 @@ export class WeeklyReviewModal extends Modal {
 		this.renderWeekNavigation(controls, snapshot);
 		const toolbar = controls.createDiv({ cls: "cg-weekly-review-filterbar" });
 		this.renderRootSelect(toolbar, snapshot);
-		this.renderDepthSelect(toolbar);
 		const options = toolbar.createEl("details", { cls: "cg-weekly-review-options" });
 		options.open = this.optionsOpen;
 		options.ontoggle = () => { this.optionsOpen = options.open; };
-		const summary = options.createEl("summary", { text: "显示选项" });
+		const summary = options.createEl("summary", { text: "显示" });
 		summary.dataset.reviewAction = "options";
 		const fields = options.createDiv({ cls: "cg-weekly-review-option-fields" });
+		this.renderDepthSelect(fields);
 		this.renderGoalInput(fields);
 	}
 
@@ -276,7 +276,8 @@ export class WeeklyReviewModal extends Modal {
 		const picker = parent.createEl("details", { cls: "cg-weekly-review-root-picker" });
 		picker.open = this.rootPickerOpen;
 		picker.ontoggle = () => { this.rootPickerOpen = picker.open; };
-		const summary = picker.createEl("summary", { text: this.selectedRoot || "全部记录" });
+		const summary = picker.createEl("summary");
+		summary.createSpan({cls:"cg-weekly-review-root-label",text:this.selectedRoot || "全部记录"});
 		summary.dataset.reviewField = "root";
 		summary.setAttribute("aria-label", `统计范围：${this.selectedRoot || "全部记录"}`);
 		const panel = picker.createDiv({ cls: "cg-weekly-review-root-panel" });

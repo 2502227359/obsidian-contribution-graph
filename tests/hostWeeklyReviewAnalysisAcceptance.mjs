@@ -70,7 +70,7 @@ try {
  await click('[data-review-action="clear-group"]');
  await click('[data-analysis-comparison="folder:临床医学/内科"][data-analysis-period="previous"]');
  assert.ok(await evaluate(`${modal}.comparisonPeriod==='previous'&&${modal}.rootEl.querySelector('.cg-weekly-review-document-duration').textContent.includes('20')`));
- await click('[data-review-action="comparison-current"]');
+ await click('[data-analysis-comparison="folder:临床医学/内科"][data-analysis-period="current"]');
  assert.ok(await evaluate(`${modal}.rootEl.querySelector('.cg-weekly-review-document-duration').textContent.includes('1 小时')`));
  await click('[data-review-action="clear-group"]');
  await click('[data-review-field="root"]');await click('[data-review-root="临床医学"]');

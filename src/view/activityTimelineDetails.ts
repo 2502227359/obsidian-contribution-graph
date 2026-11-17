@@ -1,5 +1,5 @@
 import type { ActivityTimelineBlock, ActivityTimelineDay } from "../time/activityTimelineTypes";
-import { timelineActivityColor } from "./activityColors";
+import { mutedActivityColor } from "./activityColors";
 
 export interface ActivityTimelineDetailsActions {
 	onSelect(id: string): void;
@@ -58,7 +58,7 @@ export class ActivityTimelineDetails {
 	private renderSelected(selected: ActivityTimelineBlock, blocks: readonly ActivityTimelineBlock[], actions: ActivityTimelineDetailsActions): void {
 		const card = this.owner.createElement("div");
 		card.className = "cg-activity-timeline-detail-card";
-		const color = timelineActivityColor(selected.path, this.isDarkTheme());
+		const color = mutedActivityColor(selected.path, this.isDarkTheme());
 		card.style.setProperty("--cg-detail-color", color.fill);
 		const heading = card.createDiv({cls: "cg-activity-timeline-detail-heading"});
 		const marker = this.owner.createElement("span");
