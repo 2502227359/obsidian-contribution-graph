@@ -1,4 +1,4 @@
-import { isFileInTrackedFolders } from "../activity/folderScope";
+import { isFileInCollectionScope } from "../activity/folderScope";
 
 // 独立活动的保留源键，不对应仓库文件，也不记录对话内容或会话编号。
 export const YOLO_CHAT_ACTIVITY_PATH = "activity://yolo-chat";
@@ -10,6 +10,10 @@ export function isYoloChatActivity(path: unknown): boolean {
 }
 
 /** 笔记遵循目录采集范围；用户启用时长统计时也采集独立 YOLO 活动。 */
-export function isTimeActivityInCollectionScope(path: string, folders: readonly string[]): boolean {
-	return isYoloChatActivity(path) || isFileInTrackedFolders(path, folders);
+export function isTimeActivityInCollectionScope(
+	path: string,
+	folders: readonly string[],
+	files: readonly string[] = []
+): boolean {
+	return isYoloChatActivity(path) || isFileInCollectionScope(path, folders, files);
 }

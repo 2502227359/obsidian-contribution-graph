@@ -188,7 +188,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		const exported = JSON.parse(service.exportData());
 		expect(exported).toMatchObject({
-			schemaVersion: 11,
+			schemaVersion: 13,
 			countingPolicyPeriods: [
 				{
 					startedAt: "2026-07-31T08:00:00.000Z",
@@ -411,7 +411,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 
 		await service.unload();
 		expect(plugin.saveData.mock.lastCall?.[0]).toMatchObject({
-			schemaVersion: 11,
+			schemaVersion: 13,
 			settings: {
 				trackedFolders: ["Archive", "Daily Notes"],
 			},
@@ -480,6 +480,43 @@ describe("EditActivityService persistence and lifecycle", () => {
 			}),
 		]);
 
+		await service.unload();
+	});
+
+	it("records editor transactions for an explicitly selected note", async () => {
+		const plugin = createPlugin();
+		const service = new EditActivityService(
+			plugin as never,
+			() => new Date(2026, 6, 31, 16, 0, 0)
+		);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		await service.setTrackedFiles(["指定.md"]);
+
+		let currentPath = "其他.md";
+		(service as unknown as { getMarkdownFilePath: () => string }).getMarkdownFilePath = () => currentPath;
+		const view = { hasFocus: true, composing: false };
+		const dispatchInput = (text: string) => {
+			(service as unknown as { handleTrustedDomEvent: (view: unknown, event: unknown) => void }).handleTrustedDomEvent(view, {
+				type: "beforeinput", isTrusted: true, inputType: "insertText",
+			});
+			const state = EditorState.create({ doc: "" });
+			const transaction = state.update({
+				changes: { from: 0, insert: text },
+				annotations: Transaction.userEvent.of("input.type"),
+			});
+			(service as unknown as { handleEditorUpdate: (update: unknown) => void }).handleEditorUpdate({
+				docChanged: true, view, transactions: [transaction],
+			});
+		};
+
+		dispatchInput("excluded");
+		currentPath = "指定.md";
+		dispatchInput("included");
+		expect(service.getDailyEditStats()[0]).toMatchObject({
+			addedChars: 8,
+			documents: [expect.objectContaining({ path: "指定.md", addedChars: 8 })],
+		});
 		await service.unload();
 	});
 
@@ -767,7 +804,7 @@ describe("EditActivityService persistence and lifecycle", () => {
 		});
 		expect(service.getGraphThemes()).toEqual([]);
 		expect(JSON.parse(service.exportData())).toMatchObject({
-			schemaVersion: 11,
+			schemaVersion: 13,
 			graphThemes: [],
 		});
 		await service.unload();

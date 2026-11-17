@@ -53,7 +53,8 @@ function getRangeDates(from: string, to: string): string[] {
 }
 
 function validateTimeFolders(folders: string[], service: EditActivityService, app: App): void {
-	if (!areFoldersCoveredByScope(folders, service.getSettings().trackedFolders)) throw new Error("所选文件夹超出全局采集范围");
+	const settings = service.getSettings();
+	if (!areFoldersCoveredByScope(folders, settings.trackedFolders, settings.trackedFiles || [])) throw new Error("所选文件夹超出全局采集范围");
 	for (const folder of folders) {
 		const file = app.vault.getAbstractFileByPath(folder);
 		if (!file || !("children" in file)) throw new Error(`文件夹不存在：${folder}`);

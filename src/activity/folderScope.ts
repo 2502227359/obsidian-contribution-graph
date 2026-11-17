@@ -32,6 +32,17 @@ export function normalizeTrackedFolders(paths: readonly string[]): string[] {
 	return result;
 }
 
+export function normalizeTrackedFiles(paths: readonly string[]): string[] {
+	return Array.from(new Set(paths.map(normalizeTrackedFilePath).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeTrackedFilePath(path: string): string {
+	const normalized = path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, "");
+	const parts = normalized.split("/");
+	if (!normalized || normalized === "." || parts.some(part => part === "." || part === "..") || /^[A-Za-z]:/.test(normalized) || !/\.md$/i.test(normalized)) return "";
+	return normalized;
+}
+
 export function isFileInTrackedFolders(
 	filePath: string,
 	trackedFolders: readonly string[]
@@ -45,10 +56,23 @@ export function isFileInTrackedFolders(
 	);
 }
 
+export function isFileInCollectionScope(
+	filePath: string,
+	trackedFolders: readonly string[],
+	trackedFiles: readonly string[] = []
+): boolean {
+	const folders = normalizeTrackedFolders(trackedFolders);
+	const files = normalizeTrackedFiles(trackedFiles);
+	const normalizedPath = filePath.replace(/\\/g, "/");
+	if (folders.length === 0 && files.length === 0) return true;
+	return files.includes(normalizedPath) || (folders.length > 0 && isFileInTrackedFolders(normalizedPath, folders));
+}
+
 /** Whether every requested graph folder is covered by the collection scope. */
 export function areFoldersCoveredByScope(
 	requestedFolders: readonly string[],
-	collectionFolders: readonly string[]
+	collectionFolders: readonly string[],
+	collectionFiles: readonly string[] = []
 ): boolean {
 	const requested = normalizeTrackedFolders(requestedFolders);
 	const collected = normalizeTrackedFolders(collectionFolders);
@@ -57,7 +81,7 @@ export function areFoldersCoveredByScope(
 	if (requested.length === 0) {
 		return true;
 	}
-	if (collected.length === 0) {
+	if (collected.length === 0 && collectionFiles.length === 0) {
 		return true;
 	}
 	return requested.every((folder) =>
@@ -66,6 +90,27 @@ export function areFoldersCoveredByScope(
 				folder === parent || folder.startsWith(`${parent}/`)
 		)
 	);
+}
+
+export function migrateTrackedFilePaths(
+	trackedFiles: readonly string[],
+	oldPath: string,
+	newPath: string,
+	isFolder: boolean
+): string[] {
+	const normalizedFiles = normalizeTrackedFiles(trackedFiles);
+	const normalizedOldPath = normalizeTrackedPath(oldPath);
+	const normalizedNewPath = normalizeTrackedPath(newPath);
+	if (!normalizedOldPath || !normalizedNewPath || (!isFolder && !normalizeTrackedFilePath(normalizedNewPath))) return normalizedFiles;
+	const oldPrefix = `${normalizedOldPath}/`;
+	return normalizeTrackedFiles(normalizedFiles.map(file => {
+		if (!isFolder) return file === normalizedOldPath ? normalizedNewPath : file;
+		return file.startsWith(oldPrefix) ? `${normalizedNewPath}/${file.slice(oldPrefix.length)}` : file;
+	}));
+}
+
+function normalizeTrackedPath(path: string): string {
+	return path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
 export function migrateTrackedFolderPaths(

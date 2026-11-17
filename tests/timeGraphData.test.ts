@@ -78,6 +78,12 @@ describe("两种时长热力图的数据接线", () => {
 		config.dataSource.type="PAGE";expect(()=>YamlGraphConfig.validate(config)).toThrow();
 		config.dataSource.type="TIME_ACTIVITY";config.timelineDepth=3 as any;expect(()=>YamlGraphConfig.validate(config)).toThrow();
 	});
+	it("仅指定笔记时不把其父目录误判为全局覆盖", () => {
+		const {service, app, config} = createInputs();
+		config.dataSource.folders = ["Root"];
+		service.getSettings = () => ({trackedFolders: [], trackedFiles: ["Root/A.md"]});
+		expect(() => queryTimeGraph(config, service, app)).toThrow("全局采集范围");
+	});
 	it("时间轴的小时历史入口允许旧目录，原普通图表仍校验当前采集范围", () => {
 		const {service,app,config}=createInputs();config.graphType="hourly";config.dataSource.folders=["旧目录"];
 		service.getSettings=()=>({trackedFolders:["当前目录"]});

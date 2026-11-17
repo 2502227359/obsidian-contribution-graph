@@ -46,6 +46,12 @@ describe("matrix date boundaries", () => {
 });
 
 describe("folder collection coverage", () => {
+	it("只采集指定笔记不把其父目录标为完整采集，空展示筛选仍表示全部已采集记录", () => {
+		const tracking = [{ startDate: "2026-07-30" }];
+		const scopes = [{ startDate: "2026-07-30", folders: [], files: ["项目/甲.md", "根笔记.md"] }];
+		expect(getDateTrackingState("2026-07-31", tracking, scopes, ["项目"])).toBe("UNTRACKED");
+		expect(getDateTrackingState("2026-07-31", tracking, scopes, [])).toBe("TRACKED");
+	});
 	it("distinguishes tracked, partial, and untracked folder dates", () => {
 		const tracking = [{ startDate: "2026-07-30" }];
 		expect(getDateTrackingState("2026-07-31", tracking, [

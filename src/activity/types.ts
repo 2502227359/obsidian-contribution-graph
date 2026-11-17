@@ -16,6 +16,7 @@ export interface EditActivitySettings {
 	excludeWhitespace: boolean;
 	excludeMarkdownFormatting: boolean;
 	trackedFolders: string[];
+	trackedFiles: string[];
 	strictUserInputOnly: boolean;
 	countPastedText: boolean;
 }
@@ -47,7 +48,7 @@ export interface StoredDocumentEditStats {
 }
 
 export interface EditActivityStore {
-	schemaVersion: 12;
+	schemaVersion: 13;
 	timeActivity: StoredTimeActivity;
 	settings: EditActivitySettings;
 	graphThemes: SavedGraphTheme[];
@@ -65,6 +66,7 @@ export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 	excludeWhitespace: true,
 	excludeMarkdownFormatting: false,
 	trackedFolders: [],
+	trackedFiles: [],
 	strictUserInputOnly: true,
 	countPastedText: true,
 };
@@ -74,11 +76,12 @@ export function isValidSaveIntervalSeconds(value: unknown): value is number {
 }
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
-	schemaVersion: 12,
+	schemaVersion: 13,
 	timeActivity: createEmptyTimeActivity(),
 	settings: {
 		...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 		trackedFolders: [],
+		trackedFiles: [],
 	},
 	graphThemes: [],
 	trackingPeriods: [],

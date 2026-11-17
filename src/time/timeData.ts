@@ -1,6 +1,9 @@
 import {
+	areFoldersCoveredByScope,
 	isFileInTrackedFolders,
+	migrateTrackedFilePaths,
 	normalizeTrackedFolderPath,
+	normalizeTrackedFiles,
 	normalizeTrackedFolders,
 } from "../activity/folderScope";
 import { isValidFormattedDate } from "../util/dateUtils";
@@ -16,6 +19,7 @@ import {
 	TimeStatsQuery,
 	TimeTrackingState,
 } from "./types";
+import type { TimelineRecordingPeriod } from "./activityTimelineTypes";
 
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const MAX_IDLE_TIMEOUT_MINUTES = 10080;
@@ -237,21 +241,35 @@ export function renameTimePaths(
 		}
 		bucket.documents = next;
 	}
-	for (const period of [...data.periods, ...(data.timeline?.recordingPeriods || [])]) {
+	changed = renameTimePeriods(
+		[...data.periods, ...(data.timeline?.recordingPeriods || [])],
+		oldNormalized,
+		newNormalized,
+		isFolder,
+		prefix
+	) || changed;
+	return changed;
+}
+
+function renameTimePeriods(
+	periods: Array<TimeCoveragePeriod | TimelineRecordingPeriod>,
+	oldPath: string,
+	newPath: string,
+	isFolder: boolean,
+	prefix: string
+): boolean {
+	let changed = false;
+	for (const period of periods) {
 		const originalFolders = period.folders;
-		const nextFolders = normalizeTrackedFolders(
-			period.folders.map((folder) =>
-				mapRenamedFolder(folder, oldNormalized, newNormalized, prefix, isFolder)
-			)
-		);
-		if (
-			isFolder &&
-			(originalFolders.length !== nextFolders.length ||
-				 originalFolders.some((folder, index) => folder !== nextFolders[index]))
-		) {
-			changed = true;
-		}
+		const nextFolders = normalizeTrackedFolders(originalFolders.map(folder => mapRenamedFolder(folder, oldPath, newPath, prefix, isFolder)));
+		if (isFolder && (originalFolders.length !== nextFolders.length || originalFolders.some((folder, index) => folder !== nextFolders[index]))) changed = true;
 		period.folders = nextFolders;
+		if (!period.files?.length) continue;
+		const originalFiles = period.files;
+		const nextFiles = migrateTrackedFilePaths(originalFiles, oldPath, newPath, isFolder);
+		if (originalFiles.length !== nextFiles.length || originalFiles.some((file, index) => file !== nextFiles[index])) changed = true;
+		if (nextFiles.length) period.files = nextFiles;
+		else delete period.files;
 	}
 	return changed;
 }
@@ -470,10 +488,7 @@ function mergeDocuments(target: TimeDocumentStats[], source: TimeDocumentStats[]
 }
 
 function periodCoversFolders(period: TimeCoveragePeriod, requested: string[]): boolean {
-	if (requested.length === 0 || period.folders.length === 0) return true;
-	return requested.every((folder) =>
-		period.folders.some((scope) => folder === scope || folder.startsWith(`${scope}/`))
-	);
+	return areFoldersCoveredByScope(requested, period.folders, period.files || []);
 }
 
 function hasPolicyChange(data: StoredTimeActivity, start: number, end: number): boolean {
@@ -548,11 +563,21 @@ function normalizeTimePeriod(candidate: unknown): TimeCoveragePeriod | undefined
 	) {
 		throw new Error("时长覆盖文件夹无效");
 	}
+	const files = normalizePeriodFiles(value.files);
 	return {
 		start: value.start as number,
 		...(value.end === undefined ? {} : { end: value.end as number }),
 		folders: normalizeTrackedFolders(value.folders as string[]),
+		...(files.length ? { files } : {}),
 	};
+}
+
+function normalizePeriodFiles(raw: unknown): string[] {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw) || raw.some(file => typeof file !== "string" || normalizeTrackedFiles([file]).length === 0)) {
+		throw new Error("时长覆盖指定笔记无效");
+	}
+	return normalizeTrackedFiles(raw as string[]);
 }
 
 function normalizePolicyChanges(raw: unknown, strict: boolean) {

@@ -20,8 +20,11 @@ import {
 	isCountedUserEvent,
 } from "./changeCounter";
 import {
+	isFileInCollectionScope,
 	isFileInTrackedFolders,
+	migrateTrackedFilePaths,
 	migrateTrackedFolderPaths,
+	normalizeTrackedFiles,
 	normalizeTrackedFolders,
 } from "./folderScope";
 import {
@@ -270,14 +273,26 @@ export class EditActivityService {
 
 	private async backupTimelineUpgrade(raw: unknown): Promise<void> {
 		const version=(raw as {schemaVersion?:number}|null)?.schemaVersion;
-		if(!version||version>=12)return;
-		await this.createAutomaticBackup("timeline-upgrade");
-		const name=this.now().toISOString().replace(/[:.]/g,"-");
-		await this.statisticsFiles.write(`备份/timeline-configuration-${name}-${crypto.randomUUID()}.json`,JSON.stringify(raw,null,2));
+		if (!version) return;
+		const name = this.now().toISOString().replace(/[:.]/g, "-");
+		if (version < 12) {
+			await this.createAutomaticBackup("timeline-upgrade");
+			await this.statisticsFiles.write(
+				`备份/timeline-configuration-${name}-${crypto.randomUUID()}.json`,
+				JSON.stringify(raw, null, 2)
+			);
+		}
+		if (version < 13) {
+			await this.createAutomaticBackup("scope-upgrade", raw);
+			await this.statisticsFiles.write(
+				`备份/scope-configuration-${name}-${crypto.randomUUID()}.json`,
+				JSON.stringify(raw, null, 2)
+			);
+		}
 	}
 
 	private configurationSnapshot(store: EditActivityStore) {
-		return { schemaVersion: 12, settings: store.settings, graphThemes: store.graphThemes,
+		return { schemaVersion: 13, settings: { ...store.settings, trackedFolders: [...store.settings.trackedFolders], trackedFiles: [...store.settings.trackedFiles] }, graphThemes: store.graphThemes,
 			storage: { formatVersion: 1, folder: this.statisticsFiles.folder } };
 	}
 
@@ -363,7 +378,7 @@ export class EditActivityService {
 	recordTimeActivity(path: string): void {
 		if (this.unloading) return;
 		this.timeContext = { reason: "READY", path };
-		if (!this.store.settings.timeTrackingEnabled || this.manualTimePaused || !isTimeActivityInCollectionScope(path, this.store.settings.trackedFolders)) {
+		if (!this.store.settings.timeTrackingEnabled || this.manualTimePaused || !isTimeActivityInCollectionScope(path, this.store.settings.trackedFolders, this.store.settings.trackedFiles)) {
 			this.timeTracker.pause();
 			this.emitTimeStatus();
 			return;
@@ -429,7 +444,7 @@ export class EditActivityService {
 		const seconds = queryTimeStats(this.readStatistics().timeActivity,
 			{ fromDate: date, toDate: date }, this.now().getTime(), false)
 			.flatMap(row => row.documents)
-			.filter(item => isTimeActivityInCollectionScope(item.path, this.store.settings.trackedFolders))
+			.filter(item => isTimeActivityInCollectionScope(item.path, this.store.settings.trackedFolders, this.store.settings.trackedFiles))
 			.reduce((sum, item) => sum + item.seconds, 0);
 		this.timeTotalCache = { date, local: this.mutationVersion, remote, seconds };
 		return seconds;
@@ -440,7 +455,7 @@ export class EditActivityService {
 		if (this.manualTimePaused) return "MANUAL";
 		const context = this.timeContext;
 		if (context.reason === "BACKGROUND" || context.reason === "MODAL" || context.reason === "NO_MARKDOWN") return context.reason;
-		if (context.path && !isTimeActivityInCollectionScope(context.path, this.store.settings.trackedFolders)) return "OUT_OF_SCOPE";
+		if (context.path && !isTimeActivityInCollectionScope(context.path, this.store.settings.trackedFolders, this.store.settings.trackedFiles)) return "OUT_OF_SCOPE";
 		if (context.reason === "OUTSIDE_EDITOR") return "OUTSIDE_EDITOR";
 		if (core.interrupted) return "INTERRUPTED";
 		return core.status === "ACTIVE" ? "ACTIVE" : "IDLE";
@@ -448,7 +463,7 @@ export class EditActivityService {
 
 	private getTodayPendingSeconds(core: TimeTrackerSnapshot): number {
 		if (core.pendingStart === undefined || core.pendingEnd === undefined || !core.path) return 0;
-		if (!isTimeActivityInCollectionScope(core.path, this.store.settings.trackedFolders)) return 0;
+		if (!isTimeActivityInCollectionScope(core.path, this.store.settings.trackedFolders, this.store.settings.trackedFiles)) return 0;
 		const start = new Date(this.now().getTime()); start.setHours(0, 0, 0, 0);
 		const end = new Date(start); end.setDate(end.getDate() + 1);
 		const overlap = Math.max(0, Math.min(core.pendingEnd, end.getTime()) - Math.max(core.pendingStart, start.getTime()));
@@ -542,7 +557,7 @@ export class EditActivityService {
 			? removeTimeSpan(this.store.timeActivity, span)
 			: addTimeSpan(this.store.timeActivity, span);
 		if (timeKeys.length === 0) return;
-		const periodId=ensureTimelineRecordingPeriod(this.store.timeActivity,this.now().getTime(),this.store.settings.trackedFolders);
+		const periodId=ensureTimelineRecordingPeriod(this.store.timeActivity,this.now().getTime(),this.store.settings.trackedFolders,this.store.settings.trackedFiles);
 		applyActivityTimelineSpan(this.store.timeActivity,span,operation,periodId);
 		this.markDirty();
 		this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", filePath: span.path, timeKeys });
@@ -551,10 +566,10 @@ export class EditActivityService {
 
 	private openTimeCoverage(): void {
 		if (this.manualTimePaused || !this.store.settings.timeTrackingEnabled) return;
-		ensureTimelineRecordingPeriod(this.store.timeActivity,this.now().getTime(),this.store.settings.trackedFolders);
+		ensureTimelineRecordingPeriod(this.store.timeActivity,this.now().getTime(),this.store.settings.trackedFolders,this.store.settings.trackedFiles);
 		const periods = this.store.timeActivity.periods;
 		if (periods.length && periods[periods.length - 1].end === undefined) return;
-		periods.push({ start: this.now().getTime(), folders: [...this.store.settings.trackedFolders] });
+		periods.push({ start: this.now().getTime(), folders: [...this.store.settings.trackedFolders], ...(this.store.settings.trackedFiles.length ? { files: [...this.store.settings.trackedFiles] } : {}) });
 		this.markDirty();
 		this.scheduleSave();
 	}
@@ -617,6 +632,7 @@ export class EditActivityService {
 		return {
 			...this.store.settings,
 			trackedFolders: [...this.store.settings.trackedFolders],
+			trackedFiles: [...this.store.settings.trackedFiles],
 		};
 	}
 
@@ -669,6 +685,7 @@ export class EditActivityService {
 		return this.readStatistics().collectionScopePeriods.map((period) => ({
 			...period,
 			folders: [...period.folders],
+			...(period.files ? { files: [...period.files] } : {}),
 		}));
 	}
 
@@ -708,39 +725,10 @@ export class EditActivityService {
 			newPath,
 			isFolder
 		);
-		let trackedFoldersChanged = false;
-		let scopeFoldersChanged = false;
-		if (isFolder) {
-			const trackedFolders = migrateTrackedFolderPaths(
-				this.store.settings.trackedFolders,
-				oldPath,
-				newPath
-			);
-			trackedFoldersChanged =
-				trackedFolders.join("\n") !==
-				this.store.settings.trackedFolders.join("\n");
-			if (trackedFoldersChanged) {
-				this.store.settings.trackedFolders = trackedFolders;
-			}
-			for (const period of this.store.collectionScopePeriods) {
-				const migratedFolders = migrateTrackedFolderPaths(
-					period.folders,
-					oldPath,
-					newPath
-				);
-				if (
-					migratedFolders.join("\n") !==
-					period.folders.join("\n")
-				) {
-					period.folders = migratedFolders;
-					scopeFoldersChanged = true;
-				}
-			}
-		}
+		const scopeChanged = this.migrateTrackedScopePaths(oldPath, newPath, isFolder);
 		if (
 			changedDates.length === 0 &&
-			!trackedFoldersChanged &&
-			!scopeFoldersChanged && !timeChanged && !remoteChanged
+			!scopeChanged && !timeChanged && !remoteChanged
 		) {
 			return;
 		}
@@ -748,6 +736,37 @@ export class EditActivityService {
 		this.markDirty();
 		this.emitChange({ type: "IMPORT" });
 		this.scheduleSave();
+	}
+
+	private migrateTrackedScopePaths(oldPath: string, newPath: string, isFolder: boolean): boolean {
+		let changed = false;
+		const files = migrateTrackedFilePaths(this.store.settings.trackedFiles, oldPath, newPath, isFolder);
+		if (files.join("\n") !== this.store.settings.trackedFiles.join("\n")) {
+			this.store.settings.trackedFiles = files;
+			changed = true;
+		}
+		if (isFolder) {
+			const folders = migrateTrackedFolderPaths(this.store.settings.trackedFolders, oldPath, newPath);
+			if (folders.join("\n") !== this.store.settings.trackedFolders.join("\n")) {
+				this.store.settings.trackedFolders = folders;
+				changed = true;
+			}
+		}
+		for (const period of this.store.collectionScopePeriods) {
+			if (isFolder) {
+				const folders = migrateTrackedFolderPaths(period.folders, oldPath, newPath);
+				if (folders.join("\n") !== period.folders.join("\n")) {
+					period.folders = folders;
+					changed = true;
+				}
+			}
+			const periodFiles = migrateTrackedFilePaths(period.files || [], oldPath, newPath, isFolder);
+			if (periodFiles.join("\n") !== (period.files || []).join("\n")) {
+				period.files = periodFiles;
+				changed = true;
+			}
+		}
+		return changed;
 	}
 
 	async setTrackingEnabled(enabled: boolean): Promise<void> {
@@ -858,6 +877,27 @@ export class EditActivityService {
 		await this.flush();
 	}
 
+	async setTrackedFiles(trackedFiles: string[]): Promise<void> {
+		const normalized = normalizeTrackedFiles(trackedFiles);
+		if (
+			normalized.length === this.store.settings.trackedFiles.length &&
+			normalized.every((file, index) => file === this.store.settings.trackedFiles[index])
+		) return;
+		this.pauseTimeActivity();
+		this.closeTimeCoverage();
+		this.flushAllPendingEdits();
+		this.store.settings.trackedFiles = normalized;
+		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
+		this.resetTrustedInputState();
+		if (this.store.settings.trackingEnabled) {
+			this.closeOpenCollectionScopePeriod();
+			this.ensureOpenCollectionScopePeriod();
+		}
+		this.markDirty();
+		this.emitChange({ type: "COVERAGE" });
+		await this.flush();
+	}
+
 	exportData(): string {
 		this.checkpointTimeActivity();
 		return JSON.stringify({ ...this.store, ...this.readStatistics() }, null, 2);
@@ -907,6 +947,9 @@ export class EditActivityService {
 						folders: [
 							...this.store.settings.trackedFolders,
 						],
+						...(this.store.settings.trackedFiles.length
+							? { files: [...this.store.settings.trackedFiles] }
+							: {}),
 					},
 			  ]
 			: [];
@@ -1127,9 +1170,10 @@ export class EditActivityService {
 			const filePath = this.getMarkdownFilePath(transaction);
 			if (
 				!filePath ||
-				!isFileInTrackedFolders(
+				!isFileInCollectionScope(
 					filePath,
-					this.store.settings.trackedFolders
+					this.store.settings.trackedFolders,
+					this.store.settings.trackedFiles
 				)
 			) {
 				this.flushPendingEdits(update.view);
@@ -1581,21 +1625,26 @@ export class EditActivityService {
 				this.store.collectionScopePeriods.length - 1
 			];
 		const folders = this.store.settings.trackedFolders;
+		const files = this.store.settings.trackedFiles;
+		const sameScope = last &&
+			last.folders.join("\n") === folders.join("\n") &&
+			(last.files || []).join("\n") === files.join("\n");
 		if (
 			!last ||
 			last.endDate ||
-			last.folders.join("\n") !== folders.join("\n")
+			!sameScope
 		) {
 			if (
 				last &&
 				!last.endDate &&
-				last.folders.join("\n") !== folders.join("\n")
+				!sameScope
 			) {
 				last.endDate = this.today();
 			}
 			this.store.collectionScopePeriods.push({
 				startDate: this.today(),
 				folders: [...folders],
+				...(files.length ? { files: [...files] } : {}),
 			});
 			return true;
 		}
@@ -1797,6 +1846,7 @@ export class EditActivityService {
 			settings: {
 				...DEFAULT_EDIT_ACTIVITY_SETTINGS,
 				trackedFolders: [],
+				trackedFiles: [],
 			},
 			graphThemes: [],
 			trackingPeriods: [],
@@ -1823,7 +1873,7 @@ export class EditActivityService {
 			strict &&
 			(!Number.isSafeInteger(numericSchemaVersion) ||
 				numericSchemaVersion < 1 ||
-				numericSchemaVersion > 12)
+				numericSchemaVersion > 13)
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -1980,6 +2030,24 @@ export class EditActivityService {
 				  )
 				: []
 		);
+		const rawTrackedFiles = candidate.settings?.trackedFiles;
+		if (
+			strict &&
+			numericSchemaVersion >= 13 &&
+			(!Array.isArray(rawTrackedFiles) ||
+				rawTrackedFiles.some(
+					(file) =>
+						typeof file !== "string" ||
+						normalizeTrackedFiles([file]).length === 0
+				))
+		) {
+			throw new Error("指定笔记设置无效");
+		}
+		const trackedFiles = normalizeTrackedFiles(
+			Array.isArray(rawTrackedFiles)
+				? rawTrackedFiles.filter((file): file is string => typeof file === "string")
+				: []
+		);
 		if (
 			strict &&
 			numericSchemaVersion >= 6 &&
@@ -2024,7 +2092,14 @@ export class EditActivityService {
 					Array.isArray(period.folders) &&
 					period.folders.every(
 						(folder) => typeof folder === "string"
-					)
+					) &&
+					(period.files === undefined ||
+						(Array.isArray(period.files) &&
+							period.files.every(
+								(file) =>
+									typeof file === "string" &&
+									normalizeTrackedFiles([file]).length > 0
+							)))
 				) {
 					collectionScopePeriods.push({
 						startDate: period.startDate,
@@ -2032,9 +2107,12 @@ export class EditActivityService {
 							? { endDate: period.endDate }
 							: {}),
 						folders: normalizeTrackedFolders(period.folders),
+						...(period.files === undefined
+							? {}
+							: { files: normalizeTrackedFiles(period.files) }),
 					});
 				} else if (strict) {
-					throw new Error("Invalid collection scope period");
+					throw new Error("采集范围指定笔记无效");
 				}
 			}
 		} else {
@@ -2125,7 +2203,7 @@ export class EditActivityService {
 			throw new Error("统计保存间隔无效");
 		}
 		const normalized:EditActivityStore = {
-			schemaVersion: 12,
+			schemaVersion: 13,
 			timeActivity: normalizeTimeActivity(candidate.timeActivity, strict && numericSchemaVersion >= 11, detailStrict),
 			settings: {
 				timeTrackingEnabled: candidate.settings?.timeTrackingEnabled === true,
@@ -2138,6 +2216,7 @@ export class EditActivityService {
 				excludeMarkdownFormatting:
 					candidate.settings?.excludeMarkdownFormatting === true,
 				trackedFolders,
+				trackedFiles,
 				strictUserInputOnly:
 					candidate.settings?.strictUserInputOnly !== false,
 				countPastedText:
@@ -2353,7 +2432,8 @@ export class EditActivityService {
 	}
 
 	private async createAutomaticBackup(
-		reason: "import" | "clear" | "restore" | "timeline-upgrade"
+		reason: "import" | "clear" | "restore" | "timeline-upgrade" | "scope-upgrade",
+	original?: unknown
 	): Promise<string> {
 		const pluginDir = this.plugin.manifest.dir;
 		if (!pluginDir) {
@@ -2368,7 +2448,10 @@ export class EditActivityService {
 		const relative = `备份/${AUTOMATIC_BACKUP_PREFIX}${timestamp}-${sequence}-${crypto.randomUUID()}-${reason}.json`;
 		const backupPath = `${this.statisticsFiles.folder}/${relative}`;
 		try {
-			await this.statisticsFiles.write(relative, JSON.stringify({ ...this.store, ...this.readStatistics() }, null, 2));
+			const payload = reason === "scope-upgrade" && original && typeof original === "object"
+				? { ...(original as object), ...this.readStatistics() }
+				: { ...this.store, ...this.readStatistics() };
+			await this.statisticsFiles.write(relative, JSON.stringify(payload, null, 2));
 			return backupPath;
 		} catch (error) {
 			console.error("Failed to back up edit activity data", error);

@@ -1,4 +1,4 @@
-import { normalizeTrackedFolders } from "../activity/folderScope";
+import { normalizeTrackedFiles, normalizeTrackedFolders } from "../activity/folderScope";
 import { splitTimeSpan } from "./timeData";
 import type {
 	ActivitySegment,
@@ -11,17 +11,22 @@ const EPSILON = 1e-9;
 export function ensureTimelineRecordingPeriod(
 	data: StoredTimeActivity,
 	at: number,
-	folders: readonly string[]
+	folders: readonly string[],
+	files: readonly string[] = []
 ): string {
 	if (!Number.isFinite(at) || at < 0) throw new RangeError("记录周期起点无效");
 	const timeline = data.timeline || createTimeline(data);
 	const normalized = normalizeTrackedFolders([...folders]);
+	const normalizedFiles = normalizeTrackedFiles([...files]);
 	const current = timeline.recordingPeriods[timeline.recordingPeriods.length - 1];
-	if (current && current.end === undefined && sameFolders(current.folders, normalized)) {
+	if (current && current.end === undefined && sameFolders(current.folders, normalized) && sameFiles(current.files || [], normalizedFiles)) {
 		return current.id;
 	}
 	if (current && current.end === undefined) current.end = Math.max(current.start, at);
-	const period = { id: newId(), start: at, folders: normalized };
+	const period = {
+		id: newId(), start: at, folders: normalized,
+		...(normalizedFiles.length ? { files: normalizedFiles } : {}),
+	};
 	timeline.recordingPeriods.push(period);
 	return period.id;
 }
@@ -68,6 +73,10 @@ function newId(): string {
 
 function sameFolders(left: readonly string[], right: readonly string[]): boolean {
 	return left.length === right.length && left.every((folder, index) => folder === right[index]);
+}
+
+function sameFiles(left: readonly string[], right: readonly string[]): boolean {
+	return left.length === right.length && left.every((file, index) => file === right[index]);
 }
 
 function isValidSpan(span: TimeSpan): boolean {

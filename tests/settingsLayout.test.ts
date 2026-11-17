@@ -83,12 +83,14 @@ vi.mock("obsidian", () => {
 	class FakeSetting {
 		readonly element = new FakeElement("div");
 		name = "";
+		description = "";
 		toggle?: { value: boolean; handler?: (value: boolean) => Promise<void> };
 		buttons: Array<{
 			text: string;
 			disabled: boolean;
 			handler?: () => void | Promise<void>;
 		}> = [];
+		extraButtons: Array<{ handler?: () => void | Promise<void> }> = [];
 
 		constructor(container: FakeElement) {
 			this.element._setting = this;
@@ -100,7 +102,8 @@ vi.mock("obsidian", () => {
 			return this;
 		}
 
-		setDesc(_description: string): this {
+		setDesc(description: string): this {
+			this.description = description;
 			return this;
 		}
 
@@ -173,13 +176,18 @@ vi.mock("obsidian", () => {
 			return this;
 		}
 
-		addExtraButton(callback: (button: { setIcon(icon: string): any; setTooltip(text: string): any; onClick(handler: () => void): any }) => void): this {
+		addExtraButton(callback: (button: { setIcon(icon: string): any; setTooltip(text: string): any; onClick(handler: () => void | Promise<void>): any }) => void): this {
+			const record: { handler?: () => void | Promise<void> } = {};
 			const button = {
 				setIcon: (_icon: string) => button,
 				setTooltip: (_text: string) => button,
-				onClick: (_handler: () => void) => button,
+				onClick: (handler: () => void | Promise<void>) => {
+					record.handler = handler;
+					return button;
+				},
 			};
 			callback(button);
+			this.extraButtons.push(record);
 			return this;
 		}
 	}
@@ -191,8 +199,14 @@ vi.mock("obsidian", () => {
 	}
 
 	class FakeFolder {}
+	class FakeFile {
+		constructor(readonly path: string, readonly extension: string) {}
+	}
 	class FakeSuggestModal {
-		constructor(_app: unknown) {}
+		static last?: FakeSuggestModal;
+		constructor(_app: unknown) {
+			FakeSuggestModal.last = this;
+		}
 		setPlaceholder(_value: string): void {}
 		open(): void {}
 	}
@@ -203,6 +217,7 @@ vi.mock("obsidian", () => {
 		PluginSettingTab: FakePluginSettingTab,
 		Setting: FakeSetting,
 		TFolder: FakeFolder,
+		TFile: FakeFile,
 		FuzzySuggestModal: FakeSuggestModal,
 	};
 });
@@ -213,6 +228,8 @@ import {
 	parseSaveIntervalSeconds,
 	SETTINGS_SECTION_KEYS,
 } from "../src/activity/EditActivitySettingTab";
+import { getSelectableVaultNotes } from "../src/activity/VaultNoteSuggestModal";
+import { FuzzySuggestModal, TFile } from "obsidian";
 
 function findSetting(container: any, name: string): any {
 	const visit = (element: any): any => {
@@ -226,6 +243,10 @@ function findSetting(container: any, name: string): any {
 	return visit(container);
 }
 
+function makeTestFile(path: string, extension: string): TFile {
+	return Object.assign(Object.create(TFile.prototype), { path, extension });
+}
+
 function createService() {
 	let settings = {
 		timeTrackingEnabled: false,
@@ -237,13 +258,18 @@ function createService() {
 		trackedFolders: [] as string[],
 		strictUserInputOnly: true,
 		countPastedText: true,
+		trackedFiles: [] as string[],
 	};
 	let status = "时长统计：未启用";
 	let saveStatus = "已保存";
 	let manualPaused = false;
 	const listeners = new Set<(event: { type: string }) => void>();
 	const service = {
-		getSettings: vi.fn(() => ({ ...settings, trackedFolders: [...settings.trackedFolders] })),
+		getSettings: vi.fn(() => ({
+			...settings,
+			trackedFolders: [...settings.trackedFolders],
+			trackedFiles: [...settings.trackedFiles],
+		})),
 		getStatisticsFolder: vi.fn(() => "Template/数据/学习统计"),
 		getTimeTrackingStatus: vi.fn(() => status),
 		getTimeTrackingSnapshot: vi.fn(() => ({
@@ -289,6 +315,9 @@ function createService() {
 		setStrictUserInputOnly: vi.fn(async () => undefined),
 		setCountPastedText: vi.fn(async () => undefined),
 		setTrackedFolders: vi.fn(async () => undefined),
+		setTrackedFiles: vi.fn(async (trackedFiles: string[]) => {
+			settings = { ...settings, trackedFiles: [...trackedFiles] };
+		}),
 		exportData: vi.fn(() => "{}"),
 		importData: vi.fn(async () => undefined),
 		restoreLatestBackup: vi.fn(async () => false),
@@ -335,6 +364,94 @@ describe("EditActivitySettingTab layout", () => {
 		expect(parseSaveIntervalSeconds("14")).toBeNull();
 		expect(parseSaveIntervalSeconds("1801")).toBeNull();
 		expect(parseSaveIntervalSeconds("1.5")).toBeNull();
+	});
+
+	it("lists unselected Markdown files, including files at the vault root", () => {
+		const files = [
+			makeTestFile("根笔记.md", "md"),
+			makeTestFile("临床医学/妇产科.md", "md"),
+			makeTestFile("附件/图片.png", "png"),
+			makeTestFile("临床医学/已选.md", "md"),
+		];
+		const app = { vault: { getAllLoadedFiles: () => files } } as any;
+
+		expect(getSelectableVaultNotes(app, ["临床医学/已选.md"]).map((file) => file.path)).toEqual([
+			"根笔记.md",
+			"临床医学/妇产科.md",
+		]);
+	});
+
+	it("does not describe a files-only scope as whole-vault collection", () => {
+		Object.defineProperty(globalThis, "window", {
+			value: globalThis,
+			configurable: true,
+		});
+		Object.defineProperty(globalThis, "localStorage", {
+			value: { getItem: () => "zh" },
+			configurable: true,
+		});
+		const { service } = createService();
+		const settings = service.getSettings();
+		(settings as any).trackedFiles = ["根笔记.md"];
+		service.getSettings.mockReturnValue(settings);
+		const app = {
+			vault: {
+				getAllLoadedFiles: () => [makeTestFile("根笔记.md", "md")],
+				getAbstractFileByPath: (path: string) =>
+					path === "根笔记.md" ? makeTestFile(path, "md") : undefined,
+			},
+		} as any;
+		const tab = new EditActivitySettingTab(app, {} as any, service as any, service.setManualPause);
+
+		tab.display();
+		const container = (tab as any).containerEl;
+		const folderSetting = findSetting(container, "采集目录");
+		const noteSetting = findSetting(container, "指定笔记");
+
+		expect(folderSetting.description).not.toContain("整个仓库");
+		expect(noteSetting).toBeDefined();
+	});
+
+	it("selects a note and keeps missing configured notes removable", async () => {
+		Object.defineProperty(globalThis, "window", {
+			value: globalThis,
+			configurable: true,
+		});
+		Object.defineProperty(globalThis, "localStorage", {
+			value: { getItem: () => "zh" },
+			configurable: true,
+		});
+		const { service } = createService();
+		const initialSettings = service.getSettings();
+		let trackedFiles = ["缺失.md"];
+		service.getSettings.mockImplementation(() => ({
+			...initialSettings,
+			trackedFiles: [...trackedFiles],
+		}));
+		service.setTrackedFiles.mockImplementation(async (files) => {
+			trackedFiles = [...files];
+		});
+		const app = {
+			vault: {
+				getAllLoadedFiles: () => [makeTestFile("新笔记.md", "md")],
+				getAbstractFileByPath: (path: string) =>
+					path === "新笔记.md" ? makeTestFile(path, "md") : undefined,
+			},
+		} as any;
+		const tab = new EditActivitySettingTab(app, {} as any, service as any, service.setManualPause);
+
+		tab.display();
+		const notePicker = findSetting((tab as any).containerEl, "指定笔记");
+		await notePicker.buttons[0].handler!();
+		const modal = (FuzzySuggestModal as any).last;
+		modal.onChooseItem(modal.getItems()[0]);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(service.setTrackedFiles).toHaveBeenLastCalledWith(["缺失.md", "新笔记.md"]);
+
+		const missing = findSetting((tab as any).containerEl, "缺失.md");
+		expect(missing.element.classes.has("is-missing")).toBe(true);
+		await missing.extraButtons[0].handler!();
+		expect(service.setTrackedFiles).toHaveBeenLastCalledWith(["新笔记.md"]);
 	});
 
 	it("renders the public display contract and keeps time and character toggles independent", async () => {

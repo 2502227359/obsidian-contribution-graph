@@ -35,6 +35,7 @@ export interface TrackingPeriod {
 
 export interface CollectionScopePeriod extends TrackingPeriod {
 	folders: string[];
+	files?: string[];
 }
 
 export interface GoalHeatLevel {

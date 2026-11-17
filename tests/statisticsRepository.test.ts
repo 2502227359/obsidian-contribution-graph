@@ -42,6 +42,43 @@ describe("普通目录统计记录", () => {
 		expect(renamed.timeActivity.timeline!.segments[0].path).toBe("新/甲.md");
 	});
 
+	it("深拷贝、合并与重命名保留指定笔记范围元数据", () => {
+		const first = emptyStatistics();
+		first.collectionScopePeriods = [{
+			startDate: "2026-11-15",
+			folders: ["临床医学"],
+			files: ["根笔记.md"],
+		}];
+		first.timeActivity.periods = [{
+			start: 100,
+			folders: ["临床医学"],
+			files: ["根笔记.md"],
+		}];
+		first.timeActivity.timeline = {
+			formatVersion: 1,
+			segments: [],
+			recordingPeriods: [{
+				id: "p", start: 100, folders: ["临床医学"], files: ["根笔记.md"],
+			}],
+		};
+
+		const copy = statisticsFrom(first);
+		copy.collectionScopePeriods[0].files!.push("副本.md");
+		copy.timeActivity.periods[0].files!.push("副本.md");
+		copy.timeActivity.timeline!.recordingPeriods[0].files!.push("副本.md");
+		expect(first.collectionScopePeriods[0].files).toEqual(["根笔记.md"]);
+		expect(first.timeActivity.periods[0].files).toEqual(["根笔记.md"]);
+		expect(first.timeActivity.timeline!.recordingPeriods[0].files).toEqual(["根笔记.md"]);
+
+		const merged = mergeStatistics([first]);
+		const renamed = applyStatisticsRename(merged, {
+			oldPath: "根笔记.md", newPath: "新笔记.md", isFolder: false,
+		});
+		expect(renamed.collectionScopePeriods[0].files).toEqual(["新笔记.md"]);
+		expect(renamed.timeActivity.periods[0].files).toEqual(["新笔记.md"]);
+		expect(renamed.timeActivity.timeline!.recordingPeriods[0].files).toEqual(["新笔记.md"]);
+	});
+
 	it("来源读取复用有效记录选择，并暴露匿名来源标识", async () => {
 		const fs = files();
 		const repo = new StatisticsRepository(fs, data => data as any);

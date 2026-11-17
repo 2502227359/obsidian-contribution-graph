@@ -117,6 +117,14 @@ describe("time activity data", () => {
 		).toBe("PARTIAL");
 	});
 
+	it("仅指定笔记的覆盖周期不宣称覆盖其父目录", () => {
+		const start = Date.UTC(2026, 0, 1);
+		const data = createEmptyTimeActivity();
+		data.periods = [{ start, end: start + 60 * 60 * 1000, folders: [], files: ["Root/A.md"] }];
+		expect(getTimeTrackingState(data, start, start + 60 * 60 * 1000, ["Root"], start + 60 * 60 * 1000)).toBe("UNTRACKED");
+		expect(getTimeTrackingState(data, start, start + 60 * 60 * 1000, [], start + 60 * 60 * 1000)).toBe("TRACKED");
+	});
+
 	it("合并零散覆盖周期并识别完整覆盖", () => {
 		const start = Date.UTC(2026, 0, 1);
 		const end = start + 10 * 60 * 60 * 1000;
@@ -144,6 +152,24 @@ describe("time activity data", () => {
 			"Archive/a.md": 60,
 			"Projects-old/b.md": 60,
 		});
+	});
+
+	it("迁移时长覆盖周期和时间轴周期中的指定笔记", () => {
+		const data = createEmptyTimeActivity();
+		data.periods = [{ start: 1, folders: [], files: ["Projects/A.md", "Other/B.md"] }];
+		data.timeline = { formatVersion: 1, segments: [], recordingPeriods: [
+			{ id: "p", start: 1, folders: [], files: ["Projects/A.md"] },
+		] };
+		expect(renameTimePaths(data, "Projects", "Archive", true)).toBe(true);
+		expect(data.periods[0].files).toEqual(["Archive/A.md", "Other/B.md"]);
+		expect(data.timeline?.recordingPeriods[0].files).toEqual(["Archive/A.md"]);
+	});
+
+	it("改名为非 Markdown 时保留原指定笔记范围", () => {
+		const data = createEmptyTimeActivity();
+		data.periods = [{ start: 1, folders: [], files: ["A.md"] }];
+		expect(renameTimePaths(data, "A.md", "A.txt", false)).toBe(false);
+		expect(data.periods[0].files).toEqual(["A.md"]);
 	});
 
 	it("规范化导入值并格式化时长", () => {

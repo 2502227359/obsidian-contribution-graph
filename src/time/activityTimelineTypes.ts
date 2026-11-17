@@ -17,6 +17,7 @@ export interface TimelineRecordingPeriod {
  start: number;
  end?: number;
  folders: string[];
+	files?: string[];
 }
 
 export interface StoredActivityTimeline {
@@ -63,7 +64,7 @@ export interface ActivityTimelineDay {
 
 export interface ActivityTimelineService {
  getActivityTimelineDay(query: ActivityTimelineQuery): ActivityTimelineDay;
- getSettings(): {trackedFolders: string[]; timeTrackingEnabled: boolean};
+	getSettings(): {trackedFolders: string[]; trackedFiles?: string[]; timeTrackingEnabled: boolean};
  subscribe(listener: (event: EditActivityChangeEvent) => void): () => void;
 }
 

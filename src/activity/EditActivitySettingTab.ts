@@ -4,6 +4,7 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	TFile,
 	TFolder,
 } from "obsidian";
 import { Locals } from "src/i18/messages";
@@ -15,11 +16,37 @@ import {
 	getSelectableVaultFolders,
 	VaultFolderSuggestModal,
 } from "./VaultFolderSuggestModal";
+import {
+	getSelectableVaultNotes,
+	VaultNoteSuggestModal,
+} from "./VaultNoteSuggestModal";
 import { isValidSaveIntervalSeconds } from "./types";
 import {
 	getTimeTrackingDescription,
 	getTimeTrackingStatusText,
 } from "../time/timeTrackingPresentation";
+
+function getCollectionScopeSummary(
+	settings: ReturnType<EditActivityService["getSettings"]>,
+	local: ReturnType<typeof Locals.get>
+): string {
+	const trackedFolders = settings.trackedFolders;
+	const trackedFiles = settings.trackedFiles;
+	if (trackedFolders.length === 0 && trackedFiles.length === 0) {
+		return local.settings_summary_all_folders;
+	}
+	return [
+		trackedFolders.length > 0
+			? local.settings_summary_folder_count.replace(
+					"{count}",
+					trackedFolders.length.toString()
+			  )
+			: "",
+		trackedFiles.length > 0 ? `${trackedFiles.length} 篇指定笔记` : "",
+	]
+		.filter(Boolean)
+		.join("，");
+}
 
 export const SETTINGS_SECTION_KEYS = [
 	"time",
@@ -239,12 +266,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 			settings.excludeMarkdownFormatting
 				? local.settings_summary_ignore_markdown
 				: local.settings_summary_include_markdown,
-			settings.trackedFolders.length === 0
-				? local.settings_summary_all_folders
-				: local.settings_summary_folder_count.replace(
-						"{count}",
-						settings.trackedFolders.length.toString()
-				  ),
+			getCollectionScopeSummary(settings, local),
 		];
 		const summaryItemsEl = summary.createDiv({
 			cls: "contribution-graph-counting-summary-items",
@@ -332,15 +354,40 @@ export class EditActivitySettingTab extends PluginSettingTab {
 			"scope",
 			local.settings_collection_scope_heading
 		);
+		this.createTrackedFolderScope(section, settings, local);
+		this.createTrackedFileScope(section, settings);
+	}
+
+	private createTrackedFolderScope(
+		container: HTMLElement,
+		settings: ReturnType<EditActivityService["getSettings"]>,
+		local: ReturnType<typeof Locals.get>
+	): void {
+		const trackedFolders = settings.trackedFolders;
+		this.createTrackedFolderPicker(container, settings, local);
+		for (const folderPath of trackedFolders) {
+			this.createTrackedFolderSetting(container, folderPath, settings, local);
+		}
+	}
+
+	private createTrackedFolderPicker(
+		container: HTMLElement,
+		settings: ReturnType<EditActivityService["getSettings"]>,
+		local: ReturnType<typeof Locals.get>
+	): void {
+		const trackedFolders = settings.trackedFolders;
+		const trackedFiles = settings.trackedFiles;
 		const selectableFolders = getSelectableVaultFolders(
 			this.app,
-			settings.trackedFolders
+			trackedFolders
 		);
-		new Setting(section)
-			.setName(local.settings_tracked_folders)
+		new Setting(container)
+			.setName("采集目录")
 			.setDesc(
-				settings.trackedFolders.length === 0
+				trackedFolders.length === 0 && trackedFiles.length === 0
 					? `${local.settings_tracked_folders_description} ${local.settings_tracked_folders_all}`
+					: trackedFolders.length === 0
+					? "当前未选择目录，仅采集下方指定笔记。"
 					: local.settings_tracked_folders_description
 			)
 			.addButton((button) =>
@@ -354,7 +401,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 							local.settings_tracked_folders_choose,
 							async (folder) => {
 								await this.activityService.setTrackedFolders([
-									...settings.trackedFolders,
+									...trackedFolders,
 									folder.path,
 								]);
 								this.display();
@@ -362,9 +409,54 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						).open();
 					})
 			);
-		for (const folderPath of settings.trackedFolders) {
-			this.createTrackedFolderSetting(section, folderPath, settings, local);
+	}
+
+	private createTrackedFileScope(
+		container: HTMLElement,
+		settings: ReturnType<EditActivityService["getSettings"]>
+	): void {
+		const trackedFiles = settings.trackedFiles;
+		this.createTrackedFilePicker(container, settings);
+		for (const filePath of trackedFiles) {
+			this.createTrackedFileSetting(container, filePath, settings);
 		}
+	}
+
+	private createTrackedFilePicker(
+		container: HTMLElement,
+		settings: ReturnType<EditActivityService["getSettings"]>
+	): void {
+		const trackedFolders = settings.trackedFolders;
+		const trackedFiles = settings.trackedFiles;
+		const selectableFiles = getSelectableVaultNotes(this.app, trackedFiles);
+		new Setting(container)
+			.setName("指定笔记")
+			.setDesc(
+				trackedFiles.length === 0
+					? trackedFolders.length === 0
+						? "目录和指定笔记均未选择时，采集全库 Markdown 笔记。"
+						: "可额外指定目录外的 Markdown 笔记；与采集目录合并且不重复计时。"
+					: "已指定的 Markdown 笔记会与采集目录合并，不重复计时。"
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("选择笔记")
+					.setDisabled(selectableFiles.length === 0)
+					.onClick(() => {
+						new VaultNoteSuggestModal(
+							this.app,
+							selectableFiles,
+							"选择 Markdown 笔记",
+							async (file) => {
+								await this.activityService.setTrackedFiles([
+									...trackedFiles,
+									file.path,
+								]);
+								this.display();
+							}
+						).open();
+					})
+			);
 	}
 
 	private createTrackedFolderSetting(
@@ -392,6 +484,35 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		if (!exists) {
 			folderSetting
 				.setDesc(local.settings_tracked_folder_missing)
+				.setClass("is-missing");
+		}
+	}
+
+	private createTrackedFileSetting(
+		container: HTMLElement,
+		filePath: string,
+		settings: ReturnType<EditActivityService["getSettings"]>
+	): void {
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		const exists =
+			file instanceof TFile && file.extension.toLowerCase() === "md";
+		const fileSetting = new Setting(container)
+			.setName(filePath)
+			.setClass("contribution-graph-tracked-file-item")
+			.addExtraButton((button) =>
+				button
+					.setIcon("trash")
+					.setTooltip("移除这篇指定笔记")
+					.onClick(async () => {
+						await this.activityService.setTrackedFiles(
+							settings.trackedFiles.filter((path) => path !== filePath)
+						);
+						this.display();
+					})
+			);
+		if (!exists) {
+			fileSetting
+				.setDesc("该笔记当前不存在或不是 Markdown 文件，可以移除此路径。")
 				.setClass("is-missing");
 		}
 	}

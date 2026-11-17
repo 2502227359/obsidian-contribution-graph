@@ -628,6 +628,7 @@ export function GraphForm(props: {
 										onChange={changeDataSource}
 										app={props.app}
 										collectionFolders={props.activityService.getSettings().trackedFolders}
+										collectionFiles={props.activityService.getSettings().trackedFiles}
 									/>
 									{isGoalSource && (
 										<div className="form-item contribution-graph-goal-setting">

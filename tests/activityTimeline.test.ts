@@ -27,6 +27,21 @@ describe("学习时间轴明细", () => {
 		]);
 	});
 
+	it("文件范围变化时创建新的记录周期，并只在有文件时写入范围", () => {
+		const data = createEmptyTimeActivity();
+		const first = ensureTimelineRecordingPeriod(data, at, [], ["Root/A.md"]);
+		expect(ensureTimelineRecordingPeriod(data, at + 1000, [], ["Root/A.md"])).toBe(first);
+		const next = ensureTimelineRecordingPeriod(data, at + 2000, [], ["Root/B.md"]);
+		expect(next).not.toBe(first);
+		expect(data.timeline?.recordingPeriods).toMatchObject([
+			{ id: first, folders: [], files: ["Root/A.md"] },
+			{ id: next, folders: [], files: ["Root/B.md"] },
+		]);
+		const legacy = createEmptyTimeActivity();
+		ensureTimelineRecordingPeriod(legacy, at, [], []);
+		expect(legacy.timeline?.recordingPeriods[0]).not.toHaveProperty("files");
+	});
+
 	it("跨小时片段按桶原子存储，相邻同身份延长，撤回只修改尾部", () => {
 		const data = createEmptyTimeActivity();
 		const periodId = ensureTimelineRecordingPeriod(data, at, ["Notes"]);
@@ -58,6 +73,17 @@ describe("学习时间轴明细", () => {
 		expect(normalized?.segments).toEqual([]);
 		expect(normalized?.issues?.length).toBeGreaterThan(0);
 		expect(() => normalizeActivityTimeline(raw, true)).toThrow();
+	});
+
+	it("规范化记录周期的指定笔记范围，并拒绝非法文件范围", () => {
+		const raw = {
+			formatVersion: 1,
+			recordingPeriods: [{ id: "p", start: 10, folders: [], files: ["Root/A.md"] }],
+			segments: [],
+		};
+		expect(normalizeActivityTimeline(raw, true)?.recordingPeriods[0].files).toEqual(["Root/A.md"]);
+		expect(normalizeActivityTimeline({ ...raw, recordingPeriods: [{ ...raw.recordingPeriods[0], files: ["Root/A.txt"] }] }, false)?.issues)
+			.toContain("记录周期0无效");
 	});
 
 	it("组合边界拒绝非法桶键和墙钟时长，未知版本隔离为空明细", () => {

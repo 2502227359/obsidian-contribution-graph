@@ -1,4 +1,4 @@
-import { normalizeTrackedFolders } from "../activity/folderScope";
+import { normalizeTrackedFiles, normalizeTrackedFolders } from "../activity/folderScope";
 import { isValidFormattedDate } from "../util/dateUtils";
 import type { ActivitySegment, StoredActivityTimeline, TimelineRecordingPeriod } from "./activityTimelineTypes";
 
@@ -108,12 +108,22 @@ function normalizePeriod(candidate: unknown): TimelineRecordingPeriod {
 	if (!Array.isArray(value.folders) || value.folders.some(folder => typeof folder !== "string")) {
 		throw new Error("记录周期文件夹无效");
 	}
+	const files = normalizePeriodFiles(value.files);
 	return {
 		id: value.id,
 		start: value.start as number,
 		...(value.end === undefined ? {} : { end: value.end as number }),
 		folders: normalizeTrackedFolders(value.folders as string[]),
+		...(files.length ? { files } : {}),
 	};
+}
+
+function normalizePeriodFiles(raw: unknown): string[] {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw) || raw.some(file => typeof file !== "string" || normalizeTrackedFiles([file]).length === 0)) {
+		throw new Error("记录周期指定笔记无效");
+	}
+	return normalizeTrackedFiles(raw as string[]);
 }
 
 function normalizeSegment(candidate: unknown, periodIds: Set<string>): ActivitySegment {

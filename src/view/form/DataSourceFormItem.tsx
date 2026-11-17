@@ -28,6 +28,7 @@ export function DataSourceFormItem(props: {
 	onChange: (dataSource: DataSource) => void;
 	app: App;
 	collectionFolders: string[];
+	collectionFiles?: string[];
 }): JSX.Element {
 	const { dataSource } = props;
 	const [dateFormatType, setDateFormatType] = useState(
@@ -196,7 +197,7 @@ export function DataSourceFormItem(props: {
 						)}
 						{normalizeTrackedFolders(dataSource.folders || []).map((folder) => {
 							const missing = !(props.app.vault.getAbstractFileByPath(folder) instanceof TFolder);
-							const outside = !areFoldersCoveredByScope([folder], props.collectionFolders);
+							const outside = !areFoldersCoveredByScope([folder], props.collectionFolders, props.collectionFiles);
 							return (
 								<div className={`contribution-graph-folder-chip${missing || outside ? " is-warning" : ""}`} key={folder}>
 									<span>{folder}</span>

@@ -14,6 +14,27 @@ function cover(data: StoredTimeActivity, start = "2026-11-09", end = "2026-11-23
 }
 
 describe("学科周回顾的公共计算行为", () => {
+	it("指定笔记范围变化阻断同期比较，单篇不代表整个父目录已采集", () => {
+		const data = createEmptyTimeActivity();
+		data.periods = [
+			{ start: epoch("2026-11-09"), end: epoch("2026-11-16"), folders: [], files: ["独立/甲.md"] },
+			{ start: epoch("2026-11-16"), end: epoch("2026-11-23"), folders: [], files: ["独立/乙.md", "根笔记.md"] },
+		];
+		const before = JSON.stringify(data);
+		const report = buildWeeklyReview(data, {}, now);
+		expect(report.comparison.state).toBe("POLICY_CHANGED");
+		expect(report.folderPaths).toEqual(["独立"]);
+		expect(buildWeeklyReview(data, { root: "独立" }, now).days[0].coverage).toBe("UNTRACKED");
+		expect(JSON.stringify(data)).toBe(before);
+	});
+	it("旧范围缺少指定笔记字段等价于空列表，不改变原比较结果", () => {
+		const data = createEmptyTimeActivity();
+		data.periods = [
+			{ start: epoch("2026-11-09"), end: epoch("2026-11-16"), folders: ["医"] },
+			{ start: epoch("2026-11-16"), end: epoch("2026-11-23"), folders: ["医"], files: [] },
+		];
+		expect(buildWeeklyReview(data, {}, now).comparison.state).toBe("READY");
+	});
 	it("本周累计含今天，同期只比已结束日期，历史周比较完整七天", () => {
 		const data = createEmptyTimeActivity(); cover(data);
 		put(data, "2026-11-09", { "医/甲.md": 1800 });

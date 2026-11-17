@@ -1,4 +1,4 @@
-import { areFoldersCoveredByScope, isFileInTrackedFolders, normalizeTrackedFolderPath, normalizeTrackedFolders } from "../activity/folderScope";
+import { areFoldersCoveredByScope, isFileInTrackedFolders, normalizeTrackedFiles, normalizeTrackedFolderPath, normalizeTrackedFolders } from "../activity/folderScope";
 import { diffCalendarDays, isValidFormattedDate, parseDate, toFormattedDate } from "../util/dateUtils";
 import { isYoloChatActivity, YOLO_CHAT_ACTIVITY_LABEL } from "./timeActivitySource";
 import { getTimeTrackingState } from "./timeData";
@@ -73,6 +73,7 @@ function indexReviewData(data: StoredTimeActivity, range: ReviewRange): ReviewIn
 		const date = toFormattedDate(new Date(period.start));
 		if (isValidFormattedDate(date) && date < result.earliestDate) result.earliestDate = date;
 		for (const folder of period.folders) addFolderParents(result.folders, folder);
+		for (const file of period.files ?? []) addFolderParents(result.folders, file.split("/").slice(0, -1).join("/"));
 	}
 	return result;
 }
@@ -114,8 +115,9 @@ function reviewCoverageData(data: StoredTimeActivity, range: ReviewRange): Store
 	const end = parseDate(shiftReviewDate(range.weekEnd, 1)).getTime();
 	const folders = range.root ? [range.root] : [];
 	return { buckets: {}, policyChanges: [], periods: data.periods
-		.filter(period => period.start < end && (period.end ?? range.now) > start && areFoldersCoveredByScope(folders, period.folders))
-		.map(period => ({ start: period.start, end: Math.min(period.end ?? range.now, range.now), folders: [...period.folders] }))
+		.filter(period => period.start < end && (period.end ?? range.now) > start && areFoldersCoveredByScope(folders, period.folders, period.files))
+		.map(period => ({ ...period, start: period.start, end: Math.min(period.end ?? range.now, range.now), folders: [...period.folders],
+			...(period.files?.length ? { files: [...period.files] } : {}) }))
 		.filter(period => period.end > period.start) };
 }
 
@@ -139,7 +141,7 @@ function makeReviewDay(date: string, range: ReviewRange, index: ReviewIndex, cov
 
 function scopeSignatures(data: StoredTimeActivity, start: number, end: number): string[] {
 	return [...new Set(data.periods.filter(period => period.start < end && period.end! > start)
-		.map(period => JSON.stringify(normalizeTrackedFolders(period.folders).sort())))].sort();
+		.map(period => JSON.stringify({ folders: normalizeTrackedFolders(period.folders).sort(), files: normalizeTrackedFiles(period.files ?? []).sort() })))].sort();
 }
 
 function compareWeeks(data: StoredTimeActivity, coverageData: StoredTimeActivity, range: ReviewRange,

@@ -4,7 +4,7 @@ import {
 	StoredDocumentEditStats,
 	migrateDocumentPaths,
 } from "./types";
-import { migrateTrackedFolderPaths } from "./folderScope";
+import { migrateTrackedFilePaths, migrateTrackedFolderPaths } from "./folderScope";
 import { renameTimePaths } from "../time/timeData";
 import {
 	StoredTimeActivity,
@@ -53,6 +53,7 @@ export function statisticsFrom(store: StatisticsData): StatisticsData {
 		collectionScopePeriods: store.collectionScopePeriods.map((period) => ({
 			...period,
 			folders: [...period.folders],
+			...(period.files ? { files: [...period.files] } : {}),
 		})),
 		countingPolicyPeriods: store.countingPolicyPeriods.map((period) => ({
 			...period,
@@ -73,7 +74,11 @@ export function mergeStatistics(inputs: readonly StatisticsData[]): StatisticsDa
 		result.collectionScopePeriods = dedupeSorted(
 			[...result.collectionScopePeriods, ...input.collectionScopePeriods],
 			period => period.startDate
-		).map((period) => ({ ...period, folders: [...period.folders] }));
+		).map((period) => ({
+			...period,
+			folders: [...period.folders],
+			...(period.files ? { files: [...period.files] } : {}),
+		}));
 		result.countingPolicyPeriods = dedupeSorted(
 			[...result.countingPolicyPeriods, ...input.countingPolicyPeriods],
 			period => period.startedAt
@@ -133,14 +138,22 @@ export function applyStatisticsRename(
 		rename.newPath,
 		rename.isFolder
 	);
-	if (rename.isFolder) {
-		for (const period of result.collectionScopePeriods) {
+	for (const period of result.collectionScopePeriods) {
+		if (rename.isFolder) {
 			period.folders = migrateTrackedFolderPaths(
 				period.folders,
 				rename.oldPath,
 				rename.newPath
 			);
 		}
+		const hadFiles = period.files !== undefined;
+		const migratedFiles = migrateTrackedFilePaths(
+			period.files || [],
+			rename.oldPath,
+			rename.newPath,
+			rename.isFolder
+		);
+		if (hadFiles || migratedFiles.length) period.files = migratedFiles;
 	}
 	return result;
 }
@@ -247,7 +260,11 @@ function cloneSegment(segment: ActivitySegment): ActivitySegment {
 }
 
 function cloneRecordingPeriod(period: TimelineRecordingPeriod): TimelineRecordingPeriod {
-	return { ...period, folders: [...period.folders] };
+	return {
+		...period,
+		folders: [...period.folders],
+		...(period.files ? { files: [...period.files] } : {}),
+	};
 }
 
 function mergeTimelines(target: StoredTimeActivity, source: StoredTimeActivity): void {
@@ -304,7 +321,11 @@ function cloneBucket(bucket: TimeBucket): TimeBucket {
 }
 
 function cloneCoveragePeriod(period: TimeCoveragePeriod): TimeCoveragePeriod {
-	return { ...period, folders: [...period.folders] };
+	return {
+		...period,
+		folders: [...period.folders],
+		...(period.files ? { files: [...period.files] } : {}),
+	};
 }
 
 function cloneDocument(document: StoredDocumentEditStats): StoredDocumentEditStats {

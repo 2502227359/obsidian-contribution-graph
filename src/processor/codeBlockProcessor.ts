@@ -235,7 +235,8 @@ export class CodeBlockProcessor {
 						summary: Locals.get().graph_folder_missing.replace("{folder}", folder),
 					});
 				}
-				if (!areFoldersCoveredByScope([folder], this.activityService.getSettings().trackedFolders)) {
+				const scope = this.activityService.getSettings();
+				if (!areFoldersCoveredByScope([folder], scope.trackedFolders, scope.trackedFiles)) {
 					throw new GraphProcessError({
 						summary: Locals.get().graph_folder_outside_scope.replace("{folder}", folder),
 					});

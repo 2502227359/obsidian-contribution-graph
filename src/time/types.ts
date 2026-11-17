@@ -60,6 +60,7 @@ export interface TimeCoveragePeriod {
 	start: number;
 	end?: number;
 	folders: string[];
+	files?: string[];
 }
 
 export interface TimePolicyChange {

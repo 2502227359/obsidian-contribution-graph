@@ -90,11 +90,40 @@ describe("时长统计的保存与查询", () => {
 		plugin.loadData.mockResolvedValue(raw);
 		service=new EditActivityService(plugin,()=>new Date(wall),()=>mono);await service.initialize();
 		expect(service.getSettings()).toEqual(settings);
-		expect(plugin.saveData.mock.calls.slice(-1)[0][0].schemaVersion).toBe(12);
+		expect(plugin.saveData.mock.calls.slice(-1)[0][0].schemaVersion).toBe(13);
 		for(const [path,content] of originals)expect(plugin.files.get(path)).toBe(content);
 		expect([...plugin.files.keys()].some(path=>path.endsWith("-timeline-upgrade.json"))).toBe(true);
 		const config=[...plugin.files.entries()].find(([path])=>String(path).includes("/timeline-configuration-"));
 		expect(config&&JSON.parse(String(config[1]))).toEqual(raw);
+	});
+	it("十二版配置升级前备份原配置，新增指定笔记设置默认为空", async () => {
+		const raw = {
+			schemaVersion: 12,
+			settings: {
+				...service.getSettings(),
+				trackedFolders: ["临床医学"],
+			},
+			graphThemes: [],
+			storage: { formatVersion: 1, folder: "Template/数据/学习统计" },
+		};
+		await service.unload();
+		plugin.loadData.mockResolvedValue(raw);
+		service = new EditActivityService(plugin, () => new Date(wall), () => mono);
+		await service.initialize();
+
+		expect(service.getSettings()).toMatchObject({
+			trackedFolders: ["临床医学"], trackedFiles: [],
+		});
+		expect(plugin.saveData.mock.calls.slice(-1)[0][0].schemaVersion).toBe(13);
+		const backup = [...plugin.files.entries()].find(([path]) => path.includes("-scope-upgrade.json"));
+		expect(backup && JSON.parse(String(backup[1]))).toMatchObject({ schemaVersion: 12 });
+		const config = [...plugin.files.entries()].find(([path]) => path.includes("/scope-configuration-"));
+		expect(config && JSON.parse(String(config[1]))).toEqual(raw);
+	});
+	it("拒绝包含非法指定笔记的十三版导入", async () => {
+		const invalid = JSON.parse(service.exportData());
+		invalid.settings.trackedFiles = ["临床医学", 42];
+		await expect(service.importData(JSON.stringify(invalid))).rejects.toThrow("指定笔记设置无效");
 	});
 	it("周回顾读取当前一致快照，不结算、保存或暴露可变统计", async () => {
 		await service.setTimeTrackingEnabled(true);
@@ -290,6 +319,59 @@ describe("时长统计的保存与查询", () => {
 		service.recordTimeActivity("其他/乙.md"); advance(30);
 		expect(service.getDailyTimeStats({ folders: ["项目"] })[0].seconds).toBe(30);
 		expect(service.getDailyTimeStats({ folders: ["其他"] })[0].seconds).toBe(30);
+	});
+	it("指定笔记可作为目录之外的唯一采集范围", async () => {
+		await service.setTrackedFiles(["根笔记.md"]);
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("根笔记.md"); advance(30);
+		service.recordTimeActivity("其他/乙.md"); advance(30);
+		service.pauseTimeActivity();
+
+		expect(service.getDailyTimeStats()[0]).toMatchObject({
+			seconds: 30,
+			documents: [{ path: "根笔记.md", seconds: 30 }],
+		});
+		const settings = service.getSettings();
+		settings.trackedFiles.push("不应写回.md");
+		expect(service.getSettings()).toMatchObject({
+			trackedFolders: [],
+			trackedFiles: ["根笔记.md"],
+		});
+	});
+	it("新增指定笔记只影响之后的覆盖区间，重载保留设置", async () => {
+		await service.setTrackedFolders(["临床医学"]);
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("临床医学/甲.md"); advance(15);
+		await service.setTrackedFiles(["根笔记.md"]);
+		service.recordTimeActivity("根笔记.md"); advance(15);
+		service.pauseTimeActivity();
+
+		const exported = JSON.parse(service.exportData());
+		expect(exported.timeActivity.periods[0]).toMatchObject({ folders: ["临床医学"] });
+		expect(exported.timeActivity.periods[0]).not.toHaveProperty("files");
+		expect(exported.timeActivity.periods.at(-1)).toMatchObject({
+			folders: ["临床医学"], files: ["根笔记.md"],
+		});
+		expect(exported.settings.trackedFiles).toEqual(["根笔记.md"]);
+		await service.unload();
+		plugin.loadData.mockResolvedValue(plugin.saveData.mock.lastCall[0]);
+		service = new EditActivityService(plugin, () => new Date(wall), () => mono);
+		await service.initialize();
+		expect(service.getSettings().trackedFolders).toEqual(["临床医学"]);
+		expect(service.getSettings().trackedFiles).toEqual(["根笔记.md"]);
+	});
+	it("重命名指定笔记同步配置和历史覆盖，不删除历史统计", async () => {
+		await service.setTrackedFiles(["旧笔记.md"]);
+		await service.setTrackingEnabled(true);
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("旧笔记.md"); advance(15); service.pauseTimeActivity();
+		service.handlePathRename("旧笔记.md", "新笔记.md", false);
+
+		expect(service.getSettings().trackedFiles).toEqual(["新笔记.md"]);
+		expect(service.getCollectionScopePeriods().at(-1)?.files).toEqual(["新笔记.md"]);
+		expect(service.getDailyTimeStats()[0].documents).toContainEqual({
+			path: "新笔记.md", seconds: 15,
+		});
 	});
 	it("导出回导保持时长，清空后旧会话不再写入", async () => {
 		await service.setTimeTrackingEnabled(true);

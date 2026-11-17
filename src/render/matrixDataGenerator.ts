@@ -168,7 +168,7 @@ export function getDateTrackingState(
 		return "UNTRACKED";
 	}
 	const coveredCount = scopes.filter((period) =>
-		areFoldersCoveredByScope(activityFolders, period.folders)
+		areFoldersCoveredByScope(activityFolders, period.folders, period.files)
 	).length;
 	if (coveredCount === scopes.length) {
 		return "TRACKED";
