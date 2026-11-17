@@ -27,6 +27,7 @@ export class TimeTracker {
 	private hasObservedClock = false;
 	private lastOffset?: number;
 	private interrupted = false;
+	private continuityId?: string;
 
 	constructor(
 		private readonly onSpan: (span: TimeSpan, operation: "add" | "remove") => void,
@@ -117,6 +118,7 @@ export class TimeTracker {
 		const pendingMs = this.status === "ACTIVE" ? Math.max(0, this.lastEmitMono - this.lastActivityMono) : 0;
 		return {
 			status: this.status, interrupted: this.interrupted, path: this.path,
+			continuityId: this.continuityId,
 			pendingStart: pendingMs ? this.lastEmitWall - pendingMs : undefined,
 			pendingEnd: pendingMs ? this.lastEmitWall : undefined,
 			pendingSeconds: pendingMs / 1000,
@@ -130,6 +132,7 @@ export class TimeTracker {
 		now: { wall: number; mono: number; offset: number }
 	): void {
 		this.path = path;
+		this.continuityId = crypto.randomUUID();
 		this.status = "ACTIVE";
 		this.interrupted = false;
 		this.lastEmitWall = now.wall;
@@ -159,6 +162,7 @@ export class TimeTracker {
 				start: this.lastEmitWall,
 				end: mappedEndWall,
 				seconds: elapsed,
+				continuityId: this.continuityId,
 			}, "add");
 			this.lastEmitMono = endMono;
 			this.lastEmitWall = mappedEndWall;
@@ -175,6 +179,7 @@ export class TimeTracker {
 			start,
 			end: this.lastEmitWall,
 			seconds: milliseconds / 1000,
+			continuityId: this.continuityId,
 		}, "remove");
 		this.onDiscard?.({
 			path: this.path, start, detectedAt: this.lastEmitWall + endMono - this.lastEmitMono,
@@ -247,6 +252,7 @@ export class TimeTracker {
 		this.lastObservedMono = 0;
 		this.hasObservedClock = false;
 		this.lastOffset = undefined;
+		this.continuityId = undefined;
 	}
 }
 

@@ -153,6 +153,20 @@ function createCallbacks(
 }
 
 describe("时间活动事件策略", () => {
+	it("嵌入时间轴的可信操作暂停正文，不记入宿主笔记", () => {
+		const view=createView(),{plugin,documentTarget}=createPlugin([view]),callbacks=createCallbacks();
+		const control={closest:()=>control},originalContains=view.root.contains;
+		view.root.contains=target=>target===control||originalContains(target);
+		const observer=new TimeActivityObserver(plugin as any,callbacks);
+		try{
+			observer.start();documentTarget.dispatch("pointerdown",view.root);
+			vi.mocked(callbacks.activity).mockClear();vi.mocked(callbacks.pause).mockClear();
+			documentTarget.dispatch("pointerdown",control);
+			expect(callbacks.activity).not.toHaveBeenCalled();
+			expect(callbacks.pause).toHaveBeenCalled();
+			expect(callbacks.context).toHaveBeenLastCalledWith({reason:"OUTSIDE_EDITOR",path:"Notes/Test.md"});
+		}finally{observer.stop();}
+	});
 	it.each(["主窗口", "独立窗口"])("YOLO 对话在%s的可信操作也应产生时长活动", placement => {
 		const note = createView("临床医学/测试笔记.md");
 		const chat = createView();

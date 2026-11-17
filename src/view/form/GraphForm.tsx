@@ -49,6 +49,7 @@ export function GraphForm(props: {
 	yamlConfig: YamlGraphConfig;
 	onSubmit: (yamlGraphConfig: YamlGraphConfig) => void;
 	onCancel?: () => void;
+	newGraph?: boolean;
 	app: App;
 	activityService: EditActivityService;
 }): JSX.Element {
@@ -56,9 +57,10 @@ export function GraphForm(props: {
 	const local = Locals.get();
 	const previewContainerRef = useRef<HTMLDivElement>(null);
 	const previewProcessorRef = useRef<CodeBlockProcessor | null>(null);
+	const dateRangeTouched=useRef(false);
 
 	const [formData, setFormData] = useState(() => ({ ...yamlConfig,
-		...(yamlConfig.dataSource?.type === "TIME_ACTIVITY" && yamlConfig.graphType !== "hourly"
+		...(yamlConfig.dataSource?.type === "TIME_ACTIVITY" && !["hourly","timeline"].includes(yamlConfig.graphType)
 			? { heatScale: yamlConfig.heatScale || createDefaultGoalHeatScale(60) } : {}),
 	}));
 	const [cellRules, setCellRules] = useState<CellStyleRule[]>(
@@ -75,7 +77,7 @@ export function GraphForm(props: {
 			yamlConfig.cellStyle?.minWidth === yamlConfig.cellStyle?.minHeight
 	);
 	const isTimeSource = formData.dataSource?.type === "TIME_ACTIVITY";
-	const isGoalSource = formData.dataSource?.type === "EDIT_ACTIVITY" || (isTimeSource && formData.graphType !== "hourly");
+	const isGoalSource = formData.dataSource?.type === "EDIT_ACTIVITY" || (isTimeSource && !["hourly","timeline"].includes(formData.graphType));
 	const appearance = normalizeGraphAppearance(formData.appearance);
 
 	const handleInputChange = (
@@ -165,10 +167,19 @@ export function GraphForm(props: {
 	};
 
 	const changeFormData = (name: string, value: any) => {
+		if(["dateRangeType","dateRangeValue","fromDate","toDate"].includes(name))dateRangeTouched.current=true;
 		setFormData((prevData) => ({ ...prevData, [name]: value }));
 	};
 
 	const changeGraphType = (graphType: string) => {
+		if(graphType==="timeline"){
+			const useDefault=props.newGraph&&!dateRangeTouched.current;dateRangeTouched.current=true;
+			setFormData(previous=>({...previous,graphType,dataSource:{type:"TIME_ACTIVITY",folders:previous.dataSource?.folders||[]},
+				title:props.newGraph&&["Contributions","Contribution Graph"].includes(previous.title||"")?"学习时间轴":previous.title,
+				timelineDepth:previous.timelineDepth||1,...(useDefault?{dateRangeType:"LATEST_DAYS",dateRangeValue:30,fromDate:undefined,toDate:undefined}:{}),
+				heatScale:previous.dataSource?.type==="TIME_ACTIVITY"?previous.heatScale:undefined}));
+			return;
+		}
 		const hourly = graphType === "hourly";
 		const rules = hourly ? TIME_HOURLY_RULES : DEFAULT_RULES;
 		const resetRules = hourly || formData.graphType === "hourly";
@@ -185,13 +196,13 @@ export function GraphForm(props: {
 	const changeDataSource = (dataSource: YamlGraphConfig["dataSource"]) => {
 		const time = dataSource.type === "TIME_ACTIVITY";
 		const sourceChanged = dataSource.type !== formData.dataSource?.type;
-		const leavingHourly = !time && formData.graphType === "hourly";
+		const leavingHourly = !time && ["hourly","timeline"].includes(formData.graphType);
 		if (leavingHourly) setCellRules(DEFAULT_RULES.map(rule => ({ ...rule })));
 		setFormData(previous => ({ ...previous, dataSource,
 			...(leavingHourly ? { cellStyleRules: DEFAULT_RULES.map(rule => ({ ...rule })) } : {}),
-			graphType: !time && previous.graphType === "hourly" ? "default" : previous.graphType,
+			graphType: !time && ["hourly","timeline"].includes(previous.graphType) ? "default" : previous.graphType,
 			heatScale: !sourceChanged ? previous.heatScale
-				: time && previous.graphType !== "hourly" ? createDefaultGoalHeatScale(60)
+				: time && !["hourly","timeline"].includes(previous.graphType) ? createDefaultGoalHeatScale(60)
 				: dataSource.type === "EDIT_ACTIVITY" ? createDefaultGoalHeatScale() : undefined,
 		}));
 	};
@@ -317,7 +328,7 @@ export function GraphForm(props: {
 			cellStyle: {},
 			cellStyleRules: rules.map((rule) => ({ ...rule })),
 			appearance: { ...DEFAULT_GRAPH_APPEARANCE },
-			...((previous.dataSource?.type === "EDIT_ACTIVITY" || (previous.dataSource?.type === "TIME_ACTIVITY" && previous.graphType !== "hourly"))
+			...((previous.dataSource?.type === "EDIT_ACTIVITY" || (previous.dataSource?.type === "TIME_ACTIVITY" && previous.graphType !== "hourly" && previous.graphType !== "timeline"))
 				? { heatScale: createDefaultGoalHeatScale(previous.heatScale?.goal || (isTimeSource ? 60 : 1000)) }
 				: {}),
 		}));
@@ -498,6 +509,12 @@ export function GraphForm(props: {
 										</div>
 									</div>
 
+									{formData.graphType==="timeline"&&<div className="form-item">
+										<span className="label">初始学科分组</span>
+										<div className="form-content"><select aria-label="时间轴初始分组" value={formData.timelineDepth||1} onChange={event=>changeFormData("timelineDepth",Number(event.target.value))}>
+											<option value={1}>一级目录</option><option value={2}>二级目录</option>
+										</select></div>
+									</div>}
 									<div className="form-item">
 										<span className="label">
 											{local.form_date_range}
@@ -698,7 +715,7 @@ export function GraphForm(props: {
 											/>
 										</div>
 									</div>
-									{formData.graphType !== "hourly" && <>
+									{formData.graphType !== "hourly" && formData.graphType !== "timeline" && <>
 									{formData.graphType ==
 									"month-track" ? null : (
 										<div className="form-item">
@@ -1073,10 +1090,10 @@ export function GraphForm(props: {
 									</div>
 									<div className="form-item">
 										<span className="label">
-											{formData.graphType === "hourly" ? "柱体颜色" : isGoalSource ? local.form_goal_heat_levels : local.form_cell_style_rules}
+											{formData.graphType === "timeline" ? "时间轴配色" : formData.graphType === "hourly" ? "柱体颜色" : isGoalSource ? local.form_goal_heat_levels : local.form_cell_style_rules}
 										</span>
 										<div className="form-vertical-content">
-											{formData.graphType === "hourly" ? (
+											{formData.graphType === "timeline" ? <span className="cg-editor-hint">按学科使用稳定配色，无需热力阈值或目标。</span> : formData.graphType === "hourly" ? (
 												<ColorPicker
 													color={cellRules.slice(-1)[0]?.color}
 													defaultColor={TIME_HOURLY_RULES.slice(-1)[0].color}

@@ -7,6 +7,7 @@ import { BaseGraphRender } from "./graphRender";
 import { ContributionCellData } from "../types";
 import { toFormattedDate } from "../util/dateUtils";
 import { captureDatePicker, restoreDatePicker } from "../view/datePicker/DatePicker";
+import { ActivityTimelineGraphRender } from "./activityTimelineGraphRender";
 import {
 	bindTimelineScrollAffordance,
 	captureTimelineScroll,
@@ -16,6 +17,7 @@ import {
 export class Renders {
 	private static readonly states = new WeakMap<HTMLElement, RenderState>();
 	static renders = [
+		new ActivityTimelineGraphRender(),
 		new HourlyGraphRender(),
 		new CalendarGraphRender(),
 		new MonthTrackGraphRender(),
@@ -27,6 +29,7 @@ export class Renders {
 		graphConfig: ContributionGraphConfig
 	): void {
 		const focused = container.ownerDocument.activeElement as HTMLElement | null;
+		this.dispose(container);
 		const calendar = captureDatePicker(container);
 		const focusedCell = focused && container.contains(focused) && focused.matches("button.cell")
 			? { date: focused.dataset.date, hour: focused.dataset.hour } : undefined;
@@ -104,6 +107,7 @@ export class Renders {
 		if (!renderer) return false;
 		Object.assign(state.config, nextConfig);
 		const config = state.config;
+		if(renderer instanceof ActivityTimelineGraphRender)return renderer.update(container,config);
 		if (graphType === "hourly" && renderer instanceof HourlyGraphRender) {
 			const changed = renderer.update(container, config, state.cells);
 			state.cells = snapshotCells(config.hourlyData || []);
@@ -131,6 +135,7 @@ export class Renders {
 	}
 
 	static renderErrorTips(container: HTMLElement, summary: string, recommends?: string[]): void {
+		this.dispose(container);
 		container.empty();
 		const errDiv = createDiv({
 			cls: "contribution-graph-render-error-container",
@@ -153,6 +158,11 @@ export class Renders {
 			})
 		}
 
+	}
+
+	static dispose(container:HTMLElement):void {
+		const renderer=this.renders.find(item=>item instanceof ActivityTimelineGraphRender) as ActivityTimelineGraphRender|undefined;
+		renderer?.dispose(container);this.states.delete(container);
 	}
 
 	static renderError(container: HTMLElement, {

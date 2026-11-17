@@ -71,6 +71,20 @@ describe("两种时长热力图的数据接线", () => {
 		config.graphType = "hourly"; config.dataSource.type = "PAGE";
 		expect(() => YamlGraphConfig.validate(config)).toThrow();
 	});
+	it("时间轴仅接受时长源和合法层级，原日期目录配置不改写", () => {
+		const {config}=createInputs();config.graphType="timeline";config.timelineDepth=2;
+		const before=JSON.stringify(config);expect(()=>YamlGraphConfig.validate(config)).not.toThrow();
+		expect(JSON.stringify(config)).toBe(before);
+		config.dataSource.type="PAGE";expect(()=>YamlGraphConfig.validate(config)).toThrow();
+		config.dataSource.type="TIME_ACTIVITY";config.timelineDepth=3 as any;expect(()=>YamlGraphConfig.validate(config)).toThrow();
+	});
+	it("时间轴的小时历史入口允许旧目录，原普通图表仍校验当前采集范围", () => {
+		const {service,app,config}=createInputs();config.graphType="hourly";config.dataSource.folders=["旧目录"];
+		service.getSettings=()=>({trackedFolders:["当前目录"]});
+		expect(()=>queryTimeGraph(config,service,app)).toThrow("全局采集范围");
+		expect(queryTimeGraph(config,service,app,{dates:["2026-11-14"],historical:true}).hourlyData).toHaveLength(24);
+		expect(service.getSettings().trackedFolders).toEqual(["当前目录"]);
+	});
 	it("限制时段图的格子数量，避免过大范围阻塞编辑器", () => {
 		const { service, app, config } = createInputs();
 		config.graphType = "hourly"; config.fromDate = "2025-01-01";

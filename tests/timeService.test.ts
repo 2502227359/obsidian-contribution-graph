@@ -31,6 +31,71 @@ describe("时长统计的保存与查询", () => {
 			wall += 15000; mono += 15000; service.checkpointTimeActivity();
 		}
 	};
+	it("本机重命名同步更新片段和采集区间，身份与原累计保持不变", async () => {
+		await service.setTrackedFolders(["笔记"]);
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(30); service.pauseTimeActivity();
+		const before = service.getActivityTimelineDay({date:"2026-11-14"});
+		await service.handlePathRename("笔记/甲.md", "笔记/乙.md", false);
+		expect(service.getActivityTimelineDay({date:"2026-11-14"}).blocks[0]).toMatchObject({
+			id:before.blocks[0].id, path:"笔记/乙.md", seconds:30,
+		});
+		await service.handlePathRename("笔记", "学习", true);
+		const after=service.getActivityTimelineDay({date:"2026-11-14"});
+		expect(after).toMatchObject({precision:"DETAILED",totalSeconds:30,locatedSeconds:30});
+		expect(after.blocks[0]).toMatchObject({id:before.blocks[0].id,path:"学习/乙.md"});
+		const data=JSON.parse(service.exportData());
+		expect(data.timeActivity.timeline.recordingPeriods.every((period:any)=>period.folders.every((folder:string)=>!folder.startsWith("笔记")))).toBe(true);
+		expect(data.timeActivity.timeline.segments.every((segment:any)=>segment.path==="学习/乙.md")).toBe(true);
+	});
+	it("时间轴只读查询保留桶口径，返回独立片段快照", async () => {
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(45);
+		const before = service.getDailyTimeStats(), writes = plugin.app.vault.adapter.write.mock.calls.length;
+		wall += 3000; mono += 3000;
+		const timeline = service.getActivityTimelineDay({date:"2026-11-14"});
+		expect(timeline.totalSeconds).toBe(45);
+		expect(timeline.locatedSeconds).toBe(45);
+		expect(timeline.blocks.reduce((sum, block) => sum + block.seconds, 0)).toBe(45);
+		expect(timeline.precision).toBe("DETAILED");
+		timeline.blocks[0].seconds = 999;
+		expect(service.getActivityTimelineDay({date:"2026-11-14"}).locatedSeconds).toBe(45);
+		expect(service.getDailyTimeStats()).toEqual(before);
+		expect(plugin.app.vault.adapter.write).toHaveBeenCalledTimes(writes);
+	});
+	it("旧导入不伪造片段，新旧混合与空闲回撤不重复累计", async () => {
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(15); service.pauseTimeActivity();
+		const legacy = JSON.parse(service.exportData()); legacy.schemaVersion = 11; delete legacy.timeActivity.timeline;
+		await service.importData(JSON.stringify(legacy));
+		expect(service.getActivityTimelineDay({date:"2026-11-14"})).toMatchObject({precision:"SUMMARY_ONLY",totalSeconds:15,locatedSeconds:0,blocks:[]});
+		service.recordTimeActivity("笔记/甲.md"); advance(30);
+		expect(service.getActivityTimelineDay({date:"2026-11-14"})).toMatchObject({precision:"MIXED",totalSeconds:45,locatedSeconds:30,unlocatedSeconds:15});
+		advance(270);
+		expect(service.getActivityTimelineDay({date:"2026-11-14"})).toMatchObject({precision:"SUMMARY_ONLY",totalSeconds:15,locatedSeconds:0,blocks:[]});
+		expect(service.getDailyTimeStats()[0].seconds).toBe(15);
+	});
+	it("超出原桶的片段导入必须先拒绝，保留当前统计", async () => {
+		await service.setTimeTrackingEnabled(true);
+		service.recordTimeActivity("笔记/甲.md"); advance(15); service.pauseTimeActivity();
+		const before=service.getDailyTimeStats(),bad=JSON.parse(service.exportData());
+		for(const bucket of Object.values(bad.timeActivity.buckets) as any[])bucket.documents["笔记/甲.md"]=1;
+		await expect(service.importData(JSON.stringify(bad))).rejects.toThrow("片段");
+		expect(service.getDailyTimeStats()).toEqual(before);
+	});
+	it("十一版配置升级前备份，设置与历史来源保留", async () => {
+		const settings=service.getSettings();await service.unload();
+		const originals=new Map(plugin.files);
+		const raw={schemaVersion:11,settings,graphThemes:[],storage:{formatVersion:1,folder:"Template/数据/学习统计"}};
+		plugin.loadData.mockResolvedValue(raw);
+		service=new EditActivityService(plugin,()=>new Date(wall),()=>mono);await service.initialize();
+		expect(service.getSettings()).toEqual(settings);
+		expect(plugin.saveData.mock.calls.slice(-1)[0][0].schemaVersion).toBe(12);
+		for(const [path,content] of originals)expect(plugin.files.get(path)).toBe(content);
+		expect([...plugin.files.keys()].some(path=>path.endsWith("-timeline-upgrade.json"))).toBe(true);
+		const config=[...plugin.files.entries()].find(([path])=>String(path).includes("/timeline-configuration-"));
+		expect(config&&JSON.parse(String(config[1]))).toEqual(raw);
+	});
 	it("周回顾读取当前一致快照，不结算、保存或暴露可变统计", async () => {
 		await service.setTimeTrackingEnabled(true);
 		service.recordTimeActivity("笔记/甲.md"); advance(15);

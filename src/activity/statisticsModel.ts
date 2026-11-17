@@ -12,6 +12,13 @@ import {
 	TimeCoveragePeriod,
 	TimePolicyChange,
 } from "../time/types";
+import type {
+	ActivitySegment,
+	StoredActivityTimeline,
+	TimelineRecordingPeriod,
+} from "../time/activityTimelineTypes";
+
+type TimelineTimeActivity = StoredTimeActivity & { timeline?: StoredActivityTimeline };
 
 export type StatisticsData = Pick<
 	EditActivityStore,
@@ -82,6 +89,10 @@ export function closeStatistics(data: StatisticsData, at: number): StatisticsDat
 		if (period.end === undefined) {
 			period.end = Math.max(period.start, closeAt);
 		}
+	}
+	const timeline = timelineOf(result.timeActivity).timeline;
+	for (const period of timeline?.recordingPeriods || []) {
+		if (period.end === undefined) period.end = Math.max(period.start, closeAt);
 	}
 	for (const period of result.trackingPeriods) {
 		if (period.endDate === undefined) {
@@ -183,6 +194,7 @@ function mergeTimeActivity(target: StoredTimeActivity, source: StoredTimeActivit
 		[...target.policyChanges, ...source.policyChanges].map((change) => ({ ...change })),
 		change => change.at
 	);
+	mergeTimelines(target, source);
 }
 
 function cloneDailyStats(source: Record<string, StoredDailyEditStats>): Record<string, StoredDailyEditStats> {
@@ -212,7 +224,70 @@ function cloneTimeActivity(source: StoredTimeActivity): StoredTimeActivity {
 	for (const [key, bucket] of Object.entries(source.buckets || {})) {
 		if (!DANGEROUS_KEYS.has(key)) result.buckets[key] = cloneBucket(bucket);
 	}
+	const timeline = timelineOf(source).timeline;
+	if (timeline) timelineOf(result).timeline = cloneTimeline(timeline);
 	return result;
+}
+
+function timelineOf(data: StoredTimeActivity): TimelineTimeActivity {
+	return data as TimelineTimeActivity;
+}
+
+function cloneTimeline(source: StoredActivityTimeline): StoredActivityTimeline {
+	return {
+		formatVersion: 1,
+		segments: (source.segments || []).map(cloneSegment),
+		recordingPeriods: (source.recordingPeriods || []).map(cloneRecordingPeriod),
+		...(source.issues === undefined ? {} : { issues: [...source.issues] }),
+	};
+}
+
+function cloneSegment(segment: ActivitySegment): ActivitySegment {
+	return { ...segment };
+}
+
+function cloneRecordingPeriod(period: TimelineRecordingPeriod): TimelineRecordingPeriod {
+	return { ...period, folders: [...period.folders] };
+}
+
+function mergeTimelines(target: StoredTimeActivity, source: StoredTimeActivity): void {
+	const sourceTimeline = timelineOf(source).timeline;
+	if (!sourceTimeline) return;
+	const targetActivity = timelineOf(target);
+	const targetTimeline = targetActivity.timeline || (targetActivity.timeline = {
+		formatVersion: 1, segments: [], recordingPeriods: [],
+	});
+	const conflicts = new Set(
+		[...(targetTimeline.issues || []), ...(sourceTimeline.issues || [])]
+			.filter(issue => issue.startsWith("segment-conflict:"))
+			.map(issue => issue.slice("segment-conflict:".length))
+	);
+	const byId = new Map(targetTimeline.segments.map(segment => [segment.id, segment]));
+	for (const segment of sourceTimeline.segments || []) {
+		if (conflicts.has(segment.id)) continue;
+		const existing = byId.get(segment.id);
+		if (!existing) {
+			const clone = cloneSegment(segment); targetTimeline.segments.push(clone); byId.set(clone.id, clone);
+		} else if (stableKey(existing) !== stableKey(segment)) {
+			conflicts.add(segment.id); byId.delete(segment.id);
+			targetTimeline.segments = targetTimeline.segments.filter(item => item.id !== segment.id);
+		}
+	}
+	mergeTimelineIssues(targetTimeline, sourceTimeline, conflicts);
+	targetTimeline.recordingPeriods = dedupeSorted(
+		[...targetTimeline.recordingPeriods, ...(sourceTimeline.recordingPeriods || [])].map(cloneRecordingPeriod),
+		period => period.start
+	);
+}
+
+function mergeTimelineIssues(
+	target: StoredActivityTimeline,
+	source: StoredActivityTimeline,
+	conflicts: Set<string>,
+): void {
+	const issues = new Set([...(target.issues || []), ...(source.issues || [])]);
+	for (const id of conflicts) issues.add(`segment-conflict:${id}`);
+	if (issues.size) target.issues = [...issues].sort();
 }
 
 function cloneBucket(bucket: TimeBucket): TimeBucket {

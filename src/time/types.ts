@@ -1,8 +1,11 @@
+import type { StoredActivityTimeline } from "./activityTimelineTypes";
+
 export interface TimeSpan {
 	path: string;
 	start: number;
 	end: number;
 	seconds: number;
+	continuityId?: string;
 }
 
 export type TimeContextReason = "READY" | "BACKGROUND" | "MODAL" | "NO_MARKDOWN" | "OUTSIDE_EDITOR";
@@ -29,6 +32,7 @@ export interface TimeTrackerSnapshot {
 	pendingEnd?: number;
 	pendingSeconds: number;
 	remainingMs: number;
+	continuityId?: string;
 }
 
 export type TimeStatusReason = "DISABLED" | "MANUAL" | "BACKGROUND" | "MODAL" | "NO_MARKDOWN" |
@@ -67,6 +71,7 @@ export interface StoredTimeActivity {
 	buckets: Record<string, TimeBucket>;
 	periods: TimeCoveragePeriod[];
 	policyChanges: TimePolicyChange[];
+	timeline?: StoredActivityTimeline;
 }
 
 export interface TimeStatsQuery {

@@ -9,6 +9,7 @@ import {
 	queryTimeStats,
 	renameTimePaths,
 	removeTimeSpan,
+	splitTimeSpan,
 } from "../src/time/timeData";
 import { TimeSpan } from "../src/time/types";
 
@@ -71,6 +72,16 @@ describe("time activity data", () => {
 		]);
 		expect(data.buckets[bucketKey(new Date(2026, 0, 1, 23))].documents["Notes/a.md"]).toBe(600);
 		expect(data.buckets[bucketKey(new Date(2026, 0, 2, 0))].documents["Notes/a.md"]).toBe(600);
+	});
+
+	it("导出的分桶片段与原时长分配保持一致并保留毫秒精度", () => {
+		const start = new Date(2026, 0, 1, 23, 59, 59, 125).getTime();
+		const end = start + 1250;
+		const pieces = splitTimeSpan({ path: "a.md", start, end, seconds: 1.25 });
+		expect(pieces).toHaveLength(2);
+		expect(pieces[0]).toMatchObject({ start, end: start + 875, seconds: 0.875 });
+		expect(pieces[1]).toMatchObject({ start: start + 875, end, seconds: 0.375 });
+		expect(pieces.reduce((sum, item) => sum + item.seconds, 0)).toBeCloseTo(1.25);
 	});
 
 	it("保持日汇总与小时汇总一致并支持文件夹筛选", () => {

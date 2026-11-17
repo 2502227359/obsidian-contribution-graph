@@ -10,13 +10,15 @@ import { TimeStats } from "./types";
 import { isYoloChatActivity, YOLO_CHAT_ACTIVITY_LABEL } from "./timeActivitySource";
 
 export interface TimeGraphSelection {
+	/** 时间轴历史汇总入口保留已删除或范围外的历史目录。 */
+	historical?: boolean;
 	dates: readonly string[];
 	timeKeys?: readonly {date: string; hour: number}[];
 }
 
 export function queryTimeGraph(config: YamlGraphConfig, service: EditActivityService, app: App, selection?: TimeGraphSelection) {
 	const folders = normalizeTrackedFolders(config.dataSource.folders || []);
-	validateTimeFolders(folders, service, app);
+	if(!selection?.historical)validateTimeFolders(folders, service, app);
 	const range = getActivityDateRange(config);
 	const query = { ...range, folders };
 	const hourly = config.graphType === "hourly";

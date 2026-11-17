@@ -25,6 +25,10 @@ import "../style/weeklyReview.css";
 import "../style/weeklyReviewCharts.css";
 import "../style/weeklyReviewTimeline.css";
 import "../style/weeklyReviewInsights.css";
+import "../style/activityTimeline.css";
+import "../style/activityTimelineHost.css";
+import { closeActivityTimelineModals, createActivityTimelineOptions } from "./view/ActivityTimelineModal";
+import { ActivityTimelineView } from "./view/ActivityTimelineView";
 
 export default class ContributionGraph extends Plugin {
 	activityService: EditActivityService;
@@ -96,11 +100,14 @@ export default class ContributionGraph extends Plugin {
 		this.addRibbonIcon("calendar-days", "周回顾", () => this.openWeeklyReview());
 		this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, closedWindow) => {
 			for (const [owner, modal] of this.weeklyReviewModals) if (owner.defaultView === closedWindow) modal.close();
+			closeActivityTimelineModals(closedWindow);
+			ActivityTimelineView.disposeAll(closedWindow);
 		}));
 	}
 
 	private openWeeklyReview(owner = typeof activeDocument === "undefined" ? document : activeDocument): void {
 		if (this.shuttingDown) return;
+		closeActivityTimelineModals(owner);
 		const existing = this.weeklyReviewModals.get(owner);
 		if (existing) { existing.focus(); return; }
 		const modal = new WeeklyReviewModal(this.app, this.activityService, () => this.weeklyReviewModals.delete(owner));
@@ -120,6 +127,8 @@ export default class ContributionGraph extends Plugin {
 	}
 
 	private closeWeeklyReviews(): void {
+		ActivityTimelineView.disposeAll();
+		closeActivityTimelineModals();
 		for (const modal of this.weeklyReviewModals.values()) modal.close();
 		this.weeklyReviewModals.clear();
 	}
@@ -193,12 +202,14 @@ export default class ContributionGraph extends Plugin {
 			graphConfig: ContributionGraphConfig
 		): void => {
 			graphConfig.openWeeklyReview = owner => this.openWeeklyReview(owner);
+			if(graphConfig.graphType==="timeline")graphConfig.activityTimeline=createActivityTimelineOptions(this.app,this.activityService,graphConfig,container.ownerDocument);
 			if (!Renders.update(container, graphConfig)) Renders.render(container, graphConfig);
 		};
 		//@ts-ignore
 		window.contributionGraphApi = {
 			getDailyTimeStats: (query?: import("./time/types").TimeStatsQuery) => this.activityService.getDailyTimeStats(query),
 			getHourlyTimeStats: (query?: import("./time/types").TimeStatsQuery) => this.activityService.getHourlyTimeStats(query),
+			getActivityTimelineDay:(query:import("./time/activityTimelineTypes").ActivityTimelineQuery)=>this.activityService.getActivityTimelineDay(query),
 			getDailyEditStats: (query?: {
 				fromDate?: string;
 				toDate?: string;

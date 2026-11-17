@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { StatisticsRepository, StatisticsFiles } from "../src/activity/StatisticsRepository";
-import { emptyStatistics } from "../src/activity/statisticsModel";
+import { applyStatisticsRename, closeStatistics, emptyStatistics, mergeStatistics, statisticsFrom } from "../src/activity/statisticsModel";
 
 function files(): StatisticsFiles & { contents: Map<string, string> } {
 	const contents = new Map<string, string>();
@@ -21,6 +21,39 @@ function sample(count: number) {
 }
 
 describe("普通目录统计记录", () => {
+	it("片段深拷贝、合并去重、冲突隔离、封口和重命名沿统计链路生效", () => {
+		const first = emptyStatistics();
+		first.timeActivity.timeline = { formatVersion: 1, segments: [], recordingPeriods: [] };
+		first.timeActivity.buckets["2026-11-15T09-+480"] = { date: "2026-11-15", hour: 9, offsetMinutes: 480, documents: { "原/甲.md": 20 } };
+		first.timeActivity.timeline!.segments = [{ id: "same", continuityId: "c", recordingPeriodId: "p", path: "原/甲.md", bucketKey: "2026-11-15T09-+480", start: 100, end: 200, seconds: 20 }];
+		first.timeActivity.timeline!.recordingPeriods = [{ id: "p", start: 50, folders: [] }];
+		const copy = statisticsFrom(first);
+		copy.timeActivity.timeline!.segments[0].path = "副本.md";
+		expect(first.timeActivity.timeline!.segments[0].path).toBe("原/甲.md");
+		const second = statisticsFrom(first);
+		second.timeActivity.timeline!.segments.push({ ...second.timeActivity.timeline!.segments[0], id: "other", path: "原/乙.md" });
+		const conflict = statisticsFrom(first);
+		conflict.timeActivity.timeline!.segments[0].path = "冲突.md";
+		const merged = mergeStatistics([first, second, conflict]);
+		expect(merged.timeActivity.timeline!.segments.map(segment => segment.id)).toEqual(["other"]);
+		expect(merged.timeActivity.timeline!.issues).toContain("segment-conflict:same");
+		expect(closeStatistics(first, 500).timeActivity.timeline!.recordingPeriods[0].end).toBe(500);
+		const renamed = applyStatisticsRename(first, { oldPath: "原", newPath: "新", isFolder: true });
+		expect(renamed.timeActivity.timeline!.segments[0].path).toBe("新/甲.md");
+	});
+
+	it("来源读取复用有效记录选择，并暴露匿名来源标识", async () => {
+		const fs = files();
+		const repo = new StatisticsRepository(fs, data => data as any);
+		await repo.initialize();
+		const local = emptyStatistics();
+		local.timeActivity.buckets["2026-11-15T09-+480"] = { date: "2026-11-15", hour: 9, offsetMinutes: 480, documents: { "甲.md": 10 } };
+		const sources = repo.readSources(local);
+		expect(sources).toHaveLength(1);
+		expect(sources[0].id).toBeTruthy();
+		expect(sources[0].data.timeActivity.buckets["2026-11-15T09-+480"].documents["甲.md"]).toBe(10);
+	});
+
 	it("较新版本的时长回撤覆盖旧值，保留其他运行且重放旧版本不复活", async () => {
 		const fs = files();
 		const left = new StatisticsRepository(fs, data => data as any);

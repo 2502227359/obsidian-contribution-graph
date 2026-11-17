@@ -52,6 +52,10 @@ import { IdleTimeDiscard, TimeSpan, TimeStatsQuery, TimeTrackingContext, TimeTra
 import { canonicalStatistics, DEFAULT_STATISTICS_FOLDER, StatisticsRepository } from "./StatisticsRepository";
 import { emptyStatistics, StatisticsData, statisticsFrom } from "./statisticsModel";
 import { VaultStatisticsFiles } from "./VaultStatisticsFiles";
+import { applyActivityTimelineSpan, closeTimelineRecordingPeriod, ensureTimelineRecordingPeriod } from "../time/activityTimeline";
+import { buildActivityTimelineDay } from "../time/activityTimelineQuery";
+import type { ActivityTimelineDay, ActivityTimelineQuery } from "../time/activityTimelineTypes";
+import { getWeeklyReviewPathGroup } from "../time/weeklyReviewAnalysis";
 
 interface CompositionState {
 	startDocument: Text;
@@ -145,6 +149,7 @@ export class EditActivityService {
 	private statisticsRefreshQueue: Promise<void> = Promise.resolve();
 	private statisticsFailureNotified = false;
 	private savedConfiguration = "";
+	private timelineCache = new Map<string, {local:number;remote:number;day:ActivityTimelineDay}>();
 	private readCache?: { local: number; remote: number; data: StatisticsData };
 
 	constructor(
@@ -186,6 +191,7 @@ export class EditActivityService {
 			);
 		}
 		await this.initializeStatistics(raw);
+		await this.backupTimelineUpgrade(raw);
 		const schemaVersion = (raw as { schemaVersion?: unknown } | null)
 			?.schemaVersion;
 		let migrated =
@@ -259,11 +265,19 @@ export class EditActivityService {
 			!Array.isArray(candidate.trackingPeriods) || !Array.isArray(candidate.collectionScopePeriods) || !Array.isArray(candidate.countingPolicyPeriods)) {
 			throw new Error("统计记录缺少必要字段");
 		}
-		return statisticsFrom(this.normalizeStore({ ...this.createEmptyStore(), ...candidate }, true));
+		return statisticsFrom(this.normalizeStore({ ...this.createEmptyStore(), ...candidate }, true, false));
+	}
+
+	private async backupTimelineUpgrade(raw: unknown): Promise<void> {
+		const version=(raw as {schemaVersion?:number}|null)?.schemaVersion;
+		if(!version||version>=12)return;
+		await this.createAutomaticBackup("timeline-upgrade");
+		const name=this.now().toISOString().replace(/[:.]/g,"-");
+		await this.statisticsFiles.write(`备份/timeline-configuration-${name}-${crypto.randomUUID()}.json`,JSON.stringify(raw,null,2));
 	}
 
 	private configurationSnapshot(store: EditActivityStore) {
-		return { schemaVersion: 11, settings: store.settings, graphThemes: store.graphThemes,
+		return { schemaVersion: 12, settings: store.settings, graphThemes: store.graphThemes,
 			storage: { formatVersion: 1, folder: this.statisticsFiles.folder } };
 	}
 
@@ -342,7 +356,8 @@ export class EditActivityService {
 		}
 		const coverageChanged = canonicalStatistics(before.timeActivity.periods) !== canonicalStatistics(after.timeActivity.periods) ||
 			canonicalStatistics(before.timeActivity.policyChanges) !== canonicalStatistics(after.timeActivity.policyChanges);
-		if (timeKeys.length || coverageChanged) this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", ...(coverageChanged ? {} : { timeKeys }) });
+		const detailsChanged=canonicalStatistics(before.timeActivity.timeline)!==canonicalStatistics(after.timeActivity.timeline);
+		if (timeKeys.length || coverageChanged || detailsChanged) this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", ...(coverageChanged||detailsChanged ? {} : { timeKeys }) });
 	}
 
 	recordTimeActivity(path: string): void {
@@ -491,6 +506,32 @@ export class EditActivityService {
 		return queryTimeStats(this.readStatistics().timeActivity, query, this.now().getTime(), true);
 	}
 
+	getActivityTimelineDay(query:ActivityTimelineQuery):ActivityTimelineDay {
+		if(this.unloading)throw new Error("插件正在关闭，无法读取时间轴");
+		const roots=normalizeTrackedFolders(this.store.settings.trackedFolders);
+		const normalized={...query,folders:normalizeTrackedFolders(query.folders||[]),groupingRoot:query.groupingRoot??(roots.length===1?roots[0]:""),depth:query.depth||1 as 1|2};
+		const key=JSON.stringify({date:normalized.date,folders:normalized.folders,today:this.today()}),remote=this.statistics.version;
+		let cached=this.timelineCache.get(key);
+		if(!cached||cached.local!==this.mutationVersion||cached.remote!==remote){
+			const sources=this.statistics.readSources(this.store).map(source=>({id:source.id,data:source.data.timeActivity}));
+			cached={local:this.mutationVersion,remote,day:buildActivityTimelineDay(sources,normalized,this.now().getTime())};
+			this.timelineCache.set(key,cached);
+		}
+		return this.cloneTimelineDay(cached.day,normalized);
+	}
+
+	private cloneTimelineDay(day:ActivityTimelineDay,query:ActivityTimelineQuery):ActivityTimelineDay {
+		const core=this.timeTracker.getSnapshot();
+		const blocks=day.blocks.map(block=>({...block,...this.timelineGroup(block.path,query),segmentIds:[...block.segmentIds],
+			provisional:!!(core.continuityId===block.continuityId&&core.pendingStart!==undefined&&core.pendingEnd!==undefined&&core.pendingStart<block.end&&core.pendingEnd>block.start)}));
+		return {...day,blocks,warnings:[...day.warnings],recordedDates:[...day.recordedDates]};
+	}
+
+	private timelineGroup(path:string,query:ActivityTimelineQuery) {
+		const group=getWeeklyReviewPathGroup(path,query.groupingRoot||"",query.depth||1);
+		return {groupId:group.id,groupName:group.name,activity:group.activity};
+	}
+
 	getTimeCellInfo(start: number, end: number, folders: string[] = []) {
 		const now = this.now().getTime();
 		return { trackingState: getTimeTrackingState(this.readStatistics().timeActivity, start, end, folders, now), future: start > now };
@@ -501,6 +542,8 @@ export class EditActivityService {
 			? removeTimeSpan(this.store.timeActivity, span)
 			: addTimeSpan(this.store.timeActivity, span);
 		if (timeKeys.length === 0) return;
+		const periodId=ensureTimelineRecordingPeriod(this.store.timeActivity,this.now().getTime(),this.store.settings.trackedFolders);
+		applyActivityTimelineSpan(this.store.timeActivity,span,operation,periodId);
 		this.markDirty();
 		this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", filePath: span.path, timeKeys });
 		this.scheduleSave();
@@ -508,6 +551,7 @@ export class EditActivityService {
 
 	private openTimeCoverage(): void {
 		if (this.manualTimePaused || !this.store.settings.timeTrackingEnabled) return;
+		ensureTimelineRecordingPeriod(this.store.timeActivity,this.now().getTime(),this.store.settings.trackedFolders);
 		const periods = this.store.timeActivity.periods;
 		if (periods.length && periods[periods.length - 1].end === undefined) return;
 		periods.push({ start: this.now().getTime(), folders: [...this.store.settings.trackedFolders] });
@@ -516,6 +560,7 @@ export class EditActivityService {
 	}
 
 	private closeTimeCoverage(): void {
+		closeTimelineRecordingPeriod(this.store.timeActivity,this.now().getTime());
 		const periods = this.store.timeActivity.periods;
 		const last = periods[periods.length - 1];
 		if (last && last.end === undefined) last.end = Math.max(last.start, this.now().getTime());
@@ -1726,6 +1771,7 @@ export class EditActivityService {
 		if (!this.dirty) this.pendingSince = this.monotonic();
 		this.dirty = true;
 		this.mutationVersion++;
+		this.timelineCache.clear();
 		this.notifySaveStatus();
 	}
 
@@ -1760,7 +1806,7 @@ export class EditActivityService {
 		};
 	}
 
-	private normalizeStore(raw: unknown, strict = false): EditActivityStore {
+	private normalizeStore(raw: unknown, strict = false, detailStrict = strict): EditActivityStore {
 		if (!raw || typeof raw !== "object") {
 			if (strict) {
 				throw new Error("Invalid edit activity data");
@@ -1777,7 +1823,7 @@ export class EditActivityService {
 			strict &&
 			(!Number.isSafeInteger(numericSchemaVersion) ||
 				numericSchemaVersion < 1 ||
-				numericSchemaVersion > 11)
+				numericSchemaVersion > 12)
 		) {
 			throw new Error("Unsupported edit activity data version");
 		}
@@ -2078,9 +2124,9 @@ export class EditActivityService {
 		if (strict && candidate.settings?.saveIntervalSeconds !== undefined && !isValidSaveIntervalSeconds(candidate.settings.saveIntervalSeconds)) {
 			throw new Error("统计保存间隔无效");
 		}
-		return {
-			schemaVersion: 11,
-			timeActivity: normalizeTimeActivity(candidate.timeActivity, strict && numericSchemaVersion >= 11),
+		const normalized:EditActivityStore = {
+			schemaVersion: 12,
+			timeActivity: normalizeTimeActivity(candidate.timeActivity, strict && numericSchemaVersion >= 11, detailStrict),
 			settings: {
 				timeTrackingEnabled: candidate.settings?.timeTrackingEnabled === true,
 				saveIntervalSeconds: isValidSaveIntervalSeconds(candidate.settings?.saveIntervalSeconds) ? candidate.settings!.saveIntervalSeconds : 60,
@@ -2103,6 +2149,24 @@ export class EditActivityService {
 			countingPolicyPeriods,
 			dailyStats,
 		};
+		if(strict&&detailStrict)this.assertTimelineImport(normalized.timeActivity);
+		return normalized;
+	}
+
+	private assertTimelineImport(data:EditActivityStore["timeActivity"]):void {
+		if(!data.timeline)return;
+		if(data.timeline.issues?.length)throw new Error("片段明细包含异常，无法导入");
+		const dates=new Set<string>();
+		for(const segment of data.timeline.segments){
+			const bucket=data.buckets[segment.bucketKey];
+			if(!bucket)throw new Error("片段缺少对应时长桶，无法导入");
+			dates.add(bucket.date);
+		}
+		for(const date of dates){
+			const day=buildActivityTimelineDay([{id:"import",data}],{date},this.now().getTime());
+			const expected=data.timeline.segments.filter(segment=>data.buckets[segment.bucketKey].date===date).reduce((sum,segment)=>sum+segment.seconds,0);
+			if(day.precision==="INCONSISTENT"||Math.abs(expected-day.locatedSeconds)>1e-6)throw new Error("片段与原时长桶不一致，无法导入");
+		}
 	}
 
 	private normalizeSavedGraphTheme(value: unknown): SavedGraphTheme | undefined {
@@ -2289,7 +2353,7 @@ export class EditActivityService {
 	}
 
 	private async createAutomaticBackup(
-		reason: "import" | "clear" | "restore"
+		reason: "import" | "clear" | "restore" | "timeline-upgrade"
 	): Promise<string> {
 		const pluginDir = this.plugin.manifest.dir;
 		if (!pluginDir) {

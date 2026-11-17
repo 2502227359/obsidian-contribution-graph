@@ -90,13 +90,33 @@ describe("活跃时长会话", () => {
 		expect(spans.length).toBeGreaterThan(1);
 		expect(spans.every((span) => span.path === "Notes/a.md")).toBe(true);
 		expect(spans.reduce((sum, span) => sum + span.seconds, 0) - removed.reduce((sum, span) => sum + span.seconds, 0)).toBe(2 * 60);
-		expect(removed).toEqual([{
+		expect(removed[0]).toMatchObject({
 			path: "Notes/a.md", start: Date.UTC(2026, 0, 1, 9, 2),
 			end: Date.UTC(2026, 0, 1, 9, 6, 45), seconds: 285,
-		}]);
+			continuityId: expect.any(String),
+		});
+		expect(removed[0].continuityId).toBe(spans[spans.length - 1].continuityId);
 		expect(tracker.getStatus()).toBe("IDLE");
 		clock.advance(15000); tracker.checkpoint(); tracker.pause();
 		expect(removed).toHaveLength(1);
+	});
+
+	it("同一会话的增量和回撤共用连续身份，切换会话时更换身份", () => {
+		const clock = createClock(0);
+		const events: Array<{ span: TimeSpan; operation: "add" | "remove" }> = [];
+		const tracker = new TimeTracker((span, operation) => events.push({ span, operation }), clock.clock, 1);
+		tracker.activity("a.md");
+		clock.advance(15000);
+		tracker.checkpoint();
+		const first = tracker.getSnapshot().continuityId;
+		clock.advance(60000);
+		tracker.checkpoint();
+		tracker.activity("b.md");
+		const second = tracker.getSnapshot().continuityId;
+		expect(first).toEqual(expect.any(String));
+		expect(second).toEqual(expect.any(String));
+		expect(second).not.toBe(first);
+		expect(events.every(({ span }) => span.continuityId === first)).toBe(true);
 	});
 
 	it.each(["checkpoint", "activity", "pause"] as const)("%s 在到期后的首次调用也会撤回，重新操作不补计", entry => {

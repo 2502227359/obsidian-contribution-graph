@@ -22,6 +22,11 @@ interface StatisticsRecord {
 	rename?: { oldPath: string; newPath: string; isFolder: boolean; targets: string[]; predecessors: string[] };
 }
 
+export interface StatisticsSource {
+	id: string;
+	data: StatisticsData;
+}
+
 export function canonicalStatistics(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalStatistics).join(",")}]`;
 	if (value && typeof value === "object") {
@@ -63,6 +68,10 @@ export class StatisticsRepository {
 	}
 
 	read(local: StatisticsData): StatisticsData {
+		return mergeStatistics(this.readSources(local).map(source => source.data));
+	}
+
+	readSources(local: StatisticsData): readonly StatisticsSource[] {
 		const renames = this.orderedRenames();
 		const remote = [...this.records.values()].sort((a, b) => a.updatedAt - b.updatedAt || a.id.localeCompare(b.id))
 			.filter(record => record.kind !== "rename" && record.id !== this.recordId && record.generation === this.generation)
@@ -71,9 +80,9 @@ export class StatisticsRepository {
 				for (const operation of renames) {
 					if (operation.rename!.targets.includes(record.id)) data = applyStatisticsRename(data, operation.rename!);
 				}
-				return data;
+				return { id: record.id, data };
 			});
-		return mergeStatistics([...remote, local]);
+		return [...remote, { id: this.recordId, data: statisticsFrom(local) }];
 	}
 
 	rename(oldPath: string, newPath: string, isFolder: boolean): boolean {

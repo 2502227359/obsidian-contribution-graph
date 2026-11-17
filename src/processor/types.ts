@@ -36,6 +36,7 @@ const MAX_GRAPH_MONTHS = 120;
 const MAX_GRAPH_YEARS = 10;
 
 export class YamlGraphConfig {
+	timelineDepth?: 1 | 2;
 	/**
 	 * basic settings
 	 */
@@ -150,18 +151,19 @@ export class YamlGraphConfig {
 		if (!config.dataSource && !config.data) {
 			throw new GraphProcessError(MISS_DATASOURCE_OR_DATA());
 		}
-		if (config.graphType === "hourly" && config.dataSource?.type !== "TIME_ACTIVITY") {
-			throw new GraphProcessError({ summary: "时段图需要选择活跃时长数据源" });
+		if (["hourly","timeline"].includes(config.graphType) && config.dataSource?.type !== "TIME_ACTIVITY") {
+			throw new GraphProcessError({ summary: `${config.graphType === "timeline" ? "学习时间轴" : "时段图"}需要选择活跃时长数据源` });
 		}
 
 		if (config.graphType) {
-			const graphTypes = ["default", "month-track", "calendar", "hourly"];
+			const graphTypes = ["default", "month-track", "calendar", "hourly", "timeline"];
 			if (!graphTypes.includes(config.graphType)) {
 				throw new GraphProcessError(
 					INVALID_GRAPH_TYPE(config.graphType)
 				);
 			}
 		}
+		if(config.timelineDepth!==undefined&&config.timelineDepth!==1&&config.timelineDepth!==2)throw new GraphProcessError({summary:"时间轴分组层级必须为一级或二级"});
 
 		if (!config.dateRangeValue) {
 			if (!config.fromDate || !config.toDate) {

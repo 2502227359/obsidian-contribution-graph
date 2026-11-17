@@ -5,6 +5,7 @@ import {
 } from "../activity/folderScope";
 import { isValidFormattedDate } from "../util/dateUtils";
 import { isYoloChatActivity } from "./timeActivitySource";
+import { normalizeActivityTimeline } from "./activityTimelineFormat";
 import {
 	StoredTimeActivity,
 	TimeBucket,
@@ -24,6 +25,14 @@ export interface TimeActivityKey {
 	hour: number;
 }
 
+export interface TimeSpanSegment extends TimeActivityKey {
+	bucketKey: string;
+	offsetMinutes: number;
+	start: number;
+	end: number;
+	seconds: number;
+}
+
 export function createEmptyTimeActivity(): StoredTimeActivity {
 	return {
 		buckets: Object.create(null),
@@ -41,28 +50,39 @@ export function removeTimeSpan(data: StoredTimeActivity, span: TimeSpan): TimeAc
 }
 
 function applyTimeSpan(data: StoredTimeActivity, span: TimeSpan, direction: 1 | -1): TimeActivityKey[] {
-	if (!isValidTimeSpan(span) || span.seconds === 0) {
-		return [];
+	const changed = new Map<string, TimeActivityKey>();
+	for (const segment of splitTimeSpan(span)) {
+		const key = { date: segment.date, hour: segment.hour };
+		if (updateBucketSeconds(data, new Date(segment.start), span.path, segment.seconds * direction)) {
+			changed.set(`${key.date}T${String(key.hour).padStart(2, "0")}`, key);
+		}
 	}
+	return [...changed.values()];
+}
+
+export function splitTimeSpan(span: TimeSpan): TimeSpanSegment[] {
+	if (!isValidTimeSpan(span) || span.seconds <= 0) return [];
 	const totalMilliseconds = span.end - span.start;
 	let remainingSeconds = span.seconds;
 	let cursor = span.start;
-	const changed = new Map<string, TimeActivityKey>();
+	const result: TimeSpanSegment[] = [];
 	while (cursor < span.end) {
-		const cursorDate = new Date(cursor);
-		const end = getSpanSegmentEnd(cursorDate, cursor, span.end);
-		const seconds =
-			end === span.end
-				? remainingSeconds
-				: (span.seconds * (end - cursor)) / totalMilliseconds;
+		const date = new Date(cursor);
+		const end = getSpanSegmentEnd(date, cursor, span.end);
+		const seconds = end === span.end
+			? remainingSeconds
+			: span.seconds * (end - cursor) / totalMilliseconds;
+		const dateValue = formatDate(date);
+		const hour = date.getHours();
+		const offsetMinutes = -date.getTimezoneOffset();
+		result.push({
+			bucketKey: formatBucketKey(dateValue, hour, offsetMinutes),
+			date: dateValue, hour, offsetMinutes, start: cursor, end, seconds,
+		});
 		remainingSeconds -= seconds;
-		const key = { date: formatDate(cursorDate), hour: cursorDate.getHours() };
-		if (updateBucketSeconds(data, cursorDate, span.path, seconds * direction)) {
-			changed.set(`${key.date}T${String(key.hour).padStart(2, "0")}`, key);
-		}
 		cursor = end;
 	}
-	return [...changed.values()];
+	return result;
 }
 
 export function queryTimeStats(
@@ -152,7 +172,8 @@ export function getTimeTrackingState(
 
 export function normalizeTimeActivity(
 	raw: unknown,
-	strict: boolean
+	strict: boolean,
+	detailStrict = strict
 ): StoredTimeActivity {
 	const result = createEmptyTimeActivity();
 	if (!raw || typeof raw !== "object") {
@@ -178,6 +199,8 @@ export function normalizeTimeActivity(
 	}
 	result.periods = normalizePeriods(value.periods, strict);
 	result.policyChanges = normalizePolicyChanges(value.policyChanges, strict);
+	const timeline = normalizeActivityTimeline(value.timeline, detailStrict);
+	if (timeline) result.timeline = timeline;
 	return result;
 }
 
@@ -194,6 +217,11 @@ export function renameTimePaths(
 	}
 	const prefix = `${oldNormalized}/`;
 	let changed = false;
+	for (const segment of data.timeline?.segments || []) {
+		const target = mapRenamedPath(segment.path, oldNormalized, newNormalized, prefix, isFolder);
+		if (target !== segment.path) changed = true;
+		segment.path = target;
+	}
 	for (const bucket of Object.values(data.buckets)) {
 		const next: Record<string, number> = Object.create(null);
 		for (const [path, seconds] of Object.entries(bucket.documents)) {
@@ -209,7 +237,7 @@ export function renameTimePaths(
 		}
 		bucket.documents = next;
 	}
-	for (const period of data.periods) {
+	for (const period of [...data.periods, ...(data.timeline?.recordingPeriods || [])]) {
 		const originalFolders = period.folders;
 		const nextFolders = normalizeTrackedFolders(
 			period.folders.map((folder) =>

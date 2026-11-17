@@ -30,6 +30,7 @@ import { getGraphChange, GraphViewState } from "./graphChanges";
 import { mergeGraphRows } from "./activityGraphData";
 import { getHourlyWeek, groupHourlyData } from "../render/hourlyData";
 import { createDefaultGoalHeatScale, TIME_HOURLY_RULES } from "src/constants";
+import { createActivityTimelineOptions } from "../view/ActivityTimelineModal";
 import {
 	DataviewIndexTimeoutError,
 	isAbortError,
@@ -62,6 +63,7 @@ export class CodeBlockProcessor {
 	private currentConfig?: ContributionGraphConfig;
 	private rangeKey?: string;
 	private requestedView?: GraphViewState;
+	private renderedContainer?:HTMLElement;
 
 	constructor(private readonly activityService: EditActivityService, private readonly openWeeklyReview?: (owner: Document) => void) {}
 
@@ -80,7 +82,7 @@ export class CodeBlockProcessor {
 
 			if (
 				!this.disposed &&
-				["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)
+				["EDIT_ACTIVITY", "TIME_ACTIVITY"].includes(graphConfig.dataSource?.type)&&graphConfig.graphType!=="timeline"
 			) {
 				ctx.addChild(new ReactiveGraphRenderChild(el, new GraphRefreshScheduler({
 					container: el,
@@ -104,6 +106,7 @@ export class CodeBlockProcessor {
 		}
 		this.disposed = true;
 		this.abortController.abort();
+		if(this.renderedContainer)Renders.dispose(this.renderedContainer);
 	}
 
 	async renderFromYaml(
@@ -120,11 +123,13 @@ export class CodeBlockProcessor {
 			if (this.disposed) {
 				return;
 			}
+			this.renderedContainer=el;
 
 			this.updateQueryCache(graphConfig, app, selection);
 			const contributionConfig = YamlGraphConfig.toContributionGraphConfig(this.buildRenderConfig(graphConfig));
 			contributionConfig.openWeeklyReview = this.openWeeklyReview;
 			this.bindActivityState(contributionConfig, graphConfig, el, app);
+			if(graphConfig.graphType==="timeline")contributionConfig.activityTimeline=createActivityTimelineOptions(app,this.activityService,contributionConfig,el.ownerDocument);
 			if (!this.currentConfig || !Renders.update(el, contributionConfig)) Renders.render(el, contributionConfig);
 			this.currentConfig = contributionConfig;
 			this.requestedView = undefined;
@@ -153,7 +158,8 @@ export class CodeBlockProcessor {
 				renderConfig.heatScale = undefined;
 				renderConfig.cellStyleRules = graphConfig.cellStyleRules || TIME_HOURLY_RULES;
 			}
-			if (graphConfig.graphType !== "hourly") renderConfig.heatScale = graphConfig.heatScale || createDefaultGoalHeatScale(60);
+			if (!["hourly","timeline"].includes(graphConfig.graphType)) renderConfig.heatScale = graphConfig.heatScale || createDefaultGoalHeatScale(60);
+			if(graphConfig.graphType==="timeline")renderConfig.heatScale=undefined;
 		}
 
 		if (graphConfig.dataSource?.type === "EDIT_ACTIVITY") {
@@ -413,6 +419,7 @@ export class CodeBlockProcessor {
 	}
 
 	private updateQueryCache(config: YamlGraphConfig, app: App, selection?: TimeGraphSelection): void {
+		if(config.graphType==="timeline"){this.queriedData=[];this.queriedHours=[];return;}
 		const range = getActivityDateRange(config);
 		const rangeKey = `${range.fromDate}/${range.toDate}`;
 		if (rangeKey !== this.rangeKey) selection = undefined;

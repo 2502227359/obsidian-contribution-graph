@@ -1,5 +1,6 @@
 import { DEFAULT_RULES } from "./constants";
 import { TimeStats } from "./time/types";
+import type { ActivityTimelineViewOptions } from "./time/activityTimelineTypes";
 
 export interface DailyEditStats {
 	date: string;
@@ -75,6 +76,9 @@ export interface SavedGraphTheme {
 }
 
 export class ContributionGraphConfig {
+	/** 仅运行时注入，不保存到图表配置。 */
+	activityTimeline?: ActivityTimelineViewOptions;
+	timelineDepth?: 1 | 2;
 	/** 当前宿主窗口的周回顾入口，不写入图表配置。 */
 	openWeeklyReview?: (owner: Document) => void;
 	timeTracking?: boolean;
@@ -174,7 +178,7 @@ export class ContributionGraphConfig {
 	 *
 	 * default value: `default`
 	 */
-	graphType: "default" | "month-track" | "calendar" | "hourly" = "default";
+	graphType: "default" | "month-track" | "calendar" | "hourly" | "timeline" = "default";
 
 	/**
 	 * value range: 0->Sunday, 1->Monday, 2->Tuesday, 3->Wednesday, 4->Thursday, 5->Friday, 6->Saturday

@@ -91,6 +91,7 @@ export class ContributionGraphCreateModal extends Modal {
 			<StrictMode>
 				<GraphForm
 					yamlConfig={yamlConfig}
+					newGraph={!this.originalConfigContent&&!ignoreLanguagePrefix}
 					onSubmit={onSubmit}
 					onCancel={() => this.close()}
 					app={this.app}

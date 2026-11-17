@@ -47,7 +47,7 @@ export interface StoredDocumentEditStats {
 }
 
 export interface EditActivityStore {
-	schemaVersion: 11;
+	schemaVersion: 12;
 	timeActivity: StoredTimeActivity;
 	settings: EditActivitySettings;
 	graphThemes: SavedGraphTheme[];
@@ -74,7 +74,7 @@ export function isValidSaveIntervalSeconds(value: unknown): value is number {
 }
 
 export const EMPTY_EDIT_ACTIVITY_STORE: EditActivityStore = {
-	schemaVersion: 11,
+	schemaVersion: 12,
 	timeActivity: createEmptyTimeActivity(),
 	settings: {
 		...DEFAULT_EDIT_ACTIVITY_SETTINGS,

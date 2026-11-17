@@ -17,8 +17,16 @@ import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewInsights, WeeklyReviewInsightAction, WeeklyReviewChangeDocument, WeeklyReviewChangeGroup } from "../time/weeklyReviewInsights";
 import { renderWeeklyObservations, renderWeeklyDocumentChanges, renderWeeklyDocumentAmounts } from "./weeklyReviewInsightDetails";
 import type { TimeDocumentStats } from "../time/types";
+import { ContributionGraphConfig } from "../types";
+import type { ActivityTimelineService } from "../time/activityTimelineTypes";
+import type { EditActivityService } from "../activity/EditActivityService";
+import { ActivityTimelineView } from "./ActivityTimelineView";
+import { createActivityTimelineOptions, renderTimelineHourlySummary } from "./ActivityTimelineModal";
+import type { TimelineHourlySummary } from "./ActivityTimelineModal";
 
 interface WeeklyReviewService {
+	getActivityTimelineDay?:ActivityTimelineService["getActivityTimelineDay"];
+	subscribe?:ActivityTimelineService["subscribe"];
 	getWeeklyReview(query?: WeeklyReviewQuery, includeTimeline?: boolean): WeeklyReviewSnapshot;
 	getSettings(): { trackedFolders: string[]; timeTrackingEnabled: boolean };
 }
@@ -75,6 +83,11 @@ export class WeeklyReviewModal extends Modal {
 	private notesOpen = false;
 	private warningsOpen = false;
 	private rootPickerOpen = false;
+	private activityView?:ActivityTimelineView;
+	private activityHost?:HTMLElement;
+	private activitySummary?:TimelineHourlySummary;
+	private activityReturnFocus?:HTMLElement;
+	private activityReturnScroll=0;
 
 	constructor(app: App, service: WeeklyReviewService, onClosed: () => void) {
 		super(app);
@@ -102,6 +115,7 @@ export class WeeklyReviewModal extends Modal {
 	onClose(): void {
 		if (this.closed) return;
 		this.closed = true;
+		this.activitySummary?.dispose();this.activityView?.dispose();this.activityHost?.remove();
 		this.closeDatePicker();
 		this.charts?.dispose();
 		this.charts = undefined;
@@ -121,6 +135,7 @@ export class WeeklyReviewModal extends Modal {
 	}
 
 	focus(): void {
+		if(this.activityHost){this.activityHost.querySelector<HTMLElement>("button")?.focus({preventScroll:true});return;}
 		if (this.modalEl.isConnected) {
 			this.modalEl.focus({ preventScroll: true });
 			this.rootEl?.querySelector<HTMLElement>("button, select, input")?.focus({ preventScroll: true });
@@ -128,6 +143,11 @@ export class WeeklyReviewModal extends Modal {
 	}
 
 	private handleEscape(): false {
+		if(this.activityHost){
+			if(this.activitySummary)this.leaveActivityHours();
+			else if(!this.activityView?.handleEscape())this.leaveActivityTimeline();
+			return false;
+		}
 		const dialog = this.rootEl?.querySelector<HTMLDialogElement>(".cg-date-picker[open]");
 		const directory = this.rootEl?.querySelector<HTMLDetailsElement>(".cg-weekly-review-root-picker[open], .cg-weekly-review-options[open]");
 		if (dialog) dialog.close();
@@ -528,6 +548,48 @@ export class WeeklyReviewModal extends Modal {
 		}
 		if (day.future && day.seconds > 0) detail.createSpan({ cls: "cg-weekly-review-alert", text: "日期超前" });
 		if (day.timezoneWarning) detail.createSpan({ cls: "cg-weekly-review-alert", text: "时区需确认" });
+		if(this.service.getActivityTimelineDay&&this.service.subscribe&&(!day.future||day.seconds>0)){
+			const button=detail.createEl("button",{text:"查看当天时间轴",attr:{type:"button"}});
+			button.dataset.reviewAction="open-activity-timeline";button.onclick=()=>this.openActivityTimeline(day.date,button);
+		}
+	}
+
+	private openActivityTimeline(date:string,trigger:HTMLElement):void {
+		if(!this.snapshot||!this.rootEl)return;
+		this.activityReturnFocus=trigger;this.activityReturnScroll=this.scrollEl?.scrollTop||0;
+		this.activitySummary?.dispose();this.activityView?.dispose();this.activityHost?.remove();
+		this.rootEl.hidden=true;
+		const host=this.contentEl.createDiv({cls:"cg-weekly-activity-host",attr:{"data-cg-time-control":"activity-timeline"}});
+		this.activityHost=host;
+		const back=host.createEl("button",{text:"‹ 返回周回顾",cls:"cg-weekly-activity-back",attr:{type:"button"}});
+		back.dataset.reviewAction="back-from-activity-timeline";back.onclick=()=>this.leaveActivityTimeline();
+		const config=new ContributionGraphConfig();
+		Object.assign(config,{title:"学习时间轴",fromDate:this.snapshot.weekStart,toDate:this.snapshot.weekEnd,activityFolders:this.selectedRoot?[this.selectedRoot]:[],timelineDepth:this.depth});
+		const options=createActivityTimelineOptions(this.app,this.service as EditActivityService,config,host.ownerDocument);
+		this.activityView=new ActivityTimelineView(host,{...options,date,groupingRoot:this.getGroupingOptions(this.snapshot).groupingRoot,onExpand:undefined,
+			onHourly:(day,folders)=>this.openActivityHours(day,folders),onOpenDocument:(path,event)=>this.openDocument(path,event)});
+		this.modalEl.setAttribute("aria-label","周回顾 · 学习时间轴");back.focus({preventScroll:true});
+	}
+
+	private leaveActivityTimeline():void {
+		this.activitySummary?.dispose();this.activitySummary=undefined;
+		this.activityView?.dispose();this.activityView=undefined;
+		this.activityHost?.remove();this.activityHost=undefined;
+		if(this.rootEl)this.rootEl.hidden=false;
+		if(this.scrollEl)this.scrollEl.scrollTop=this.activityReturnScroll;
+		this.modalEl.setAttribute("aria-label","周回顾");
+		if(this.activityReturnFocus?.isConnected)this.activityReturnFocus.focus({preventScroll:true});
+	}
+
+	private openActivityHours(date:string,folders:readonly string[]):void {
+		if(!this.activityHost||!this.activityView)return;
+		this.activitySummary?.dispose();this.activityView.el.hidden=true;
+		this.activitySummary=renderTimelineHourlySummary(this.activityHost,{app:this.app,service:this.service as EditActivityService,date,folders,onBack:()=>this.leaveActivityHours()});
+	}
+
+	private leaveActivityHours():void {
+		this.activitySummary?.dispose();this.activitySummary=undefined;
+		if(this.activityView){this.activityView.el.hidden=false;this.activityView.refresh();this.activityView.focus();}
 	}
 
 

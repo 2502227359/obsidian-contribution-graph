@@ -354,6 +354,7 @@ export class TimeActivityObserver {
 		if (!this.started || !isTimeActivityEvent(event)) return;
 		if ("isTrusted" in event && event.isTrusted === false) return;
 		if (this.isStatusBarTarget(event.target)) return;
+		if(this.handleTimelineControl(event.target))return;
 
 		const eventView = this.views.find(candidate => this.contains(candidate.root, event.target));
 		this.interactionView = eventView && isYoloChatActivity(eventView.path) ? eventView : undefined;
@@ -399,6 +400,15 @@ export class TimeActivityObserver {
 		} catch {
 			return itemTarget === target;
 		}
+	}
+
+	private handleTimelineControl(target:EventTarget|null):boolean {
+		const element=target as {closest?:(selector:string)=>unknown;parentElement?:Element}|null;
+		const control=element?.closest?.('[data-cg-time-control="activity-timeline"]')||element?.parentElement?.closest('[data-cg-time-control="activity-timeline"]');
+		if(!control)return false;
+		const view=this.currentView||this.getActiveViewBinding();
+		this.emitContext({reason:"OUTSIDE_EDITOR",path:view?.path});
+		this.pauseCurrentActivity(true);this.updateStatus();return true;
 	}
 
 	private emitContext(context: TimeTrackingContext): void {
