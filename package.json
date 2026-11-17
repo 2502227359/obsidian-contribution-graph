@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-contribution-graph-local",
-	"version": "0.28.1",
+	"version": "0.28.2",
 	"description": "Local Obsidian heatmap and character edit activity tracker.",
 	"main": "main.ts",
 	"scripts": {

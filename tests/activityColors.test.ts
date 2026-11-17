@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { color } from "echarts/core";
-import { activityColor } from "../src/view/activityColors";
+import { activityColor, activityPalette } from "../src/view/activityColors";
 
 describe("活动颜色", () => {
+	it("轨道色标取自真实笔记片段，不用上层目录重新取色", () => {
+		const paths=["临床医学/临床医学/妇产科学/甲.md","临床医学/临床医学/内科学/乙.md"];
+		for(const dark of [false,true]){
+			const expected=paths.map(path=>activityColor(path,dark).fill).sort();
+			expect(activityPalette([...paths,paths[0]],dark)).toEqual(expected);
+			expect(activityPalette([...paths].reverse(),dark)).toEqual(expected);
+			expect(activityPalette([],dark)).toEqual([]);
+		}
+	});
 	it("完整路径重复计算时保持稳定", () => {
 		const first = activityColor("临床医学/临床医学/妇产科学/甲.md", false);
 		const second = activityColor("临床医学/临床医学/妇产科学/甲.md", false);

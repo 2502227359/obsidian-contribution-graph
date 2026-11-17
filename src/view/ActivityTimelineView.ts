@@ -1,7 +1,7 @@
 import type { EditActivityChangeEvent } from "../activity/EditActivityService";
 import { GraphRefreshScheduler } from "../processor/graphRefreshScheduler";
 import type { ActivityTimelineBlock, ActivityTimelineDay, ActivityTimelineViewOptions, ActivityTimelineViewState } from "../time/activityTimelineTypes";
-import { activityColor } from "./activityColors";
+import { activityPalette, activitySwatch } from "./activityColors";
 import { ActivityTimelineChart } from "./activityTimelineChart";
 import type { ActivityTimelineChartRow } from "./activityTimelineChart";
 import { ActivityTimelineDetails } from "./activityTimelineDetails";
@@ -248,7 +248,7 @@ export class ActivityTimelineView {
 		this.zoomOutButton.disabled = !this.day.blocks.length;
 		this.zoomInButton.disabled = !this.day.blocks.length;
 		this.status.textContent = statusText(this.day) + (this.selectionRemoved ? " · 所选片段已随记录更新移除" : "");
-		this.renderGroups(model.groups);
+		this.renderGroups(model.groups, this.day.blocks);
 		this.renderSegmentSelect(this.day.blocks);
 		this.chartHost.hidden = !this.day.blocks.length;
 		this.chartHost.style.height = `${Math.max(220, model.rows.length * 42 + 78)}px`;
@@ -270,7 +270,7 @@ export class ActivityTimelineView {
 		else (this.segmentSelect.disabled ? this.dateInput : this.segmentSelect).focus({preventScroll: true});
 	}
 
-	private renderGroups(groups: readonly TimelineGroup[]): void {
+	private renderGroups(groups: readonly TimelineGroup[], blocks: readonly ActivityTimelineBlock[]): void {
 		this.groupControls.replaceChildren();
 		if (!groups.length) { this.groupControls.hidden = true; return; }
 		this.groupControls.hidden = false;
@@ -278,6 +278,7 @@ export class ActivityTimelineView {
 		label.className = "cg-activity-timeline-groups-label";
 		label.textContent = "按学科展开";
 		this.groupControls.appendChild(label);
+		const dark=this.isDarkTheme();
 		for (const group of groups) {
 			const button = this.owner.createElement("button");
 			button.type = "button";
@@ -285,8 +286,9 @@ export class ActivityTimelineView {
 			const marker = this.owner.createElement("span");
 			marker.className = "cg-activity-timeline-group-swatch";
 			marker.setAttribute("aria-hidden", "true");
-			const colorPath = group.id === "activity:yolo" ? "activity://yolo-chat" : group.id.replace(/^folder:/, "");
-			marker.style.setProperty("--cg-group-color", activityColor(colorPath, this.isDarkTheme()).fill);
+			const palette=activityPalette(blocks.filter(block=>block.groupId===group.id).map(block=>block.path),dark);
+			marker.classList.toggle("is-multicolor",palette.length>1);
+			marker.style.setProperty("--cg-group-color",activitySwatch(palette));
 			button.prepend(marker);
 			button.dataset.timelineGroup = group.id;
 			button.setAttribute("aria-pressed", String(group.expanded));

@@ -33,7 +33,7 @@ function sampleDay(query){
  return{date,today,totalSeconds:blocks.reduce((sum,b)=>sum+b.seconds,0),locatedSeconds:blocks.reduce((sum,b)=>sum+b.seconds,0),precision:'DETAILED',blocks,warnings:[],recordedDates:[today]};
 }
 const plugin="app.plugins.plugins['contribution-graph-local']",qa='window.__graphPolishQA';
-let initialized=false;const evidence={};
+let initialized=false;const evidence={};const legendOnly=process.argv.includes('--legend-only');
 try{
  assert.ok((await evaluate("app.vault.adapter.basePath.replaceAll('\\\\','/')")).endsWith('/dist/time-acceptance/vault'));
  await evaluate(`(()=>{window.__graphPolishQA={oldLeaf:app.workspace.activeLeaf,originalListeners:new Set(${plugin}.activityService.listeners),fontText:document.body.style.getPropertyValue('--font-text'),fontInterface:document.body.style.getPropertyValue('--font-interface')};document.body.style.setProperty('--font-text','霞鹜文楷等宽');document.body.style.setProperty('--font-interface','霞鹜文楷等宽');return true})()`);initialized=true;
@@ -42,6 +42,7 @@ try{
  evidence.firstOpen=await evaluate(`(()=>{const v=${qa}.leaf.view,e=v.previewMode.containerEl;return{mode:v.getMode(),timelines:e.querySelectorAll('.cg-activity-timeline').length,otherGraphs:e.querySelectorAll('.contribution-graph:not(.cg-activity-timeline-graph)').length}})()`);
  assert.equal(evidence.firstOpen.timelines,1,'首次打开阅读模式，时间轴内部组件必须保留');
  assert.equal(evidence.firstOpen.otherGraphs,1,'原有时长图仍显示');
+ if(!legendOnly){
  for(const mode of ['source','preview']){
   await evaluate(`(async()=>{await ${qa}.leaf.setViewState({type:'markdown',state:{file:${qa}.path,mode:${JSON.stringify(mode)}}});return true})()`);await wait(450);
   const count=await evaluate(`(()=>{const v=${qa}.leaf.view;return(${JSON.stringify(mode)}==='preview'?v.previewMode.containerEl:v.contentEl.querySelector('.cm-content')).querySelectorAll('.cg-activity-timeline').length})()`);
@@ -50,6 +51,7 @@ try{
  await evaluate(`(()=>{const v=${qa}.leaf.view,scroll=v.previewMode.containerEl.querySelector('.markdown-preview-view');scroll.scrollTop=scroll.scrollHeight;return true})()`);await wait(200);
  await evaluate(`${qa}.leaf.view.previewMode.containerEl.querySelector('.markdown-preview-view').scrollTop=0`);await wait(250);
  assert.equal(await evaluate(`${qa}.leaf.view.previewMode.containerEl.querySelectorAll('.cg-activity-timeline').length`),1,'滚动返回后时间轴仍保留');
+ }
  await evaluate(`(()=>{const q=${qa},s=${plugin}.activityService;q.service=s;q.timelineQuery=s.getActivityTimelineDay;q.settings=JSON.stringify(s.getSettings());q.totals=JSON.stringify(s.getDailyTimeStats());q.dark=document.body.classList.contains('theme-dark');q.light=document.body.classList.contains('theme-light');s.getActivityTimelineDay=${sampleDay.toString()};q.leaf.view.containerEl.dataset.graphPolish='true';q.timeline=q.leaf.view.previewMode.containerEl.querySelector('.cg-activity-timeline');q.timeline.scrollIntoView({block:'start'});for(const listener of s.listeners)listener({type:'TIME_STATS',source:'TIME_ACTIVITY'});return true})()`);await wait(500);
  const reading='[data-graph-polish=true] .markdown-reading-view ';
  const colors=()=>evaluate(`(()=>{const el=${qa}.timeline,bottom=el.querySelector('.cg-activity-timeline-chart').getBoundingClientRect().bottom;return [...new Set([...el.querySelectorAll('.cg-activity-timeline-chart svg path[fill]')].filter(e=>{const r=e.getBoundingClientRect();return r.width>1&&r.height>=8&&r.height<=30&&r.bottom<bottom-40&&e.getAttribute('fill')!=='none'}).map(e=>getComputedStyle(e).fill))].sort()})()`);
@@ -58,6 +60,21 @@ try{
  await evaluate(`${qa}.timeline.querySelector('[data-timeline-group*="妇产科学"]').click()`);await wait(300);
  assert.deepEqual(await colors(),palette,'展开轨道不改变笔记颜色');evidence.activityColors=palette.length;
  await screenshot('graph-polish-timeline.png');
+ const legend=()=>evaluate(`(()=>{return [...${qa}.timeline.querySelectorAll('button[data-timeline-group]')].map(button=>{const marker=button.querySelector('.cg-activity-timeline-group-swatch'),style=getComputedStyle(marker);return{id:button.dataset.timelineGroup,multicolor:marker.classList.contains('is-multicolor'),colors:[...new Set(style.backgroundImage==='none'?[style.backgroundColor]:style.backgroundImage.match(/rgba?\\([^)]*\\)/g)||[])]};})})()`);
+ const initialLegend=await legend();
+ await evaluate(`${qa}.timeline.querySelector('[data-timeline-group*="妇产科学"]').click()`);await wait(250);
+ assert.deepEqual(await legend(),initialLegend,'收起轨道不改变真实色标');
+ for(const dark of [false,true]){
+  await evaluate(`document.body.classList.toggle('theme-dark',${dark});document.body.classList.toggle('theme-light',${!dark})`);await wait(300);
+  const markers=await legend(),actual=await colors();
+  assert.deepEqual([...new Set(markers.flatMap(marker=>marker.colors))].sort(),actual,'按钮色标与真实轨道色块同源');
+  const subject=markers.find(marker=>marker.id.includes('妇产科学')),yolo=markers.find(marker=>marker.id==='activity:yolo');
+  assert.equal(subject.multicolor,true);assert.equal(subject.colors.length,3);assert.equal(yolo.multicolor,false);assert.equal(yolo.colors.length,1);
+  await screenshot('timeline-legend-'+(dark?'dark':'light')+'.png');
+ }
+ evidence.legendMatchesTracks=true;
+ if(!legendOnly){
+
  await evaluate(`${qa}.leaf.view.previewMode.containerEl.querySelector('.contribution-graph-codeblock-edit-button').click()`);await wait(350);
  const modal=await evaluate(`(()=>{const el=document.querySelector('.contribution-graph-editor-modal'),inner=el.querySelector('.modal-content'),outerStyle=getComputedStyle(el),innerStyle=getComputedStyle(inner);return{count:document.querySelectorAll('.modal-container').length,outerPadding:outerStyle.padding,innerBorder:innerStyle.borderWidth,innerShadow:innerStyle.boxShadow,font:getComputedStyle(el.querySelector('.cg-editor-shell')).fontFamily}})()`);
  assert.equal(modal.count,1);assert.equal(modal.outerPadding,'0px');assert.equal(modal.innerBorder,'0px');assert.equal(modal.innerShadow,'none');assert.ok(modal.font.includes('霞鹜文楷'));evidence.singleShell=modal;
@@ -89,7 +106,8 @@ try{
  await click('[data-analysis-back]');assert.equal(await evaluate(`${qa}.weekly.charts.focusId`),'folder:临床医学/临床医学/妇产科学');
  await click('[data-analysis-root]');assert.equal(await evaluate(`${qa}.weekly.charts.focusId`),'root');
  evidence.sunburstNotes=true;assert.equal(await evaluate(`JSON.stringify(${qa}.service.getSettings())===${qa}.settings&&JSON.stringify(${qa}.service.getDailyTimeStats())===${qa}.totals`),true,'只读交互不改变真实设置和累计');
- await evaluate(`(()=>{const q=${qa};q.weekly.close();q.weekly=undefined;q.owned=[...q.service.listeners].filter(listener=>!q.originalListeners.has(listener));q.leaf.detach();q.leaf=undefined;return true})()`);await wait(150);
+ }
+ await evaluate(`(()=>{const q=${qa};q.weekly?.close();q.weekly=undefined;q.owned=[...q.service.listeners].filter(listener=>!q.originalListeners.has(listener));q.leaf.detach();q.leaf=undefined;return true})()`);await wait(150);
  evidence.released=await evaluate(`${qa}.owned.every(listener=>!${qa}.service.listeners.has(listener))`);assert.equal(evidence.released,true,'关闭笔记释放本轮图表订阅');
  evidence.passed=true;await writeFile('dist/graph-polish-host-evidence.json',JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence));
 }finally{

@@ -4,6 +4,17 @@ export interface ActivityColor { fill: string; text: string; stroke: string; }
 
 const YOLO_PATH = "activity://yolo-chat";
 
+export function activityPalette(paths: readonly string[], dark: boolean): string[] {
+	return [...new Set([...new Set(paths)].map(path => activityColor(path, dark).fill))].sort();
+}
+
+export function activitySwatch(palette: readonly string[]): string {
+	if (!palette.length) return "transparent";
+	if (palette.length === 1) return palette[0];
+	const stops=palette.map((fill,index)=>`${fill} ${index/palette.length*100}% ${(index+1)/palette.length*100}%`);
+	return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
 export function activityColor(path: string, dark: boolean): ActivityColor {
 	const normalized = normalizePath(path);
 	if (normalized === YOLO_PATH) {

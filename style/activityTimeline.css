@@ -141,6 +141,11 @@
 	margin: 4px 0 7px;
 }
 
+.cg-activity-timeline-group-swatch.is-multicolor {
+	width: 22px;
+	border-radius: 4px;
+}
+
 .cg-activity-timeline-selection select {
 	min-width: min(320px, 100%);
 	font-size: .78em;
