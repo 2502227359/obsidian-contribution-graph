@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "contribution-graph-ai-write": {
+      "command": "node",
+      "args": [
+        "C:/REPLACE_WITH_BUILT_WRITER/ai-note-write.cjs",
+        "--mcp",
+        "--vault",
+        "C:/REPLACE_WITH_CMBK_VAULT_ROOT",
+        "--source",
+        "REPLACE_WITH_AGENT_ID"
+      ]
+    }
+  }
+}

@@ -9,7 +9,6 @@ function files(): StatisticsFiles & { contents: Map<string, string> } {
 		list: async () => [...contents.keys()],
 		read: async path => { if (!contents.has(path)) throw Error("文件不存在"); return contents.get(path)!; },
 		write: async (path, data) => { contents.set(path, data); },
-		remove: async path => { contents.delete(path); },
 	};
 }
 
@@ -21,6 +20,94 @@ function sample(count: number) {
 }
 
 describe("普通目录统计记录", () => {
+	it("同一安装重启和退出复用当月两个文件，跨月保留此前统计且不重复累加", async () => {
+		const fs = files(), installation = crypto.randomUUID();
+		let now = new Date(2026, 10, 29, 10).getTime();
+		fs.writeSync = (path, data) => { fs.contents.set(path, data); return true; };
+		const start = async () => {
+			const repo = new StatisticsRepository(fs, data => data as ReturnType<typeof sample>, () => now, { id: installation });
+			await repo.initialize();
+			return repo;
+		};
+		const first = await start();
+		await first.save(sample(10));
+		expect(first.saveSync(sample(15))).toBe(true);
+		const second = await start();
+		await second.save(sample(25));
+		expect([...fs.contents.keys()].sort()).toEqual([0, 1].map(slot => `月度/${installation}/2026-11-${slot}.json`));
+		now = new Date(2026, 11, 1, 10).getTime();
+		await second.save(sample(30));
+		expect([...fs.contents.keys()].filter(path => path.includes("2026-12"))).toHaveLength(1);
+		expect((await start()).read(emptyStatistics()).dailyStats["2026-11-15"].addedChars).toBe(45);
+	});
+
+	it("历史归档保留原编号、版本和明细，旧散文件迟到也不重复统计", async () => {
+		const fs = files(), id = crypto.randomUUID();
+		const older = `记录/${id}-r1.json`, latest = `记录/${id}-r2.json`;
+		for (const [path, revision, data] of [[older, 1, sample(10)], [latest, 2, sample(15)]] as const) {
+			fs.contents.set(path, JSON.stringify({ formatVersion: 1, kind: "statistics", id, revision, updatedAt: revision, generation: "initial", data }));
+		}
+		const repo = new StatisticsRepository(fs, data => data as ReturnType<typeof sample>);
+		await repo.initialize();
+		await repo.archiveLegacyStatistics();
+		await repo.archiveLegacyStatistics();
+		expect(fs.contents.size).toBe(3);
+		const archive = [...fs.contents].find(([path]) => path.startsWith("归档/"))!;
+		expect(JSON.parse(archive[1]).records).toEqual([JSON.parse(fs.contents.get(latest)!)]);
+		fs.contents.delete(latest);
+		const restarted = new StatisticsRepository(fs, data => data as ReturnType<typeof sample>);
+		await restarted.initialize();
+		expect(restarted.read(emptyStatistics())).toEqual(repo.read(emptyStatistics()));
+	});
+
+	it("重启后识别回退的月文件，仍能读取已确认版本并恢复损坏的备用文件", async () => {
+		const fs = files();
+		let sequences: Record<string, number> = {};
+		const installation = {
+			id: crypto.randomUUID(),
+			loadSequences: () => ({ ...sequences }),
+			saveSequences: (value: Record<string, number>) => { sequences = value; },
+		};
+		const start = () => new StatisticsRepository(fs, data => data as ReturnType<typeof sample>, undefined, installation);
+		const writer = start();
+		await writer.initialize();
+		await writer.save(sample(10));
+		const older = [...fs.contents][0];
+		await writer.save(sample(20));
+		await writer.save(sample(30));
+		const newest = fs.contents.get(older[0])!;
+		fs.contents.set(...older);
+		await expect(start().initialize()).rejects.toThrow("缺少已确认的版本");
+		fs.contents.set(older[0], newest);
+		const backup = [...fs.contents.keys()].find(path => path !== older[0])!;
+		fs.contents.set(backup, "未写完");
+		const restarted = start();
+		await restarted.initialize();
+		expect(restarted.read(emptyStatistics()).dailyStats["2026-11-15"].addedChars).toBe(30);
+		await restarted.save(sample(5));
+		expect(JSON.parse(fs.contents.get(backup)!).records).toHaveLength(2);
+	});
+
+	it("历史归档保留旧基线、重命名映射和替换世代链", async () => {
+		const fs = files();
+		const start = () => new StatisticsRepository(fs, data => data as ReturnType<typeof sample>);
+		const writer = start();
+		await writer.initialize(sample(10));
+		writer.rename("笔记.md", "归档笔记.md", false);
+		await writer.save(emptyStatistics());
+		await writer.replace(sample(20));
+		await writer.replace(sample(30));
+		const prior = writer.readSources(emptyStatistics()).slice(0, -1);
+		expect(await writer.archiveLegacyStatistics()).toBe(4);
+		for (const path of fs.contents.keys()) {
+			if (path.startsWith("记录/")) fs.contents.delete(path);
+		}
+		const restarted = start();
+		await restarted.initialize();
+		expect(restarted.generationId).toBe(writer.generationId);
+		expect(restarted.readSources(emptyStatistics()).slice(0, -1)).toEqual(prior);
+	});
+
 	it("片段深拷贝、合并去重、冲突隔离、封口和重命名沿统计链路生效", () => {
 		const first = emptyStatistics();
 		first.timeActivity.timeline = { formatVersion: 1, segments: [], recordingPeriods: [] };
@@ -123,7 +210,7 @@ describe("普通目录统计记录", () => {
 		await left.save(sample(250)); await right.save(sample(300));
 		await right.refresh();
 		expect(right.read(sample(300)).dailyStats["2026-11-15"].addedChars).toBe(550);
-		for (const [path, data] of old) fs.contents.set(`记录/重复-${path.split("/").pop()}`, data);
+		for (const [path, data] of old) fs.contents.set(path, data);
 		await right.refresh();
 		expect(right.read(sample(300)).dailyStats["2026-11-15"].addedChars).toBe(550);
 		const restarted = new StatisticsRepository(fs, data => data as any);
@@ -166,7 +253,7 @@ describe("普通目录统计记录", () => {
 		fs.contents.set(path, "{坏数据");
 		await expect(receiver.refresh()).rejects.toThrow();
 		expect(receiver.read(emptyStatistics()).dailyStats["2026-11-15"].addedChars).toBe(20);
-		const conflicting = JSON.parse(valid); conflicting.data = sample(99);
+		const conflicting = JSON.parse(valid); conflicting.records[0].data = sample(99);
 		fs.contents.set(path, JSON.stringify(conflicting));
 		await expect(receiver.refresh()).rejects.toThrow("冲突");
 		fs.contents.set(path, valid); await receiver.refresh();
@@ -216,7 +303,7 @@ describe("普通目录统计记录", () => {
 		await left.replace(sample(40));
 		expect(left.read(emptyStatistics()).dailyStats["2026-11-15"].addedChars).toBe(40);
 	});
-	it("版本使用独立文件，保留最近两版，旧版本迟到后重启仍取最新累计", async () => {
+	it("两个固定文件交替保存，较旧文件迟到后重启仍取最新累计", async () => {
 		const fs = files(), repo = new StatisticsRepository(fs, data => data as any);
 		await repo.initialize(); await repo.save(sample(10));
 		const old = [...fs.contents][0];

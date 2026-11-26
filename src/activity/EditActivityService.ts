@@ -8,6 +8,10 @@ import {
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, Notice, Plugin } from "obsidian";
 import { Locals } from "src/i18/messages";
+import { AiEditIntake } from "./AiEditIntake";
+import { defaultAiWritePolicy, pathCompareKey, type AiEditEvent, type AiEditPolicy } from "./aiEditProtocol";
+import type { ActiveEditorCheckResult } from "./AiEditBridgeServer";
+import { normalizeLineEndings } from "./aiNotePatch";
 import { MAX_GOAL_HEAT_LEVELS } from "src/constants";
 import {
 	CollectionScopePeriod,
@@ -55,7 +59,7 @@ import { addTimeSpan, createEmptyTimeActivity, getTimeTrackingState, normalizeTi
 import { IdleTimeDiscard, TimeSpan, TimeStatsQuery, TimeTrackingContext, TimeTrackingSnapshot, TimeTrackerSnapshot, TimeStatusReason } from "../time/types";
 import { canonicalStatistics, DEFAULT_STATISTICS_FOLDER, StatisticsRepository } from "./StatisticsRepository";
 import { emptyStatistics, StatisticsData, statisticsFrom } from "./statisticsModel";
-import { VaultStatisticsFiles } from "./VaultStatisticsFiles";
+import { statisticsInstallation, VaultStatisticsFiles } from "./VaultStatisticsFiles";
 import { applyActivityTimelineSpan, closeTimelineRecordingPeriod, ensureTimelineRecordingPeriod } from "../time/activityTimeline";
 import { buildActivityTimelineDay } from "../time/activityTimelineQuery";
 import type { ActivityTimelineDay, ActivityTimelineQuery } from "../time/activityTimelineTypes";
@@ -147,6 +151,8 @@ export class EditActivityService {
 	private finalSnapshotSavedSynchronously = false;
 	private readonly monotonic: () => number;
 	private statistics: StatisticsRepository;
+	private aiEditIntake?: AiEditIntake;
+	private lastManualEditAt = new Map<string, number>();
 	private statisticsFiles: VaultStatisticsFiles;
 	private stopStatisticsListening?: () => void;
 	private statisticsRefreshTimer: number | null = null;
@@ -217,8 +223,84 @@ export class EditActivityService {
 		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
 		this.scheduleMidnightRefresh();
 		await this.flush();
+		this.aiEditIntake = new AiEditIntake(
+			this.plugin.app.vault,
+			() => this.aiEditPolicy(),
+			events => this.saveAiEdits(events),
+			{
+				checkActiveEditor: (path, diskContent) => this.checkActiveEditorForAiWrite(path, diskContent),
+				pluginVersion: this.plugin.manifest?.version ?? "",
+			},
+		);
+		this.aiEditIntake.start();
 	}
 
+	private aiEditPolicy(): AiEditPolicy {
+		const { countAiEdits, trackingEnabled, trackedFolders, trackedFiles, excludeWhitespace, excludeMarkdownFormatting } = this.store.settings;
+		return {
+			version: 1,
+			enabled: countAiEdits && trackingEnabled,
+			generation: this.statistics.generationId,
+			trackedFolders,
+			trackedFiles,
+			excludeWhitespace,
+			excludeMarkdownFormatting,
+			statisticsFolder: this.getStatisticsFolder(),
+			pluginVersion: this.plugin.manifest?.version ?? "",
+			writePolicy: defaultAiWritePolicy("collection-scope"),
+		};
+	}
+
+	private checkActiveEditorForAiWrite(path: string, diskContent: string): ActiveEditorCheckResult {
+		const targetKey = pathCompareKey(path);
+		const lastManualAt = this.lastManualEditAt.get(targetKey);
+		if (lastManualAt !== undefined && this.now().getTime() - lastManualAt < 5000) {
+			return { active: true, reason: "该笔记在最近 5 秒内有人工编辑，为防止覆盖未保存输入已拒绝 AI 写入，请稍后重读再试" };
+		}
+		for (const view of this.compositionViews) {
+			const state = this.compositions.get(view);
+			if (state && pathCompareKey(state.filePath) === targetKey) {
+				return { active: true, reason: "该笔记正在 Obsidian 中进行输入法组合输入，已拒绝 AI 写入" };
+			}
+		}
+		for (const view of this.pendingLineViews) {
+			const pending = this.pendingLineEdits.get(view);
+			if (pending && pathCompareKey(pending.filePath) === targetKey) {
+				return { active: true, reason: "该笔记正在 Obsidian 编辑器中编辑，已拒绝 AI 写入" };
+			}
+		}
+		let dirtyFound = false;
+		const workspace = (this.plugin.app as {
+			workspace?: {
+				iterateAllLeaves?: (cb: (leaf: { view?: { file?: { path?: string }; editor?: { getValue?: () => string } } }) => void) => void;
+			};
+		})?.workspace;
+		const normalizedDisk = normalizeLineEndings(diskContent);
+		workspace?.iterateAllLeaves?.(leaf => {
+			if (dirtyFound) return;
+			const viewPath = leaf?.view?.file?.path;
+			if (!viewPath || pathCompareKey(viewPath) !== targetKey) return;
+			const editorValue = leaf?.view?.editor?.getValue?.();
+			if (typeof editorValue === "string" && normalizeLineEndings(editorValue) !== normalizedDisk) {
+				dirtyFound = true;
+			}
+		});
+		if (dirtyFound) {
+			return { active: true, reason: "该笔记在 Obsidian 编辑器中存在尚未落盘的本地修改，已拒绝 AI 写入以防覆盖正文" };
+		}
+		return { active: false };
+	}
+
+	private async saveAiEdits(events: readonly AiEditEvent[]): Promise<void> {
+		const before = this.readStatistics().dailyStats;
+		await this.statistics.saveAiEdits(events);
+		const after = this.readStatistics().dailyStats;
+		for (const date of new Set(events.map(event => event.date))) {
+			if (canonicalStatistics(before[date]) === canonicalStatistics(after[date])) continue;
+			this.invalidateStatsCache(date);
+			this.emitChange({ type: "STATS", source: "EDIT_ACTIVITY", date });
+		}
+	}
 
 	getSaveStatus(): string {
 		if (this.finalSnapshotSavedSynchronously) return "已保存";
@@ -242,15 +324,21 @@ export class EditActivityService {
 			? { ...this.createEmptyStore(), ...(raw as object) } : raw;
 	}
 
+	archiveLegacyStatistics(): Promise<number> {
+		return this.statistics.archiveLegacyStatistics();
+	}
+
 	private async initializeStatistics(raw: unknown): Promise<void> {
 		const storage = (raw as { storage?: { formatVersion: number; folder: string } } | null)?.storage;
 		if (storage && storage.formatVersion !== 1) throw new Error("不支持的普通统计存储版本");
 		this.statisticsFiles = new VaultStatisticsFiles(this.plugin.app.vault, storage?.folder || DEFAULT_STATISTICS_FOLDER);
-		this.statistics = new StatisticsRepository(this.statisticsFiles, data => this.validateStatistics(data), () => this.now().getTime());
+		await this.statisticsFiles.waitForPendingWrites();
+		const installation = statisticsInstallation(this.plugin.app.vault, this.statisticsFiles.folder);
+		this.statistics = new StatisticsRepository(this.statisticsFiles, data => this.validateStatistics(data), () => this.now().getTime(), installation);
 		const legacy = raw && !storage ? statisticsFrom(this.store) : undefined;
 		if (legacy) await this.statisticsFiles.write(`备份/data.backup-${this.now().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID()}-migration.json`, JSON.stringify(raw, null, 2));
 		await this.statistics.initialize(legacy);
-		if (storage && !(await this.statisticsFiles.list()).some(path => path.startsWith("记录/") && path.endsWith(".json"))) {
+		if (storage && !this.statistics.hasRecords) {
 			new Notice("统计目录尚无记录，历史文件可能尚未同步完成。请核对同步状态或从备份恢复，当前空视图不代表历史已清空。", 12000);
 		}
 		Object.assign(this.store, emptyStatistics());
@@ -302,9 +390,11 @@ export class EditActivityService {
 		if (this.finalSnapshotSavedSynchronously) return;
 		const configuration = this.configurationSnapshot(snapshot);
 		const serialized = canonicalStatistics(configuration);
-		if (serialized === this.savedConfiguration) return;
-		await this.plugin.saveData(configuration);
-		this.savedConfiguration = serialized;
+		if (serialized !== this.savedConfiguration) {
+			await this.plugin.saveData(configuration);
+			this.savedConfiguration = serialized;
+		}
+		if (serialized === canonicalStatistics(this.configurationSnapshot(this.store))) this.aiEditIntake?.publish();
 	}
 
 	private readStatistics(): StatisticsData {
@@ -353,6 +443,7 @@ export class EditActivityService {
 		}
 		if (this.store.settings.timeTrackingEnabled) this.openTimeCoverage();
 		this.invalidateStatsCache(); this.markDirty(); this.scheduleSave();
+		this.aiEditIntake?.publish();
 	}
 
 	private notifyStatisticsChanges(before: StatisticsData, after: StatisticsData): void {
@@ -852,6 +943,16 @@ export class EditActivityService {
 		await this.flush();
 	}
 
+	async setCountAiEdits(countAiEdits: boolean): Promise<void> {
+		if (countAiEdits === this.store.settings.countAiEdits) return;
+		this.beginCountingPolicyChange();
+		this.store.settings.countAiEdits = countAiEdits;
+		this.finishCountingPolicyChange();
+		this.markDirty();
+		this.emitChange({ type: "SETTINGS", source: "EDIT_ACTIVITY" });
+		await this.flush();
+	}
+
 	async setTrackedFolders(trackedFolders: string[]): Promise<void> {
 		const normalized = normalizeTrackedFolders(trackedFolders);
 		if (
@@ -1100,6 +1201,7 @@ export class EditActivityService {
 
 	private async finishUnloading(): Promise<void> {
 		this.unloading = true;
+		const aiEdits = this.aiEditIntake?.stop();
 		this.stopStatisticsListening?.();
 		if (this.statisticsRefreshTimer !== null) window.clearTimeout(this.statisticsRefreshTimer);
 		this.pauseTimeActivity();
@@ -1112,6 +1214,7 @@ export class EditActivityService {
 			return;
 		}
 		await this.statisticsRefreshQueue;
+		await aiEdits;
 		this.closeTimeCoverage();
 		if (this.store.settings.timeTrackingEnabled) this.markDirty();
 		if (this.midnightTimer !== null) {
@@ -1133,6 +1236,7 @@ export class EditActivityService {
 				if (!this.statisticsFiles.writeConfigurationSync(this.plugin.manifest.dir!, JSON.stringify(configuration, null, 2))) return false;
 				this.savedConfiguration = serialized;
 			}
+			this.aiEditIntake?.publish();
 			this.finalSnapshotSavedSynchronously = true;
 			this.dirty = false;
 			this.resetTrustedInputState();
@@ -1169,6 +1273,9 @@ export class EditActivityService {
 
 			const event = transaction.annotation(Transaction.userEvent) || "";
 			const filePath = this.getMarkdownFilePath(transaction);
+			if (filePath && transaction.annotation(Transaction.remote) !== true) {
+				this.lastManualEditAt.set(pathCompareKey(filePath), this.now().getTime());
+			}
 			if (
 				!filePath ||
 				!isFileInCollectionScope(
@@ -2225,6 +2332,7 @@ export class EditActivityService {
 					candidate.settings?.strictUserInputOnly !== false,
 				countPastedText:
 					candidate.settings?.countPastedText !== false,
+				countAiEdits: candidate.settings?.countAiEdits === true,
 			},
 			graphThemes,
 			trackingPeriods,
@@ -2347,6 +2455,7 @@ export class EditActivityService {
 			excludeMarkdownFormatting: policy.excludeMarkdownFormatting,
 			strictUserInputOnly: policy.strictUserInputOnly,
 			countPastedText: policy.countPastedText,
+			...(policy.countAiEdits === true ? { countAiEdits: true } : {}),
 		};
 	}
 

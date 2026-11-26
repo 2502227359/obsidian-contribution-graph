@@ -342,6 +342,14 @@ export class EditActivitySettingTab extends PluginSettingTab {
 						this.display();
 					})
 			);
+		new Setting(container)
+			.setName(local.settings_count_ai_edits)
+			.setDesc(local.settings_count_ai_edits_description)
+			.addToggle(toggle => toggle.setValue(settings.countAiEdits).onChange(async enabled => {
+				await this.activityService.setCountAiEdits(enabled);
+				new Notice(local.settings_counting_policy_updated);
+				this.display();
+			}));
 	}
 
 	private createScopeSection(

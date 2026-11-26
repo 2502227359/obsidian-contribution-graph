@@ -258,6 +258,7 @@ function createService() {
 		trackedFolders: [] as string[],
 		strictUserInputOnly: true,
 		countPastedText: true,
+		countAiEdits: false,
 		trackedFiles: [] as string[],
 	};
 	let status = "时长统计：未启用";
@@ -314,6 +315,9 @@ function createService() {
 		setExcludeMarkdownFormatting: vi.fn(async () => undefined),
 		setStrictUserInputOnly: vi.fn(async () => undefined),
 		setCountPastedText: vi.fn(async () => undefined),
+		setCountAiEdits: vi.fn(async (countAiEdits: boolean) => {
+			settings = { ...settings, countAiEdits };
+		}),
 		setTrackedFolders: vi.fn(async () => undefined),
 		setTrackedFiles: vi.fn(async (trackedFiles: string[]) => {
 			settings = { ...settings, trackedFiles: [...trackedFiles] };

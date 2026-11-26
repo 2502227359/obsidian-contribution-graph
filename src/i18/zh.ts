@@ -224,6 +224,8 @@ export class Zh implements Local {
 	settings_strict_user_input_description = "统计键盘、输入法、已启用的剪贴板或拖放操作，以及仅修改高亮标记的操作。关闭后兼容更多编辑插件，但模板等自动插入可能被统计。";
 	settings_count_pasted_text = "统计粘贴内容";
 	settings_count_pasted_text_description = "将用户手动粘贴的文本计入编辑活动。关闭后会排除整笔粘贴替换，包括粘贴时被替换的字符。";
+	settings_count_ai_edits = "统计 AI 编辑";
+	settings_count_ai_edits_description = "统计已接入的 AI 工具写入笔记时的字符变化，沿用当前笔记范围与统计口径。";
 	settings_tracked_folders = "统计文件夹";
 	settings_tracked_folders_description = "字数与笔记时长共用此采集范围；YOLO 对话单独归类，不受笔记目录限制。修改只影响之后的记录，严格输入模式仅影响字数统计。";
 	settings_tracked_folders_choose = "选择文件夹";

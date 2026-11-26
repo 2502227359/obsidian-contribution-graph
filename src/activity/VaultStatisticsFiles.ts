@@ -1,11 +1,40 @@
 import { TFile, Vault } from "obsidian";
 import { StatisticsFiles } from "./StatisticsRepository";
+import { isStatisticsPath, StatisticsInstallation } from "./statisticsRecordFiles";
+
+const INSTALLATION_KEY = "contribution-graph-local:statistics-installation";
+const PENDING_WRITES = Symbol.for("contribution-graph-local:statistics-writes");
+type StatisticsVault = Vault & { [PENDING_WRITES]?: Map<string, Promise<void>> };
+
+export function statisticsInstallation(vault: Vault, folder: string): StatisticsInstallation {
+	const storage = window.localStorage;
+	const saved = storage?.getItem(INSTALLATION_KEY);
+	const id = saved && /^[0-9a-f-]{36}$/.test(saved) ? saved : crypto.randomUUID();
+	if (saved !== id) storage?.setItem?.(INSTALLATION_KEY, id);
+	const adapter = vault.adapter as typeof vault.adapter & { getBasePath?(): string };
+	const key = `contribution-graph-local:statistics-sequences:${adapter.getBasePath?.() ?? vault.getName?.()}:${folder}`;
+	return {
+		id,
+		loadSequences: () => {
+			const value = storage?.getItem(key);
+			return value?.startsWith("{") ? JSON.parse(value) as Record<string, number> : {};
+		},
+		saveSequences: sequences => {
+			const content = JSON.stringify(sequences);
+			if (storage?.getItem(key) !== content) storage?.setItem?.(key, content);
+		},
+	};
+}
 
 export class VaultStatisticsFiles implements StatisticsFiles {
+	private readonly pending: Map<string, Promise<void>>;
+
 	constructor(private readonly vault: Vault, readonly folder: string) {
 		if (!folder || folder.split("/").some(part => !part || part.startsWith(".") || part.includes(":")) || folder.includes("\\")) {
 			throw new Error("统计目录必须是仓库中的普通相对路径");
 		}
+		const statisticsVault: StatisticsVault = vault;
+		this.pending = statisticsVault[PENDING_WRITES] ??= new Map();
 	}
 
 	async list(): Promise<string[]> {
@@ -19,15 +48,23 @@ export class VaultStatisticsFiles implements StatisticsFiles {
 
 	async write(path: string, data: string): Promise<void> {
 		const target = `${this.folder}/${path}`;
+		const previous = this.pending.get(target);
+		const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(() => this.writeFile(target, data));
+		this.pending.set(target, write);
+		try { await write; }
+		finally { if (this.pending.get(target) === write) this.pending.delete(target); }
+	}
+
+	async waitForPendingWrites(): Promise<void> {
+		const writes = [...this.pending.entries()].filter(([path]) => path.startsWith(`${this.folder}/`));
+		await Promise.allSettled(writes.map(([, write]) => write));
+	}
+
+	private async writeFile(target: string, data: string): Promise<void> {
 		await this.ensureFolders(target.split("/").slice(0, -1).join("/"));
 		const file = this.vault.getAbstractFileByPath(target);
 		if (file && "extension" in file) await this.vault.process(file as TFile, () => data);
 		else await this.vault.create(target, data);
-	}
-
-	async remove(path: string): Promise<void> {
-		const file = this.vault.getAbstractFileByPath(`${this.folder}/${path}`);
-		if (file) await this.vault.delete(file);
 	}
 
 	writeSync(path: string, data: string): boolean {
@@ -51,10 +88,14 @@ export class VaultStatisticsFiles implements StatisticsFiles {
 		fs.mkdirSync(path.dirname(target), {recursive: true});
 		this.assertInsideVault(base, fs.realpathSync(path.dirname(target)), path);
 		const temporary = `${target}.${crypto.randomUUID()}.tmp`;
-		fs.writeFileSync(temporary, data, "utf8");
-		const fd = fs.openSync(temporary, "r+");
-		try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-		fs.renameSync(temporary, target);
+		try {
+			fs.writeFileSync(temporary, data, "utf8");
+			const fd = fs.openSync(temporary, "r+");
+			try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+			fs.renameSync(temporary, target);
+		} finally {
+			fs.rmSync(temporary, { force: true });
+		}
 		if (fs.readFileSync(target, "utf8") !== data) throw new Error("退出检查点写入校验失败");
 		return true;
 	}
@@ -65,7 +106,7 @@ export class VaultStatisticsFiles implements StatisticsFiles {
 	}
 
 	subscribe(listener: () => void): () => void {
-		const matches = (path: string) => path.startsWith(`${this.folder}/记录/`) && path.endsWith(".json");
+		const matches = (path: string) => path.startsWith(`${this.folder}/`) && isStatisticsPath(path.slice(this.folder.length + 1));
 		const refs = [
 			this.vault.on("create", file => { if (matches(file.path)) listener(); }),
 			this.vault.on("modify", file => { if (matches(file.path)) listener(); }),

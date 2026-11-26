@@ -70,7 +70,24 @@ export default class ContributionGraph extends Plugin {
 		this.registerContributionGraphCreateCommand();
 		this.registerTimeTrackingCommands();
 		this.registerWeeklyReviewCommand();
+		this.registerStatisticsCommands();
 		this.registerContextMenu();
+	}
+
+	private registerStatisticsCommands(): void {
+		this.addCommand({
+			id: "archive-legacy-statistics",
+			name: "生成旧版统计归档",
+			callback: async () => {
+				try {
+					const count = await this.activityService.archiveLegacyStatistics();
+					new Notice(count ? `已归档 ${count} 条旧版统计记录，源文件仍保留。` : "没有待归档的旧版统计记录。");
+				} catch (error) {
+					console.error("旧版统计归档失败", error);
+					new Notice("旧版统计归档失败，请查看控制台。");
+				}
+			},
+		});
 	}
 
 	private async setManualTimePaused(paused: boolean): Promise<void> {

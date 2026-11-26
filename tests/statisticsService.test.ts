@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditActivityService } from "../src/activity/EditActivityService";
 import { EMPTY_EDIT_ACTIVITY_STORE } from "../src/activity/types";
-import { memoryVault } from "./helpers/memoryVault";
+import { memoryVault, persistedStatistics } from "./helpers/memoryVault";
 import { emptyStatistics } from "../src/activity/statisticsModel";
 import { StatisticsRepository } from "../src/activity/StatisticsRepository";
 
@@ -55,7 +55,7 @@ describe("活动服务普通目录存储", () => {
 		expect(vault.adapter.write).toHaveBeenCalledTimes(1);
 		expect(plugin.saveData).not.toHaveBeenCalled();
 		await service.flush();
-		const own = [...files.entries()].filter(([key]) => key.includes("/记录/") && key !== path).map(([, value]) => JSON.parse(value));
+		const own = persistedStatistics([...files.entries()].filter(([key]) => key !== path).map(([, value]) => value));
 		expect(own.every(record => Object.keys(record.data.dailyStats).length === 0)).toBe(true);
 	});
 	it("启用后立即退出的零长度覆盖也能成功持久化", async () => {
@@ -78,12 +78,12 @@ describe("活动服务普通目录存储", () => {
 		await service.initialize(); plugin.saveData.mockClear(); service.recordTimeActivity("本机.md");
 		wall += 10000; mono += 10000;
 		const incoming = new Map<string, string>();
-		const writer = new StatisticsRepository({list: async () => [...incoming.keys()], read: async path => incoming.get(path)!, write: async (path, value) => { incoming.set(path, value); }, remove: async path => { incoming.delete(path); }}, data => data as any);
+		const writer = new StatisticsRepository({list: async () => [...incoming.keys()], read: async path => incoming.get(path)!, write: async (path, value) => { incoming.set(path, value); }}, data => data as any);
 		await writer.initialize(); await writer.replace(emptyStatistics());
 		for (const [path, content] of incoming) await vault.create(`Template/数据/学习统计/${path}`, content);
 		await vi.advanceTimersByTimeAsync(151);
 		expect(service.getDailyTimeStats()).toEqual([]);
-		const old = [...files.values()].map(value => JSON.parse(value)).filter(record => record.kind === "statistics" && record.generation === "initial");
+		const old = persistedStatistics(files.values()).filter(record => record.generation === "initial");
 		const seconds = old.flatMap(record => Object.values(record.data.timeActivity.buckets) as any[]).reduce((sum, bucket) => sum + (bucket.documents["本机.md"] || 0), 0);
 		expect(seconds).toBe(10); expect(plugin.saveData).not.toHaveBeenCalled();
 	});

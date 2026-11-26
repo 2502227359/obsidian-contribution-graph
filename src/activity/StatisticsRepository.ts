@@ -1,4 +1,9 @@
 import { applyStatisticsRename, closeStatistics, emptyStatistics, mergeStatistics, StatisticsData, statisticsFrom } from "./statisticsModel";
+import { AI_EDIT_ID, AiEditEvent } from "./aiEditProtocol";
+import {
+	checkStatisticsSize, isLegacyStatisticsPath, isStatisticsPath, MonthlyFrame, monthlyShard,
+	MonthlyStatisticsFiles, newestMonthlyFrame, readStatisticsFile, statisticsDigest, StatisticsInstallation,
+} from "./statisticsRecordFiles";
 
 export const DEFAULT_STATISTICS_FOLDER = "Template/数据/学习统计";
 
@@ -6,11 +11,10 @@ export interface StatisticsFiles {
 	list(): Promise<string[]>;
 	read(path: string): Promise<string>;
 	write(path: string, data: string): Promise<void>;
-	remove(path: string): Promise<void>;
 	writeSync?(path: string, data: string): boolean;
 }
 
-interface StatisticsRecord {
+export interface StatisticsRecord {
 	formatVersion: 1;
 	kind: "statistics" | "replacement" | "rename";
 	id: string;
@@ -19,6 +23,7 @@ interface StatisticsRecord {
 	generation: string;
 	data: StatisticsData;
 	parents?: string[];
+	aiEventIds?: string[];
 	rename?: { oldPath: string; newPath: string; isFolder: boolean; targets: string[]; predecessors: string[] };
 }
 
@@ -38,22 +43,27 @@ export function canonicalStatistics(value: unknown): string {
 export class StatisticsRepository {
 	private records = new Map<string, StatisticsRecord>();
 	private recordId = crypto.randomUUID();
+	private aiRecordId = crypto.randomUUID();
 	private revision = 0;
 	private generation = "initial";
 	private saved = "";
 	private conflicting = false;
 	private pendingRenames = new Set<string>();
 	private queue: Promise<void> = Promise.resolve();
-	private ownVersions: string[] = [];
+	private readonly monthly: MonthlyStatisticsFiles;
 	private sealed = false;
 	version = 0;
 	get generationId(): string { return this.generation; }
+	get hasRecords(): boolean { return this.records.size > 0; }
 
 	constructor(
 		readonly files: StatisticsFiles,
 		private readonly validate: (data: unknown) => StatisticsData,
 		private readonly now: () => number = () => Date.now(),
-	) {}
+		installation: StatisticsInstallation = { id: crypto.randomUUID() },
+	) {
+		this.monthly = new MonthlyStatisticsFiles(files, installation);
+	}
 
 	async initialize(legacy?: StatisticsData): Promise<void> {
 		await this.refresh();
@@ -86,6 +96,7 @@ export class StatisticsRepository {
 	}
 
 	rename(oldPath: string, newPath: string, isFolder: boolean): boolean {
+		this.aiRecordId = crypto.randomUUID();
 		const targets = [...this.records.values()].filter(record => record.kind !== "rename" && record.id !== this.recordId && record.generation === this.generation).map(record => record.id);
 		if (!targets.length) return false;
 		const id = crypto.randomUUID();
@@ -107,19 +118,79 @@ export class StatisticsRepository {
 			for (const pending of this.pendingRenames) {
 				await this.writeRecord(this.records.get(pending)!); this.pendingRenames.delete(pending);
 			}
+			if (this.sealed || generation !== this.generation) return;
 			if (serialized === this.saved) return;
 			const record: StatisticsRecord = { formatVersion: 1, kind: "statistics", id,
 				revision: ++this.revision, updatedAt: this.now(), generation, data };
-			await this.writeRecord(record);
+			const verified = { ...record, data: this.validate(record.data) };
+			await this.monthly.save(verified);
+			this.keepRecord(this.records, verified);
+			this.version++;
 			this.saved = serialized;
-			await this.pruneOwnVersions();
 		});
 		this.queue = save;
 		await save;
 	}
 
+	saveAiEdits(events: readonly AiEditEvent[]): Promise<void> {
+		const save = this.queue.catch(() => undefined).then(async () => {
+			if (this.sealed || this.conflicting) throw new Error("AI 编辑统计暂不能保存");
+			const record = this.collectAiEdits(events);
+			if (!record) return;
+			try {
+				await this.monthly.save(record);
+			} catch (error) {
+				// 写入后校验失败时，先从磁盘恢复已实际提交的回执。
+				this.records = await this.loadRecords().catch(() => this.records);
+				this.version++;
+				throw error;
+			}
+			this.keepRecord(this.records, record);
+			this.version++;
+		});
+		this.queue = save;
+		return save;
+	}
+
+	private collectAiEdits(events: readonly AiEditEvent[]): StatisticsRecord | undefined {
+		const known = new Set<string>();
+		for (const record of this.records.values()) {
+			for (const id of record.aiEventIds ?? []) known.add(id);
+		}
+		const previous = this.records.get(this.aiRecordId);
+		const data = previous ? statisticsFrom(previous.data) : emptyStatistics();
+		const ids = [...previous?.aiEventIds ?? []];
+		let skippedGeneration = 0;
+		for (const event of events) {
+			if (event.generation !== this.generation) {
+				skippedGeneration++;
+				continue;
+			}
+			if (known.has(event.id)) continue;
+			known.add(event.id);
+			ids.push(event.id);
+			this.addAiEdit(data, event);
+		}
+		if (skippedGeneration > 0) {
+			console.warn(`已跳过 ${skippedGeneration} 条旧统计代次（generation）的 AI 编辑记录`);
+		}
+		if (ids.length === (previous?.aiEventIds?.length ?? 0)) return undefined;
+		return { formatVersion: 1, kind: "statistics", id: this.aiRecordId, revision: (previous?.revision ?? 0) + 1,
+			updatedAt: this.now(), generation: this.generation, data: this.validate(data), aiEventIds: ids };
+	}
+
+	private addAiEdit(data: StatisticsData, event: AiEditEvent): void {
+		const day = data.dailyStats[event.date] ??= { addedChars: 0, deletedChars: 0, documents: Object.create(null) };
+		const file = day.documents[event.path] ??= { addedChars: 0, deletedChars: 0 };
+		day.addedChars += event.addedChars;
+		day.deletedChars += event.deletedChars;
+		file.addedChars += event.addedChars;
+		file.deletedChars += event.deletedChars;
+	}
+
 	saveSync(local: StatisticsData): boolean {
 		if (this.sealed) return true;
+		if (this.conflicting) return false;
 		if (!this.files.writeSync) return false;
 		for (const id of this.pendingRenames) {
 			const operation = this.records.get(id)!;
@@ -128,7 +199,7 @@ export class StatisticsRepository {
 		}
 		const record: StatisticsRecord = {formatVersion: 1, kind: "statistics", id: this.recordId,
 			revision: ++this.revision, updatedAt: this.now(), generation: this.generation, data: this.validate(statisticsFrom(local))};
-		if (!this.files.writeSync(`记录/${record.id}-r${record.revision}.json`, JSON.stringify(record, null, 2))) return false;
+		if (!this.monthly.saveSync(record)) return false;
 		// 退出检查点高于已发起写入的版本；排队的旧快照不能再获得更新版本。
 		this.sealed = true;
 		this.records.set(record.id, record);
@@ -144,6 +215,32 @@ export class StatisticsRepository {
 			generation: id, updatedAt: this.now(), data: statisticsFrom(data), parents: this.heads(this.records) });
 		this.adoptGeneration(id);
 		this.conflicting = false;
+	}
+
+	async archiveLegacyStatistics(): Promise<number> {
+		const paths = (await this.files.list()).filter(isStatisticsPath);
+		const archived = new Map<string, StatisticsRecord>(), scattered = new Map<string, StatisticsRecord>();
+		for (const path of paths) {
+			if (!isLegacyStatisticsPath(path) && !path.startsWith("归档/")) continue;
+			const file = await this.readFile(path);
+			const target = isLegacyStatisticsPath(path) ? scattered : archived;
+			for (const record of file.records) this.keepRecord(target, record);
+		}
+		const records = [...scattered.values()].filter(record => this.needsArchive(record, archived))
+			.sort((left, right) => left.id.localeCompare(right.id));
+		if (!records.length) return 0;
+		const content = canonicalStatistics({ formatVersion: 2, kind: "archive", records });
+		checkStatisticsSize(content);
+		const path = `归档/${await statisticsDigest(content)}.json`;
+		await this.files.write(path, content);
+		if (await this.files.read(path) !== content) throw new Error("统计归档写入校验失败");
+		return records.length;
+	}
+
+	private needsArchive(record: StatisticsRecord, archived: Map<string, StatisticsRecord>): boolean {
+		const previous = archived.get(record.id);
+		this.keepRecord(archived, record);
+		return previous !== archived.get(record.id);
 	}
 
 	async refresh(beforeReplacement?: () => Promise<void>): Promise<boolean> {
@@ -167,23 +264,47 @@ export class StatisticsRepository {
 
 	private async loadRecords(): Promise<Map<string, StatisticsRecord>> {
 		const next = new Map(this.records);
-		const paths = (await this.files.list()).filter(path => path.startsWith("记录/") && path.endsWith(".json"));
+		const known = [...next.values()];
+		const confirmed = this.monthly.readSequences();
+		const paths = (await this.files.list()).filter(isStatisticsPath);
 		const found = new Set<string>();
+		const observed = new Map<string, MonthlyFrame>();
+		const unreadable = new Map<string, unknown>();
 		for (const path of paths) {
-			const record = this.parse(await this.files.read(path));
-			found.add(record.id);
-			const existing = next.get(record.id);
-			const sameLegacy = record.id === "legacy" && existing && canonicalStatistics(existing.data) === canonicalStatistics(record.data);
-			if (existing && !sameLegacy && existing.revision === record.revision && canonicalStatistics(existing) !== canonicalStatistics(record)) {
-				throw new Error(`统计记录版本冲突：${record.id}，已保留上次有效统计`);
+			const file = await this.readFile(path).catch(error => {
+				const shard = monthlyShard(path);
+				if (!shard) throw error;
+				unreadable.set(shard, error);
+				return undefined;
+			});
+			if (!file) continue;
+			const { records, shard, frame } = file;
+			if (shard && frame) observed.set(shard, newestMonthlyFrame(observed.get(shard), frame));
+			for (const record of records) {
+				found.add(record.id);
+				this.keepRecord(next, record);
 			}
-			if (!existing || existing.revision < record.revision) next.set(record.id, record);
 		}
-		if ([...this.records.values()].some(record => !found.has(record.id) && !this.pendingRenames.has(record.id) &&
+		if (known.some(record => !found.has(record.id) && !this.pendingRenames.has(record.id) &&
 			(record.generation === this.generation || record.kind === "replacement"))) {
 			throw new Error("统计记录文件被删除或尚未同步完成，已保留上次有效统计");
 		}
+		this.monthly.observe(observed, unreadable, confirmed);
+		for (const record of this.records.values()) this.keepRecord(next, record);
 		return next;
+	}
+
+	private readFile(path: string) {
+		return this.files.read(path).then(content => readStatisticsFile(path, content, value => this.parse(value)));
+	}
+
+	private keepRecord(records: Map<string, StatisticsRecord>, record: StatisticsRecord): void {
+		const existing = records.get(record.id);
+		const sameLegacy = record.id === "legacy" && existing && canonicalStatistics(existing.data) === canonicalStatistics(record.data);
+		if (existing && !sameLegacy && existing.revision === record.revision && canonicalStatistics(existing) !== canonicalStatistics(record)) {
+			throw new Error(`统计记录版本冲突：${record.id}，已保留上次有效统计`);
+		}
+		if (!existing || existing.revision < record.revision) records.set(record.id, record);
 	}
 
 	private heads(records: Map<string, StatisticsRecord>): string[] {
@@ -217,15 +338,14 @@ export class StatisticsRepository {
 	private adoptGeneration(generation: string): void {
 		this.generation = generation;
 		this.recordId = crypto.randomUUID();
+		this.aiRecordId = crypto.randomUUID();
 		this.revision = 0;
 		this.saved = "";
-		this.ownVersions = [];
 		this.version++;
 	}
 
-	private parse(serialized: string): StatisticsRecord {
-		if (new TextEncoder().encode(serialized).byteLength > 100 * 1024 * 1024) throw new Error("单份统计记录超过一百兆字节");
-		const record = JSON.parse(serialized) as StatisticsRecord;
+	private parse(value: unknown): StatisticsRecord {
+		const record = value as StatisticsRecord;
 		if (!record || record.formatVersion !== 1 || !["statistics", "replacement", "rename"].includes(record.kind) || !/^(legacy|[0-9a-f-]{36})$/.test(record.id) ||
 			!Number.isSafeInteger(record.revision) || record.revision < 1 ||
 			!Number.isFinite(record.updatedAt) || record.updatedAt < 0 || record.updatedAt > 8640000000000000 ||
@@ -234,6 +354,10 @@ export class StatisticsRepository {
 		}
 		if (record.id === "legacy" && (record.kind !== "statistics" || record.revision !== 1 || record.generation !== "initial")) {
 			throw new Error("历史统计基线不可更新");
+		}
+		if (record.aiEventIds !== undefined && (record.kind !== "statistics" || record.id === "legacy" ||
+			!Array.isArray(record.aiEventIds) || record.aiEventIds.some(id => typeof id !== "string" || !AI_EDIT_ID.test(id)))) {
+			throw new Error("AI 编辑回执格式损坏");
 		}
 		if (record.kind === "replacement" && (record.generation !== record.id || record.revision !== 1 ||
 			!Array.isArray(record.parents) || record.parents.some(id => typeof id !== "string" || !/^[0-9a-f-]{36}$/.test(id) || id === record.id))) {
@@ -250,24 +374,13 @@ export class StatisticsRepository {
 
 	private async writeRecord(record: StatisticsRecord): Promise<void> {
 		record = { ...record, data: this.validate(record.data) };
-		const path = `记录/${record.id === "legacy" ? `legacy-${await this.digest(record.data)}` : `${record.id}-r${record.revision}`}.json`;
-		await this.files.write(path, JSON.stringify(record, null, 2));
-		const verified = this.parse(await this.files.read(path));
+		const path = `记录/${record.id === "legacy" ? `legacy-${await statisticsDigest(canonicalStatistics(record.data))}` : `${record.id}-r${record.revision}`}.json`;
+		const content = JSON.stringify(record, null, 2);
+		checkStatisticsSize(content);
+		await this.files.write(path, content);
+		const { records: [verified] } = await this.readFile(path);
 		if (canonicalStatistics(verified) !== canonicalStatistics(record)) throw new Error("统计记录写入校验失败");
 		this.records.set(record.id, verified);
-		if (record.id === this.recordId) this.ownVersions.push(path);
 		this.version++;
-	}
-
-	private async pruneOwnVersions(): Promise<void> {
-		while (this.ownVersions.length > 2) {
-			try { await this.files.remove(this.ownVersions[0]); this.ownVersions.shift(); }
-			catch (error) { console.warn("旧统计版本清理失败，已保留文件", error); return; }
-		}
-	}
-
-	private async digest(data: StatisticsData): Promise<string> {
-		const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalStatistics(data)));
-		return Array.from(new Uint8Array(hash)).map(byte => byte.toString(16).padStart(2, "0")).join("");
 	}
 }

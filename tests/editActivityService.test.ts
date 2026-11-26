@@ -14,7 +14,8 @@ import {
 } from "vitest";
 
 import { EditActivityService } from "../src/activity/EditActivityService";
-import { memoryVault } from "./helpers/memoryVault";
+import { AI_EDIT_BRIDGE, AiNoteEdit } from "../src/activity/aiEditProtocol";
+import { memoryVault, persistedStatistics } from "./helpers/memoryVault";
 
 interface FakePlugin {
 	loadData: ReturnType<typeof vi.fn>;
@@ -96,6 +97,34 @@ describe("EditActivityService persistence and lifecycle", () => {
 		vi.useRealTimers();
 	});
 
+	it("AI 开关独立于严格输入和粘贴，沿用采集范围并在卸载时移除入口", async () => {
+		const plugin = createPlugin();
+		const now = new Date(2026, 6, 31, 16);
+		const service = new EditActivityService(plugin as never, () => now);
+		await service.initialize();
+		const vault = plugin.app.vault as typeof plugin.app.vault & {
+			[AI_EDIT_BRIDGE]?: (edit: AiNoteEdit) => Promise<void>;
+		};
+		const send = (path: string) => vault[AI_EDIT_BRIDGE]!({
+			id: crypto.randomUUID(), path, source: "yolo", before: "旧版", after: "新版", occurredAt: now.getTime(),
+		});
+		await service.setTrackingEnabled(true);
+		await service.setTrackedFolders(["收集"]);
+		await service.setCountPastedText(false);
+		await send("收集/笔记.md");
+		expect(service.getDailyEditStats()).toEqual([]);
+		await service.setCountAiEdits(true);
+		await send("其他/笔记.md");
+		expect(service.getDailyEditStats()).toEqual([]);
+		await send("收集/笔记.md");
+		await service.setCountAiEdits(false);
+		await send("收集/笔记.md");
+		expect(service.getSettings()).toMatchObject({ countAiEdits: false, strictUserInputOnly: true, countPastedText: false });
+		expect(service.getDailyEditStats()).toMatchObject([{ date: "2026-07-31", addedChars: 1, deletedChars: 1 }]);
+		await service.unload();
+		expect(vault[AI_EDIT_BRIDGE]).toBeUndefined();
+	});
+
 	it("persists a recorded edit when the plugin unloads", async () => {
 		const now = new Date(2026, 6, 31, 16, 0, 0);
 		const plugin = createPlugin();
@@ -141,10 +170,10 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 		expect(plugin.saveData).not.toHaveBeenCalled();
 		const records = [...plugin.files.entries()]
-			.filter(([path]) => path.startsWith("Template/数据/学习统计/记录/") && path.endsWith(".json"))
-			.map(([, content]) => JSON.parse(content));
+			.filter(([path]) => path.startsWith("Template/数据/学习统计/月度/") && path.endsWith(".json"))
+			.map(([, content]) => content);
 		expect(records.length).toBeLessThanOrEqual(2);
-		expect(records.sort((a, b) => b.revision - a.revision)[0]).toMatchObject({
+		expect(persistedStatistics(records)[0]).toMatchObject({
 			kind: "statistics",
 			data: {
 				dailyStats: {

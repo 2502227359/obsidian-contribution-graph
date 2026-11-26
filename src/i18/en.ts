@@ -226,6 +226,8 @@ export class En implements Local {
 	settings_strict_user_input_description = "Count edits from typing, IME, enabled clipboard or drop actions, and edits that only change highlight markers. Turning this off improves compatibility with editor plugins, but templates and other automated insertions may be counted.";
 	settings_count_pasted_text = "Count pasted text";
 	settings_count_pasted_text_description = "Include manually pasted text in edit activity. When disabled, the entire paste replacement is excluded, including characters replaced by the paste.";
+	settings_count_ai_edits = "Count AI edits";
+	settings_count_ai_edits_description = "Include character changes from connected AI tools within the current note scope and counting policy.";
 	settings_tracked_folders = "Tracked folders";
 	settings_tracked_folders_description = "Choose one or more folders from the current vault. Changes apply only to future edits. In strict mode, automated template insertions inside included documents are excluded.";
 	settings_tracked_folders_choose = "Choose folder";

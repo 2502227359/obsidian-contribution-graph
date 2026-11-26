@@ -19,6 +19,7 @@ export interface EditActivitySettings {
 	trackedFiles: string[];
 	strictUserInputOnly: boolean;
 	countPastedText: boolean;
+	countAiEdits: boolean;
 }
 
 export type CountingPolicy = Pick<
@@ -27,7 +28,7 @@ export type CountingPolicy = Pick<
 	| "excludeMarkdownFormatting"
 	| "strictUserInputOnly"
 	| "countPastedText"
->;
+> & { countAiEdits?: true };
 
 export interface CountingPolicyPeriod {
 	startedAt: string;
@@ -69,6 +70,7 @@ export const DEFAULT_EDIT_ACTIVITY_SETTINGS: EditActivitySettings = {
 	trackedFiles: [],
 	strictUserInputOnly: true,
 	countPastedText: true,
+	countAiEdits: false,
 };
 
 export function isValidSaveIntervalSeconds(value: unknown): value is number {
@@ -98,6 +100,7 @@ export function getCountingPolicy(
 		excludeMarkdownFormatting: settings.excludeMarkdownFormatting,
 		strictUserInputOnly: settings.strictUserInputOnly,
 		countPastedText: settings.countPastedText,
+		...(settings.countAiEdits ? { countAiEdits: true } : {}),
 	};
 }
 
@@ -110,7 +113,8 @@ export function countingPoliciesEqual(
 		left.excludeMarkdownFormatting ===
 			right.excludeMarkdownFormatting &&
 		left.strictUserInputOnly === right.strictUserInputOnly &&
-		left.countPastedText === right.countPastedText
+		left.countPastedText === right.countPastedText &&
+		left.countAiEdits === right.countAiEdits
 	);
 }
 

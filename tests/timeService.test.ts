@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditActivityService } from "../src/activity/EditActivityService";
-import { memoryVault } from "./helpers/memoryVault";
+import { memoryVault, persistedStatistics } from "./helpers/memoryVault";
 
 describe("时长统计的保存与查询", () => {
 	let wall: number;
@@ -237,9 +237,7 @@ describe("时长统计的保存与查询", () => {
 		expect(service.getDailyEditStats()).toEqual([]);
 		await service.flush();
 		expect(plugin.saveData).toHaveBeenCalled();
-		const records = [...plugin.files.entries()]
-			.filter(([path]) => path.startsWith("Template/数据/学习统计/记录/") && path.endsWith(".json"))
-			.map(([, content]) => JSON.parse(content));
+		const records = persistedStatistics(plugin.files.values());
 		expect(records.at(-1)).toMatchObject({
 			kind: "statistics",
 			data: {
@@ -395,9 +393,7 @@ describe("时长统计的保存与查询", () => {
 		await vi.advanceTimersByTimeAsync(0);
 		expect(service.getDailyTimeStats()[0].seconds).toBe(15);
 		await vi.advanceTimersByTimeAsync(60000);
-		const records = [...plugin.files.values()]
-			.filter(content => content.includes('"kind": "statistics"'))
-			.map(content => JSON.parse(content));
-		expect(Object.keys(records.at(-1).data.timeActivity.buckets).length).toBeGreaterThan(0);
+		const records = persistedStatistics(plugin.files.values());
+		expect(Object.keys(records.at(-1)!.data.timeActivity.buckets).length).toBeGreaterThan(0);
 	});
 });

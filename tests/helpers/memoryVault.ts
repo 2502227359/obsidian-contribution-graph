@@ -1,4 +1,17 @@
 import { vi } from "vitest";
+import type { StatisticsRecord } from "../../src/activity/StatisticsRepository";
+
+export function persistedStatistics(contents: Iterable<string>): StatisticsRecord[] {
+	const latest = new Map<string, StatisticsRecord>();
+	for (const content of contents) {
+		const value = JSON.parse(content);
+		for (const record of (value.records ?? [value]) as StatisticsRecord[]) {
+			if (record.kind !== "statistics") continue;
+			if ((latest.get(record.id)?.revision ?? 0) < record.revision) latest.set(record.id, record);
+		}
+	}
+	return [...latest.values()];
+}
 
 export function memoryVault(files = new Map<string, string>(), initialData: unknown = null) {
 	const folders = new Set<string>();

@@ -12,6 +12,7 @@ const port = Number(process.env.OBSIDIAN_TEST_PORT || 9231);
 const endpoint = process.env.OBSIDIAN_TEST_CDP || `http://127.0.0.1:${port}`;
 const pluginId = "contribution-graph-local";
 const statsRoot = "Template/数据/学习统计";
+const sequenceKey = `contribution-graph-local:statistics-sequences:${vault}:${statsRoot}`;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const expectedProfile = path.resolve(repoRoot, "dist", "time-acceptance", "profile");
 const expectedVault = path.resolve(repoRoot, "dist", "time-acceptance", "vault");
@@ -177,7 +178,7 @@ async function typeTrustedText(client, text) {
 }
 
 async function installDelayedRecordWrites(client) {
-	const result = await client.evaluate(`(()=>{const v=app.vault;const prefix=${JSON.stringify(statsRoot+'/记录/')};if(v.__cgExitAuditPatch)return v.__cgExitAuditPatch;const process=v.process.bind(v),create=v.create.bind(v),delay=()=>new Promise(resolve=>setTimeout(resolve,400));v.process=async(file,fn)=>{if(file?.path?.startsWith(prefix))await delay();return process(file,fn)};v.create=async(path,data)=>{if(typeof path==='string'&&path.startsWith(prefix))await delay();return create(path,data)};const fs=require('fs'),writeSync=fs.writeFileSync;fs.writeFileSync=function(file,...args){if(typeof file==='string'&&file.replaceAll(String.fromCharCode(92),'/').includes(prefix))(()=>{const until=Date.now()+400;while(Date.now()<until){}})();return writeSync.call(this,file,...args)};v.__cgExitAuditPatch={prefix,delayMs:400};return v.__cgExitAuditPatch})()`);
+	const result = await client.evaluate(`(()=>{const v=app.vault;const prefix=${JSON.stringify(statsRoot+'/月度/')};if(v.__cgExitAuditPatch)return v.__cgExitAuditPatch;const process=v.process.bind(v),create=v.create.bind(v),delay=()=>new Promise(resolve=>setTimeout(resolve,400));v.process=async(file,fn)=>{if(file?.path?.startsWith(prefix))await delay();return process(file,fn)};v.create=async(path,data)=>{if(typeof path==='string'&&path.startsWith(prefix))await delay();return create(path,data)};const fs=require('fs'),writeSync=fs.writeFileSync;fs.writeFileSync=function(file,...args){if(typeof file==='string'&&file.replaceAll(String.fromCharCode(92),'/').includes(prefix))(()=>{const until=Date.now()+400;while(Date.now()<until){}})();return writeSync.call(this,file,...args)};v.__cgExitAuditPatch={prefix,delayMs:400};return v.__cgExitAuditPatch})()`);
 	assert.equal(result.delayMs, 400, "记录文件延迟补丁必须安装在隔离实例");
 }
 
@@ -201,10 +202,13 @@ async function closeAndRestart(client, mode, evidence, expected) {
 	const elapsedMs = Date.now() - started;
 	assert.ok(elapsedMs >= 350, `退出必须等待400ms记录写入，实际只等待 ${elapsedMs}ms`);
 	const versions = new Map();
-	for (const name of fs.readdirSync(path.join(vault, statsRoot, "记录")).filter(name => name.endsWith(".json"))) {
-		const record = JSON.parse(fs.readFileSync(path.join(vault, statsRoot, "记录", name), "utf8"));
-		if (record.kind !== "statistics") continue;
-		if (!versions.has(record.id) || versions.get(record.id).revision < record.revision) versions.set(record.id, record);
+	for (const [filename, content] of readPhysicalStatistics()) {
+		if (!/\/(记录|月度|归档)\/.+\.json$/.test(filename)) continue;
+		const value = JSON.parse(content);
+		for (const record of value.records ?? [value]) {
+			if (record.kind !== "statistics") continue;
+			if (!versions.has(record.id) || versions.get(record.id).revision < record.revision) versions.set(record.id, record);
+		}
 	}
 	const checkpointChars = [...versions.values()].reduce((sum, record) => sum + (record.data.dailyStats[expected.date]?.documents[expected.path]?.addedChars || 0), 0);
 	const checkpointSeconds = [...versions.values()].reduce((sum, record) => sum + Object.values(record.data.timeActivity.buckets).reduce((n, bucket) => n + (bucket.documents[expected.path] || 0), 0), 0);
@@ -266,6 +270,7 @@ try {
 	client = await ensureIsolatedTarget();
 	await prepareWindow(client);
 	original = await snapshot(client);
+	original.sequences = await client.evaluate(`localStorage.getItem(${JSON.stringify(sequenceKey)})`);
 	fs.writeFileSync(path.join(repoRoot, "dist", "save-interval-exit-original.json"), JSON.stringify(original));
 	assert.equal(original.folder, statsRoot, "统计目录必须是普通目录 Template/数据/学习统计");
 	const originalInterval = original.settings.saveIntervalSeconds;
@@ -359,6 +364,10 @@ try {
 				restoreIsolation(cleanupClient, original, testPaths),
 				wait(30000).then(() => { throw new Error("恢复隔离验收快照超时"); }),
 			]);
+			const restoreSequences = original.sequences === null
+				? `localStorage.removeItem(${JSON.stringify(sequenceKey)})`
+				: `localStorage.setItem(${JSON.stringify(sequenceKey)},${JSON.stringify(original.sequences)})`;
+			await cleanupClient.evaluate(restoreSequences);
 			await shutdownForCleanup(cleanupClient);
 			assert.ok(sameFiles(readPhysicalStatistics(), original.files), "真实退出验收后应逐字恢复原普通统计目录");
 			evidence.cleanupRestored = true;

@@ -7,6 +7,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { resolve } from "node:path";
+import { build } from "esbuild";
 
 const projectRoot = process.cwd();
 const manifest = JSON.parse(
@@ -35,7 +36,20 @@ for (const file of files) {
 	copyFileSync(resolve(projectRoot, file), resolve(outputDir, file));
 }
 
-const checksums = files
+const aiWriter = "ai-note-write.cjs";
+await build({
+	entryPoints: [resolve(projectRoot, "scripts", "ai-note-write.ts")],
+	outfile: resolve(outputDir, aiWriter),
+	bundle: true,
+	platform: "node",
+	target: "node18",
+	format: "cjs",
+	define: {
+		__AI_WRITER_VERSION__: JSON.stringify(manifest.version),
+	},
+});
+
+const checksums = [...files, aiWriter]
 	.filter((file) => !["LICENSE", "THIRD-PARTY-NOTICES.txt"].includes(file))
 	.map((file) => {
 		const hash = createHash("sha256")

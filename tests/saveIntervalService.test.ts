@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditActivityService } from "../src/activity/EditActivityService";
 import { EMPTY_EDIT_ACTIVITY_STORE } from "../src/activity/types";
-import { memoryVault } from "./helpers/memoryVault";
+import { memoryVault, persistedStatistics } from "./helpers/memoryVault";
 
 describe("统计保存间隔", () => {
 	let service: EditActivityService;
@@ -59,8 +59,9 @@ describe("统计保存间隔", () => {
 		void exiting.then(() => { finished = true; }); await vi.advanceTimersByTimeAsync(0);
 		expect(finished).toBe(false); release(); await saving; await exiting;
 		expect(finished).toBe(true);
-		const records = (await vault.adapter.list("Template/数据/学习统计/记录")).files;
-		const latest = (await Promise.all(records.map(path => vault.adapter.read(path)))).map(value => JSON.parse(value)).sort((a,b) => b.revision-a.revision)[0];
+		const monthly = await vault.adapter.list("Template/数据/学习统计/月度");
+		const files = (await vault.adapter.list(monthly.folders[0])).files;
+		const [latest] = persistedStatistics(await Promise.all(files.map(path => vault.adapter.read(path))));
 		expect(Object.values(latest.data.timeActivity.buckets).reduce((sum: number, bucket: any) => sum + (bucket.documents["学习.md"] || 0), 0)).toBe(25);
 	});
 	it("失败保留待保存数据并重试，退出期间也会补做失败写入", async () => {
