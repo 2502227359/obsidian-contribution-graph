@@ -1,4 +1,4 @@
-import { applyStatisticsRename, closeStatistics, emptyStatistics, mergeStatistics, StatisticsData, statisticsFrom } from "./statisticsModel";
+import { applyStatisticsRename, closeStatistics, emptyStatistics, mergeStatistics, StatisticsData, statisticsFrom, tagAiDailyStats } from "./statisticsModel";
 import { AI_EDIT_ID, AiEditEvent } from "./aiEditProtocol";
 import {
 	checkStatisticsSize, isLegacyStatisticsPath, isStatisticsPath, MonthlyFrame, monthlyShard,
@@ -87,6 +87,7 @@ export class StatisticsRepository {
 			.filter(record => record.kind !== "rename" && record.id !== this.recordId && record.generation === this.generation)
 			.map(record => {
 				let data = closeStatistics(record.data, record.updatedAt);
+				if (record.aiEventIds !== undefined) data = tagAiDailyStats(data);
 				for (const operation of renames) {
 					if (operation.rename!.targets.includes(record.id)) data = applyStatisticsRename(data, operation.rename!);
 				}
@@ -184,6 +185,14 @@ export class StatisticsRepository {
 		const file = day.documents[event.path] ??= { addedChars: 0, deletedChars: 0 };
 		day.addedChars += event.addedChars;
 		day.deletedChars += event.deletedChars;
+		if (event.addedChars > 0) {
+			day.aiAddedChars = (day.aiAddedChars || 0) + event.addedChars;
+			file.aiAddedChars = (file.aiAddedChars || 0) + event.addedChars;
+		}
+		if (event.deletedChars > 0) {
+			day.aiDeletedChars = (day.aiDeletedChars || 0) + event.deletedChars;
+			file.aiDeletedChars = (file.aiDeletedChars || 0) + event.deletedChars;
+		}
 		file.addedChars += event.addedChars;
 		file.deletedChars += event.deletedChars;
 	}

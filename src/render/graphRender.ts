@@ -17,6 +17,7 @@ import { resolveGoalHeatLevel } from "./heatScale";
 import { resolveCellNavigationIndex } from "./cellKeyboardNavigation";
 import { normalizeGraphAppearance } from "./graphAppearance";
 import { durationParts, getDetailHeading, getDocumentPresentation, getGraphContext, getGraphMetric } from "./graphPresentation";
+import { getEditActivityOriginSplit } from "src/activity/metrics";
 
 export interface GraphRender {
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void;
@@ -495,6 +496,7 @@ export abstract class BaseGraphRender implements GraphRender {
 					parent: statEl,
 				});
 			});
+			this.renderEditOriginBreakdown(summary, graphConfig, stats);
 		}
 
 		const warnings: string[] = [];
@@ -942,18 +944,75 @@ export abstract class BaseGraphRender implements GraphRender {
 		this.patchActivityItems(container, cellData.items || [], graphConfig);
 	}
 
+	private renderEditOriginBreakdown(
+		parent: HTMLElement,
+		graphConfig: ContributionGraphConfig,
+		stats: { addedChars: number; deletedChars: number; changedChars: number; aiAddedChars?: number; aiDeletedChars?: number; aiChangedChars?: number }
+	): HTMLElement {
+		const container = createDiv({ cls: "cg-edit-origin-breakdown", parent });
+		const bar = createDiv({ cls: "cg-edit-origin-bar", parent: container });
+		createDiv({ cls: ["cg-edit-origin-segment", "is-manual"], parent: bar });
+		createDiv({ cls: ["cg-edit-origin-segment", "is-ai"], parent: bar });
+		const legend = createDiv({ cls: "cg-edit-origin-legend", parent: container });
+		const manualItem = createSpan({ cls: ["cg-edit-origin-item", "is-manual"], parent: legend });
+		createSpan({ cls: ["cg-edit-origin-dot", "is-manual"], parent: manualItem });
+		createSpan({ cls: "cg-edit-origin-text", parent: manualItem });
+		const aiItem = createSpan({ cls: ["cg-edit-origin-item", "is-ai"], parent: legend });
+		createSpan({ cls: ["cg-edit-origin-dot", "is-ai"], parent: aiItem });
+		createSpan({ cls: "cg-edit-origin-text", parent: aiItem });
+		this.updateEditOriginBreakdown(container, graphConfig, stats);
+		return container;
+	}
+
+	private updateEditOriginBreakdown(
+		container: HTMLElement,
+		graphConfig: ContributionGraphConfig,
+		stats: { addedChars: number; deletedChars: number; changedChars: number; aiAddedChars?: number; aiDeletedChars?: number; aiChangedChars?: number }
+	): void {
+		const metric = graphConfig.editMetric || "CHANGED_CHARS";
+		const split = getEditActivityOriginSplit(metric, stats);
+		const unit = graphConfig.valueUnit || Locals.get().graph_characters_unit;
+		const aiPercent = split.total > 0 ? Math.round((split.ai / split.total) * 100) : 0;
+		const manualPercent = split.total > 0 ? 100 - aiPercent : 0;
+
+		const bar = container.querySelector<HTMLElement>(".cg-edit-origin-bar");
+		if (bar) bar.hidden = split.total === 0;
+		const manualBar = container.querySelector<HTMLElement>(".cg-edit-origin-segment.is-manual");
+		if (manualBar) manualBar.style.width = `${manualPercent}%`;
+		const aiBar = container.querySelector<HTMLElement>(".cg-edit-origin-segment.is-ai");
+		if (aiBar) aiBar.style.width = `${aiPercent}%`;
+
+		const manualText = container.querySelector<HTMLElement>(".cg-edit-origin-item.is-manual .cg-edit-origin-text");
+		const nextManual = split.total > 0
+			? `手动 ${split.manual.toLocaleString()} ${unit} (${manualPercent}%)`
+			: `手动 0 ${unit}`;
+		if (manualText && manualText.textContent !== nextManual) manualText.textContent = nextManual;
+
+		const aiText = container.querySelector<HTMLElement>(".cg-edit-origin-item.is-ai .cg-edit-origin-text");
+		const nextAi = split.total > 0
+			? `AI ${split.ai.toLocaleString()} ${unit} (${aiPercent}%)`
+			: `AI 0 ${unit}`;
+		if (aiText && aiText.textContent !== nextAi) aiText.textContent = nextAi;
+	}
+
 	private patchEditSummary(
 		summary: HTMLElement,
 		cellData: ContributionCellData,
 		graphConfig: ContributionGraphConfig
 	): void {
 		const untracked = cellData.trackingState === "UNTRACKED" || cellData.tracked === false;
-		if (untracked) { summary.querySelector(".activity-stats")?.remove(); return; }
+		if (untracked) {
+			summary.querySelector(".activity-stats")?.remove();
+			summary.querySelector(".cg-edit-origin-breakdown")?.remove();
+			return;
+		}
 		if (!summary.querySelector(".activity-stats")) {
 			const draft = summary.ownerDocument.createElement("div");
 			this.renderEditActivitySummary(graphConfig, cellData, draft, cellData.summary || "");
 			const stats = draft.querySelector(".activity-stats");
 			if (stats) summary.insertBefore(stats, summary.querySelector(".activity-warnings"));
+			const origin = draft.querySelector(".cg-edit-origin-breakdown");
+			if (origin) summary.insertBefore(origin, summary.querySelector(".activity-warnings"));
 		}
 		const stats = cellData.editStats || {addedChars: 0, deletedChars: 0, changedChars: 0};
 		const values: Record<string, string> = {
@@ -965,6 +1024,14 @@ export abstract class BaseGraphRender implements GraphRender {
 		for (const [name, value] of Object.entries(values)) {
 			const node = summary.querySelector<HTMLElement>(`.activity-stat.${name} .activity-stat-value`);
 			if (node && node.textContent !== value) node.textContent = value;
+		}
+		let breakdown = summary.querySelector<HTMLElement>(".cg-edit-origin-breakdown");
+		if (!breakdown) {
+			breakdown = this.renderEditOriginBreakdown(summary, graphConfig, stats);
+			const warningsEl = summary.querySelector(".activity-warnings");
+			if (warningsEl) summary.insertBefore(breakdown, warningsEl);
+		} else {
+			this.updateEditOriginBreakdown(breakdown, graphConfig, stats);
 		}
 	}
 

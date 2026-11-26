@@ -42,7 +42,55 @@ describe("AI 编辑入账", () => {
 		const other = await start(crypto.randomUUID());
 		expect(other.read(emptyStatistics()).dailyStats["2026-11-26"]).toMatchObject({
 			addedChars: 5, deletedChars: 2,
-			documents: { "临床医学/笔记.md": { addedChars: 5, deletedChars: 2 } },
+			aiAddedChars: 5, aiDeletedChars: 2,
+			documents: { "临床医学/笔记.md": { addedChars: 5, deletedChars: 2, aiAddedChars: 5, aiDeletedChars: 2 } },
+		});
+	});
+
+	it("区分手动编辑与 AI 编辑（含仅带 aiEventIds 的历史 AI 记录）并保留拆分结果", async () => {
+		const { start, fs: memFs } = setup();
+		const repo = await start();
+		// 写入手动统计
+		const manual = emptyStatistics();
+		manual.dailyStats["2026-11-26"] = {
+			addedChars: 10, deletedChars: 4,
+			documents: { "临床医学/笔记.md": { addedChars: 10, deletedChars: 4 } },
+		};
+		await repo.save(manual);
+		// 写入 AI 统计
+		await repo.saveAiEdits([edit({ addedChars: 6, deletedChars: 2 })]);
+
+		// 额外注入一条不含 aiAddedChars 字段的旧版 AI 记录，验证向后兼容识别
+		const legacyAiId = crypto.randomUUID();
+		await memFs.write(`记录/${legacyAiId}-r1.json`, JSON.stringify({
+			formatVersion: 1,
+			kind: "statistics",
+			id: legacyAiId,
+			revision: 1,
+			updatedAt: 1795700001000,
+			generation: "initial",
+			aiEventIds: [crypto.randomUUID()],
+			data: {
+				...emptyStatistics(),
+				dailyStats: {
+					"2026-11-26": {
+						addedChars: 3, deletedChars: 1,
+						documents: { "临床医学/笔记.md": { addedChars: 3, deletedChars: 1 } },
+					},
+				},
+			},
+		}));
+
+		const reloaded = await start(crypto.randomUUID());
+		const merged = reloaded.read(emptyStatistics()).dailyStats["2026-11-26"];
+		expect(merged).toMatchObject({
+			addedChars: 19,
+			deletedChars: 7,
+			aiAddedChars: 9,
+			aiDeletedChars: 3,
+			documents: {
+				"临床医学/笔记.md": { addedChars: 19, deletedChars: 7, aiAddedChars: 9, aiDeletedChars: 3 },
+			},
 		});
 	});
 

@@ -1,16 +1,53 @@
 import type { ContributionCellData, ContributionGraphConfig, ContributionItem } from "../types";
+import { getEditActivityOriginSplit } from "../activity/metrics";
 import { formatDuration } from "../time/timeData";
 
 interface MetricPart { value: string; unit: string; }
+
+export interface EditOriginSummary {
+	total: number;
+	manual: number;
+	ai: number;
+	manualPercent: number;
+	aiPercent: number;
+}
+
+export function getEditOriginSummary(config: ContributionGraphConfig, cells: ContributionCellData[]): EditOriginSummary | undefined {
+	if (config.timeTracking) return undefined;
+	const hasEditStats = Boolean(config.editMetric || cells.some(cell => cell.editStats));
+	if (!hasEditStats) return undefined;
+	const metric = config.editMetric || "CHANGED_CHARS";
+	let total = 0;
+	let ai = 0;
+	for (const cell of cells) {
+		if (cell.editStats) {
+			const split = getEditActivityOriginSplit(metric, cell.editStats);
+			total += split.total;
+			ai += split.ai;
+		} else {
+			total += Math.max(0, cell.value || 0);
+		}
+	}
+	const clampedAi = Math.min(total, ai);
+	const manual = Math.max(0, total - clampedAi);
+	const aiPercent = total > 0 ? Math.round((clampedAi / total) * 100) : 0;
+	const manualPercent = total > 0 ? 100 - aiPercent : 0;
+	return { total, manual, ai: clampedAi, manualPercent, aiPercent };
+}
 
 export function getGraphMetric(config: ContributionGraphConfig, cells: ContributionCellData[]) {
 	if (config.timeTracking) {
 		const seconds = cells.reduce((sum, cell) => sum + (cell.timeStats?.seconds || 0), 0);
 		return { text: formatDuration(seconds), parts: durationParts(seconds), caption: "所选范围累计时长" };
 	}
-	const value = cells.reduce((sum, cell) => sum + (cell.value || 0), 0).toLocaleString();
+	const total = cells.reduce((sum, cell) => sum + (cell.value || 0), 0);
+	const value = total.toLocaleString();
 	const unit = config.valueUnit || "次贡献";
-	return { text: `${value} ${unit}`, parts: [{ value, unit }], caption: "所选范围累计" };
+	const origin = getEditOriginSummary(config, cells);
+	const caption = origin && origin.total > 0
+		? `所选范围累计 · 手动 ${origin.manual.toLocaleString()} (${origin.manualPercent}%) · AI ${origin.ai.toLocaleString()} (${origin.aiPercent}%)`
+		: "所选范围累计";
+	return { text: `${value} ${unit}`, parts: [{ value, unit }], caption };
 }
 
 export function durationParts(seconds: number): MetricPart[] {

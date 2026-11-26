@@ -28,7 +28,7 @@ function makeTempVault() {
 		excludeWhitespace: true,
 		excludeMarkdownFormatting: false,
 		statisticsFolder: "Template/数据/学习统计",
-		pluginVersion: "0.29.4",
+		pluginVersion: "0.29.5",
 		writePolicy: defaultAiWritePolicy("collection-scope"),
 	};
 	return {
@@ -276,7 +276,7 @@ describe("Obsidian live bridge (Channel A)", () => {
 				checkActiveEditor: () => activeEditor
 					? { active: true, reason: "用户正在编辑中" }
 					: { active: false },
-				pluginVersion: "0.29.4",
+				pluginVersion: "0.29.5",
 			});
 			await bridge.start();
 			expect(fs.existsSync(path.join(env.spool, "bridge.json"))).toBe(true);

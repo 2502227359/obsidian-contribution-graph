@@ -4,6 +4,15 @@ export interface EditMetricStats {
 	addedChars: number;
 	deletedChars: number;
 	changedChars: number;
+	aiAddedChars?: number;
+	aiDeletedChars?: number;
+	aiChangedChars?: number;
+}
+
+export interface EditOriginSplit {
+	total: number;
+	ai: number;
+	manual: number;
 }
 
 export function getEditActivityMetricValue(
@@ -18,6 +27,20 @@ export function getEditActivityMetricValue(
 		default:
 			return stats.changedChars;
 	}
+}
+
+export function getEditActivityOriginSplit(
+	metric: EditActivityMetric,
+	stats: EditMetricStats
+): EditOriginSplit {
+	const total = Math.max(0, getEditActivityMetricValue(metric, stats));
+	const rawAi = metric === "ADDED_CHARS"
+		? (stats.aiAddedChars || 0)
+		: metric === "DELETED_CHARS"
+			? (stats.aiDeletedChars || 0)
+			: (stats.aiChangedChars ?? ((stats.aiAddedChars || 0) + (stats.aiDeletedChars || 0)));
+	const ai = Math.min(total, Math.max(0, rawAi));
+	return { total, ai, manual: Math.max(0, total - ai) };
 }
 
 export function sortEditActivityStatsByMetric<

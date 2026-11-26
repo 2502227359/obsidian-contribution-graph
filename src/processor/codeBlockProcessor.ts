@@ -14,6 +14,7 @@ import { EditActivityChangeEvent, EditActivityService } from "src/activity/EditA
 import { areFoldersCoveredByScope, normalizeTrackedFolders } from "src/activity/folderScope";
 import {
 	getEditActivityMetricValue,
+	getEditActivityOriginSplit,
 	sortEditActivityStatsByMetric,
 } from "src/activity/metrics";
 import { Locals } from "src/i18/messages";
@@ -170,6 +171,8 @@ export class CodeBlockProcessor {
 			renderConfig.activityFolders = normalizeTrackedFolders(
 				graphConfig.dataSource.folders || []
 			);
+			renderConfig.editMetric =
+				graphConfig.dataSource.metric || "CHANGED_CHARS";
 			renderConfig.valueUnit = Locals.get().graph_characters_unit;
 		}
 
@@ -274,6 +277,10 @@ export class CodeBlockProcessor {
 								"{changed}",
 								document.changedChars.toString()
 							);
+						const docOrigin = getEditActivityOriginSplit(metric, document);
+						const originSummary = docOrigin.ai > 0
+							? `手动 ${docOrigin.manual.toLocaleString()} / AI ${docOrigin.ai.toLocaleString()}`
+							: undefined;
 						const positionSummary = document.lastEditPosition
 							? Locals.get()
 									.graph_edit_activity_last_position.replace(
@@ -295,9 +302,9 @@ export class CodeBlockProcessor {
 								metric,
 								document
 							),
-							description: positionSummary
-								? `${characterSummary} · ${positionSummary}`
-								: characterSummary,
+							description: [characterSummary, originSummary, positionSummary]
+								.filter(Boolean)
+								.join(" · "),
 							link:
 								file instanceof TFile
 									? {
@@ -376,6 +383,10 @@ export class CodeBlockProcessor {
 					.replace("{deleted}", stats.deletedChars.toString())
 					.replace("{changed}", stats.changedChars.toString())
 					.replace("{percent}", Math.round((value / goal) * 100).toString());
+				const dayOrigin = getEditActivityOriginSplit(metric, stats);
+				if (dayOrigin.ai > 0) {
+					baseSummary = `${baseSummary}（手动 ${dayOrigin.manual.toLocaleString()} / AI ${dayOrigin.ai.toLocaleString()}）`;
+				}
 				if (stats.countingPolicyChanged) {
 					baseSummary = `${baseSummary} ${Locals.get().graph_counting_policy_changed}`;
 				}

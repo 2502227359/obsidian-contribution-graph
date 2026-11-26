@@ -39,12 +39,16 @@ export interface CountingPolicyPeriod {
 export interface StoredDailyEditStats {
 	addedChars: number;
 	deletedChars: number;
+	aiAddedChars?: number;
+	aiDeletedChars?: number;
 	documents: Record<string, StoredDocumentEditStats>;
 }
 
 export interface StoredDocumentEditStats {
 	addedChars: number;
 	deletedChars: number;
+	aiAddedChars?: number;
+	aiDeletedChars?: number;
 	lastEditPosition?: EditPosition;
 }
 
@@ -123,19 +127,25 @@ export function toDailyEditStats(
 	value: StoredDailyEditStats
 ): DailyEditStats {
 	const documents = Object.entries(value.documents || {})
-		.map(([path, stats]) => ({
-			path,
-			addedChars: stats.addedChars,
-			deletedChars: stats.deletedChars,
-			changedChars: stats.addedChars + stats.deletedChars,
-			...(stats.lastEditPosition
-				? {
-						lastEditPosition: {
-							...stats.lastEditPosition,
-						},
-				  }
-				: {}),
-		}))
+		.map(([path, stats]) => {
+			const aiAdded = Math.min(stats.addedChars, Math.max(0, stats.aiAddedChars || 0));
+			const aiDeleted = Math.min(stats.deletedChars, Math.max(0, stats.aiDeletedChars || 0));
+			const aiChanged = aiAdded + aiDeleted;
+			return {
+				path,
+				addedChars: stats.addedChars,
+				deletedChars: stats.deletedChars,
+				changedChars: stats.addedChars + stats.deletedChars,
+				...(aiChanged > 0 ? { aiAddedChars: aiAdded, aiDeletedChars: aiDeleted, aiChangedChars: aiChanged } : {}),
+				...(stats.lastEditPosition
+					? {
+							lastEditPosition: {
+								...stats.lastEditPosition,
+							},
+					  }
+					: {}),
+			};
+		})
 		.sort((a, b) => {
 			const difference = b.changedChars - a.changedChars;
 			return difference !== 0
@@ -150,11 +160,15 @@ export function toDailyEditStats(
 		(sum, document) => sum + document.deletedChars,
 		0
 	);
+	const aiAddedChars = Math.min(value.addedChars, Math.max(0, value.aiAddedChars || 0));
+	const aiDeletedChars = Math.min(value.deletedChars, Math.max(0, value.aiDeletedChars || 0));
+	const aiChangedChars = aiAddedChars + aiDeletedChars;
 	return {
 		date,
 		addedChars: value.addedChars,
 		deletedChars: value.deletedChars,
 		changedChars: value.addedChars + value.deletedChars,
+		...(aiChangedChars > 0 ? { aiAddedChars, aiDeletedChars, aiChangedChars } : {}),
 		documents,
 		unattributedAddedChars: Math.max(
 			0,
@@ -195,6 +209,10 @@ export function migrateDocumentPaths(
 			if (existing) {
 				existing.addedChars += stats.addedChars;
 				existing.deletedChars += stats.deletedChars;
+				const mergedAiAdded = (existing.aiAddedChars || 0) + (stats.aiAddedChars || 0);
+				const mergedAiDeleted = (existing.aiDeletedChars || 0) + (stats.aiDeletedChars || 0);
+				if (mergedAiAdded > 0) existing.aiAddedChars = mergedAiAdded;
+				if (mergedAiDeleted > 0) existing.aiDeletedChars = mergedAiDeleted;
 				existing.lastEditPosition =
 					stats.lastEditPosition || existing.lastEditPosition;
 			} else {

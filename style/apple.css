@@ -364,6 +364,70 @@
 	color: var(--cg-text);
 }
 
+.contribution-graph .activity-container .cg-edit-origin-breakdown {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	margin-top: 10px;
+	padding: 9px 11px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-data);
+}
+
+.contribution-graph .activity-container .cg-edit-origin-bar {
+	display: flex;
+	width: 100%;
+	height: 6px;
+	overflow: hidden;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--cg-border) 55%, transparent);
+}
+
+.contribution-graph .activity-container .cg-edit-origin-segment {
+	height: 100%;
+	transition: width 160ms ease;
+}
+
+.contribution-graph .activity-container .cg-edit-origin-segment.is-manual {
+	background: var(--cg-blue);
+}
+
+.contribution-graph .activity-container .cg-edit-origin-segment.is-ai {
+	background: color-mix(in srgb, #8b5cf6 78%, var(--cg-text));
+}
+
+.contribution-graph .activity-container .cg-edit-origin-legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 14px;
+	font-size: var(--font-ui-smaller);
+	color: var(--cg-text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.contribution-graph .activity-container .cg-edit-origin-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.contribution-graph .activity-container .cg-edit-origin-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.contribution-graph .activity-container .cg-edit-origin-dot.is-manual {
+	background: var(--cg-blue);
+}
+
+.contribution-graph .activity-container .cg-edit-origin-dot.is-ai {
+	background: color-mix(in srgb, #8b5cf6 78%, var(--cg-text));
+}
+
 .contribution-graph .activity-container .activity-content {
 	width: 100%;
 	min-width: 0;

@@ -65,6 +65,7 @@ export class YamlGraphConfig {
 	trackingPeriods?: TrackingPeriod[];
 	collectionScopePeriods?: CollectionScopePeriod[];
 	activityFolders?: string[];
+	editMetric?: "CHANGED_CHARS" | "ADDED_CHARS" | "DELETED_CHARS";
 	valueUnit?: string;
 	timeTracking?: boolean;
 	hourlyData?: import("src/types").ContributionCellData[];

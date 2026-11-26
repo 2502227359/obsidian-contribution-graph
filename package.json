@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-contribution-graph-local",
-	"version": "0.29.4",
+	"version": "0.29.5",
 	"description": "Local Obsidian heatmap and character edit activity tracker.",
 	"main": "main.ts",
 	"scripts": {
@@ -11,7 +11,7 @@
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [],
-	"author": "",
+	"author": "coolmochi",
 	"license": "Apache-2.0",
 	"devDependencies": {
 		"@types/luxon": "^3.3.7",

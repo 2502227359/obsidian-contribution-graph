@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getDocumentPresentation, getGraphContext, getGraphMetric } from "../src/render/graphPresentation";
+import { getDocumentPresentation, getEditOriginSummary, getGraphContext, getGraphMetric } from "../src/render/graphPresentation";
 
 describe("图表的信息层级与详情展示", () => {
 	it("时长卡片按真实秒数汇总，并明确标注范围累计", () => {
@@ -14,6 +14,32 @@ describe("图表的信息层级与详情展示", () => {
 	it("字数卡片使用所选指标与单位，保持原有数据含义", () => {
 		expect(getGraphMetric({ valueUnit: "字" } as any, [{ value: 12 }, { value: 8 }] as any)).toMatchObject({
 			text: "20 字", parts: [{ value: "20", unit: "字" }], caption: "所选范围累计",
+		});
+	});
+	it("编辑活动图表按所选指标汇总手动与 AI 编辑占比", () => {
+		const cells: any[] = [
+			{
+				date: "2026-11-25",
+				value: 100,
+				editStats: { date: "2026-11-25", addedChars: 80, deletedChars: 20, changedChars: 100, aiAddedChars: 30, aiDeletedChars: 10, aiChangedChars: 40, documents: [] },
+			},
+			{
+				date: "2026-11-26",
+				value: 100,
+				editStats: { date: "2026-11-26", addedChars: 90, deletedChars: 10, changedChars: 100, documents: [] },
+			},
+		];
+		const metric = getGraphMetric({ valueUnit: "字", editMetric: "CHANGED_CHARS" } as any, cells);
+		expect(metric).toMatchObject({
+			text: "200 字",
+			caption: "所选范围累计 · 手动 160 (80%) · AI 40 (20%)",
+		});
+		expect(getEditOriginSummary({ editMetric: "ADDED_CHARS" } as any, cells)).toEqual({
+			total: 170,
+			manual: 140,
+			ai: 30,
+			manualPercent: 82,
+			aiPercent: 18,
 		});
 	});
 	it("零和不足一分钟分别显示，不将极短活动取整成零", () => {

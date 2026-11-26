@@ -1879,11 +1879,21 @@ export class EditActivityService {
 			(sum, document) => sum + document.deletedChars,
 			0
 		);
+		const aiAddedChars = Math.min(addedChars, documents.reduce(
+			(sum, document) => sum + (document.aiAddedChars || 0),
+			0
+		));
+		const aiDeletedChars = Math.min(deletedChars, documents.reduce(
+			(sum, document) => sum + (document.aiDeletedChars || 0),
+			0
+		));
+		const aiChangedChars = aiAddedChars + aiDeletedChars;
 		return this.freezeDailyEditStats({
 			date: stats.date,
 			addedChars,
 			deletedChars,
 			changedChars: addedChars + deletedChars,
+			...(aiChangedChars > 0 ? { aiAddedChars, aiDeletedChars, aiChangedChars } : {}),
 			documents: [...documents],
 			unattributedAddedChars: stats.unattributedAddedChars,
 			unattributedDeletedChars: stats.unattributedDeletedChars,
@@ -2032,6 +2042,8 @@ export class EditActivityService {
 						const document = documentValue as {
 							addedChars?: unknown;
 							deletedChars?: unknown;
+							aiAddedChars?: unknown;
+							aiDeletedChars?: unknown;
 							lastEditPosition?: unknown;
 						};
 						if (
@@ -2053,9 +2065,17 @@ export class EditActivityService {
 									`Invalid last edit position for ${date}: ${path}`
 								);
 							}
+							const docAiAdded = this.isValidCount(document.aiAddedChars)
+								? Math.min(document.addedChars, document.aiAddedChars)
+								: 0;
+							const docAiDeleted = this.isValidCount(document.aiDeletedChars)
+								? Math.min(document.deletedChars, document.aiDeletedChars)
+								: 0;
 							documents[path] = {
 								addedChars: document.addedChars,
 								deletedChars: document.deletedChars,
+								...(docAiAdded > 0 ? { aiAddedChars: docAiAdded } : {}),
+								...(docAiDeleted > 0 ? { aiDeletedChars: docAiDeleted } : {}),
 								lastEditPosition,
 							};
 							documentAddedChars += document.addedChars;
@@ -2084,9 +2104,18 @@ export class EditActivityService {
 					continue;
 				}
 
+				const rawDay = item as { aiAddedChars?: unknown; aiDeletedChars?: unknown };
+				const dayAiAdded = this.isValidCount(rawDay.aiAddedChars)
+					? Math.min(item.addedChars, rawDay.aiAddedChars)
+					: 0;
+				const dayAiDeleted = this.isValidCount(rawDay.aiDeletedChars)
+					? Math.min(item.deletedChars, rawDay.aiDeletedChars)
+					: 0;
 				dailyStats[date] = {
 					addedChars: item.addedChars,
 					deletedChars: item.deletedChars,
+					...(dayAiAdded > 0 ? { aiAddedChars: dayAiAdded } : {}),
+					...(dayAiDeleted > 0 ? { aiDeletedChars: dayAiDeleted } : {}),
 					documents,
 				};
 			} else if (strict) {

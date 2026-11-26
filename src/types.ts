@@ -7,6 +7,9 @@ export interface DailyEditStats {
 	addedChars: number;
 	deletedChars: number;
 	changedChars: number;
+	aiAddedChars?: number;
+	aiDeletedChars?: number;
+	aiChangedChars?: number;
 	documents: DocumentEditStats[];
 	unattributedAddedChars?: number;
 	unattributedDeletedChars?: number;
@@ -18,6 +21,9 @@ export interface DocumentEditStats {
 	addedChars: number;
 	deletedChars: number;
 	changedChars: number;
+	aiAddedChars?: number;
+	aiDeletedChars?: number;
+	aiChangedChars?: number;
 	lastEditPosition?: EditPosition;
 }
 
@@ -148,6 +154,9 @@ export class ContributionGraphConfig {
 
 	/** Folder filter requested by this edit-activity graph. */
 	activityFolders?: string[];
+
+	/** Active metric for edit-activity graphs (CHANGED_CHARS / ADDED_CHARS / DELETED_CHARS). */
+	editMetric?: "CHANGED_CHARS" | "ADDED_CHARS" | "DELETED_CHARS";
 
 	/**
 	 * Display unit used by legends, tooltips, and activity summaries.

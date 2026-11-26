@@ -158,6 +158,19 @@ export function applyStatisticsRename(
 	return result;
 }
 
+export function tagAiDailyStats(data: StatisticsData): StatisticsData {
+	const result = statisticsFrom(data);
+	for (const day of Object.values(result.dailyStats)) {
+		if (day.aiAddedChars === undefined && day.addedChars > 0) day.aiAddedChars = day.addedChars;
+		if (day.aiDeletedChars === undefined && day.deletedChars > 0) day.aiDeletedChars = day.deletedChars;
+		for (const doc of Object.values(day.documents || {})) {
+			if (doc.aiAddedChars === undefined && doc.addedChars > 0) doc.aiAddedChars = doc.addedChars;
+			if (doc.aiDeletedChars === undefined && doc.deletedChars > 0) doc.aiDeletedChars = doc.deletedChars;
+		}
+	}
+	return result;
+}
+
 function mergeDailyStats(
 	target: Record<string, StoredDailyEditStats>,
 	source: Record<string, StoredDailyEditStats>
@@ -171,6 +184,10 @@ function mergeDailyStats(
 		});
 		targetDay.addedChars += safeNumber(sourceDay.addedChars);
 		targetDay.deletedChars += safeNumber(sourceDay.deletedChars);
+		const dayAiAdded = safeNumber(targetDay.aiAddedChars) + safeNumber(sourceDay.aiAddedChars);
+		const dayAiDeleted = safeNumber(targetDay.aiDeletedChars) + safeNumber(sourceDay.aiDeletedChars);
+		if (dayAiAdded > 0) targetDay.aiAddedChars = dayAiAdded;
+		if (dayAiDeleted > 0) targetDay.aiDeletedChars = dayAiDeleted;
 		for (const [path, sourceDocument] of Object.entries(sourceDay.documents || {})) {
 			if (DANGEROUS_KEYS.has(path)) continue;
 			const existing = targetDay.documents[path];
@@ -180,6 +197,10 @@ function mergeDailyStats(
 			}
 			existing.addedChars += safeNumber(sourceDocument.addedChars);
 			existing.deletedChars += safeNumber(sourceDocument.deletedChars);
+			const docAiAdded = safeNumber(existing.aiAddedChars) + safeNumber(sourceDocument.aiAddedChars);
+			const docAiDeleted = safeNumber(existing.aiDeletedChars) + safeNumber(sourceDocument.aiDeletedChars);
+			if (docAiAdded > 0) existing.aiAddedChars = docAiAdded;
+			if (docAiDeleted > 0) existing.aiDeletedChars = docAiDeleted;
 			if (sourceDocument.lastEditPosition) {
 				existing.lastEditPosition = { ...sourceDocument.lastEditPosition };
 			}
@@ -218,9 +239,13 @@ function cloneDailyStats(source: Record<string, StoredDailyEditStats>): Record<s
 		for (const [path, document] of Object.entries(day.documents || {})) {
 			if (!DANGEROUS_KEYS.has(path)) documents[path] = cloneDocument(document);
 		}
-		const clone = {
+		const aiAdded = safeNumber(day.aiAddedChars);
+		const aiDeleted = safeNumber(day.aiDeletedChars);
+		const clone: StoredDailyEditStats = {
 			addedChars: safeNumber(day.addedChars),
 			deletedChars: safeNumber(day.deletedChars),
+			...(aiAdded > 0 ? { aiAddedChars: aiAdded } : {}),
+			...(aiDeleted > 0 ? { aiDeletedChars: aiDeleted } : {}),
 			documents,
 		};
 		result[date] = clone;
@@ -329,9 +354,13 @@ function cloneCoveragePeriod(period: TimeCoveragePeriod): TimeCoveragePeriod {
 }
 
 function cloneDocument(document: StoredDocumentEditStats): StoredDocumentEditStats {
+	const aiAdded = safeNumber(document.aiAddedChars);
+	const aiDeleted = safeNumber(document.aiDeletedChars);
 	const result: StoredDocumentEditStats = {
 		addedChars: safeNumber(document.addedChars),
 		deletedChars: safeNumber(document.deletedChars),
+		...(aiAdded > 0 ? { aiAddedChars: aiAdded } : {}),
+		...(aiDeleted > 0 ? { aiDeletedChars: aiDeleted } : {}),
 	};
 	if (document.lastEditPosition) result.lastEditPosition = { ...document.lastEditPosition };
 	return result;
