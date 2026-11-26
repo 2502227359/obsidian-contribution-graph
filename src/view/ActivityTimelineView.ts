@@ -6,6 +6,7 @@ import { ActivityTimelineChart } from "./activityTimelineChart";
 import type { ActivityTimelineChartRow } from "./activityTimelineChart";
 import { ActivityTimelineDetails } from "./activityTimelineDetails";
 import { setUiIcon } from "./icon/uiIcons";
+import { observeThemeChanges } from "./weeklyReviewChartStyle";
 
 interface TimelineRows { rows: ActivityTimelineChartRow[]; groups: TimelineGroup[]; }
 interface TimelineGroup { id: string; name: string; expanded: boolean; }
@@ -258,11 +259,7 @@ export class ActivityTimelineView {
 			this.resizeObserver = new ResizeObserverCtor(() => this.chart.resize());
 			this.resizeObserver.observe(this.el);
 		}
-		const MutationObserverCtor = this.win.MutationObserver;
-		if (typeof MutationObserverCtor === "function") {
-			this.themeObserver = new MutationObserverCtor(() => this.paint());
-			for (const target of [this.owner.documentElement, this.owner.body]) this.themeObserver.observe(target, {attributes: true, attributeFilter: ["class", "style"]});
-		}
+		this.themeObserver = observeThemeChanges(this.owner, this.el, () => this.paint());
 		this.bindDetachObserver();
 	}
 

@@ -70,6 +70,8 @@ AI 编辑统计使用统一写入入口、本机队列与现有月度仓储。�
 
 ## 二、本次变更影响范围
 
+零点三十点一（`0.30.1`）修复四处图表主题观察器（`ActivityTimelineView`、`WeeklyReviewCharts`、`WeeklyReviewRankingChart`、`WeeklyReviewTimelineCharts`）无条件监听 `document.body` 的 `class`／`style` 属性变动而触发整图同步重绘的问题：在 [weeklyReviewChartStyle.ts](src/view/weeklyReviewChartStyle.ts) 提取共用 `observeThemeChanges()` 与 `readThemeSignature()`，对 `is-grabbing`／`is-dragging`／`is-resizing` 等瞬时交互 class 快速放行（不触发样式重算），并对其他属性变化比对暗亮主题类与核心 CSS 变量／字体签名，仅在主题确实变化时才执行 `paint()`，消除在关联图谱等视图按住左键拖拽给 `body` 增删 `is-grabbing` 时引发的 3 秒级主线程阻塞。同步更新四处版本文件至 `0.30.1`（作者保持 `coolmochi`），四十七个测试文件共三百九十六项测试（含新增主题防误触发单测）通过，构建、打包、备份安装并无损重载至正式 CMBK 核验通过（不对 CMBK 暂存、提交或推送）。
+
 零点二十九点五（`0.29.5`）在编辑活动图表中新增手动与 AI 编辑拆分展示（顶部累计副说明、热力格悬浮提示、点击日期详情双色占比条及单篇文档明细均联动展示，兼容已有带 `aiEventIds` 的历史 AI 记录并支持按指标与目录筛选）；插件作者统一更新为 `coolmochi`。四十七个测试文件共三百九十五项通过，打包、备份安装并重载至正式 CMBK 核验通过（不对 CMBK 暂存、提交或推送）。
 
 零点二十九点四（`0.29.4`）加固 AI 笔记写入入口与统计链路：新增 `patch_note` 局部补丁、结构完整性与大幅删减护栏、独立 `writePolicy` 写保护（默认按采集范围约束并硬保护 `AGENTS.md` / `维护手册` / 统计目录，兼容 Windows 大小写）、库外写前备份与回滚（`list_note_backups` / `restore_note_backup`）、无正文 JSONL 审计日志、拆清 `noteStatus` 与 `statisticsStatus` / `retrySafe` 返回模型、回执去重与异步 Spool、突破 2048 字符上限并支持排除 Markdown 格式的差分引擎，以及 Obsidian 在线本地鉴权桥接（`app.vault.process()` + 活跃/脏编辑器拦截，修复 Windows CRLF/LF 比对误报）。四十七个测试文件共三百九十三项通过，双端隔离 Obsidian 宿主验收通过；正式 CMBK 已先备份后安装重载 `0.29.4`（四份发布文件 SHA-256 一致、零控制台报错、在线桥接与写保护实测通过），并同步更新 CMBK `AGENTS.md` 写入指引（不对 CMBK 暂存、提交或推送）。

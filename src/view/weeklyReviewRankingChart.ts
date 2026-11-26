@@ -5,7 +5,7 @@ import { SVGRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import type { WeeklyReviewRankPoint, WeeklyReviewRanking, WeeklyReviewRankingGroup, WeeklyReviewRankingWindow } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewChartSelection } from "./weeklyReviewCharts";
-import { colorFor, detailDuration, labelReviewChart } from "./weeklyReviewChartStyle";
+import { colorFor, detailDuration, labelReviewChart, observeThemeChanges } from "./weeklyReviewChartStyle";
 
 echarts.use([LineChart, ScatterChart, GridComponent, TooltipComponent, SVGRenderer]);
 
@@ -23,7 +23,7 @@ export class WeeklyReviewRankingChart {
 	private readonly legend: HTMLElement;
 	private readonly motion: MediaQueryList;
 	private readonly resizeObserver: ResizeObserver;
-	private readonly themeObserver: MutationObserver;
+	private readonly themeObserver?: MutationObserver;
 	private readonly motionChanged = () => this.paint();
 	private chart?: EChartsType;
 	private model?: WeeklyReviewRanking;
@@ -48,8 +48,7 @@ export class WeeklyReviewRankingChart {
 		this.detail = this.el.appendChild(owner.createElement("div")); this.detail.className = "cg-review-ranking-detail"; this.detail.setAttribute("aria-live", "polite");
 		this.motion = this.win.matchMedia("(prefers-reduced-motion: reduce)"); this.motion.addEventListener("change", this.motionChanged);
 		this.resizeObserver = new this.win.ResizeObserver(() => this.scheduleResize()); this.resizeObserver.observe(this.host);
-		this.themeObserver = new this.win.MutationObserver(() => this.paint());
-		for (const target of [owner.documentElement, owner.body]) this.themeObserver.observe(target, {attributes:true, attributeFilter:["class", "style"]});
+		this.themeObserver = observeThemeChanges(owner, this.el, () => this.paint());
 	}
 
 	update(model: WeeklyReviewRanking): void {
@@ -72,7 +71,7 @@ export class WeeklyReviewRankingChart {
 
 	dispose(): void {
 		if (this.disposed) return;
-		this.disposed = true; this.resizeObserver.disconnect(); this.themeObserver.disconnect(); this.motion.removeEventListener("change", this.motionChanged);
+		this.disposed = true; this.resizeObserver.disconnect(); this.themeObserver?.disconnect(); this.motion.removeEventListener("change", this.motionChanged);
 		if (this.frame !== undefined) this.win.cancelAnimationFrame(this.frame);
 		this.chart?.dispose(); this.chart = undefined; this.model = undefined; this.el.remove();
 	}

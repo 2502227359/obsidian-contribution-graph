@@ -7,7 +7,7 @@ import { buildWeeklyTrendGroups, groupWeeklyReviewHours } from "../time/weeklyRe
 import type { WeeklyReviewTimeBin, WeeklyTrendGroup } from "../time/weeklyReviewTimeline";
 import type { WeeklyReviewDay, WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { WeeklyReviewChartSelection } from "./weeklyReviewCharts";
-import { colorFor, detailDuration, labelReviewChart, timeAxisOptions } from "./weeklyReviewChartStyle";
+import { colorFor, detailDuration, labelReviewChart, observeThemeChanges, timeAxisOptions } from "./weeklyReviewChartStyle";
 
 echarts.use([LineChart, HeatmapChart, ScatterChart, GridComponent, TooltipComponent, VisualMapComponent, SVGRenderer]);
 
@@ -29,7 +29,7 @@ export class WeeklyReviewTimelineCharts {
 	private readonly rangeExit: HTMLButtonElement;
 	private readonly motion: MediaQueryList;
 	private readonly resizeObserver: ResizeObserver;
-	private readonly themeObserver: MutationObserver;
+	private readonly themeObserver?: MutationObserver;
 	private readonly motionChanged = () => this.paint();
 	private area?: EChartsType;
 	private heatmap?: EChartsType;
@@ -62,8 +62,7 @@ export class WeeklyReviewTimelineCharts {
 		this.motion.addEventListener("change",this.motionChanged);
 		this.resizeObserver = new this.win.ResizeObserver(()=>this.scheduleResize());
 		this.resizeObserver.observe(this.el);
-		this.themeObserver = new this.win.MutationObserver(()=>this.paint());
-		for(const target of [owner.documentElement,owner.body]) this.themeObserver.observe(target,{attributes:true,attributeFilter:["class","style"]});
+		this.themeObserver = observeThemeChanges(owner, this.el, () => this.paint());
 	}
 
 	update(snapshot:WeeklyReviewSnapshot,options:{groupingRoot:string;depth:1|2}):void {
@@ -97,7 +96,7 @@ export class WeeklyReviewTimelineCharts {
 
 	dispose():void {
 		if(this.disposed)return;
-		this.disposed=true;this.resizeObserver.disconnect();this.themeObserver.disconnect();
+		this.disposed=true;this.resizeObserver.disconnect();this.themeObserver?.disconnect();
 		this.motion.removeEventListener("change",this.motionChanged);
 		if(this.frame!==undefined)this.win.cancelAnimationFrame(this.frame);
 		this.area?.dispose();this.heatmap?.dispose();this.el.remove();

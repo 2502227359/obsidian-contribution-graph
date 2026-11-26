@@ -9,7 +9,7 @@ import type { WeeklyReviewAnalysis, WeeklyReviewAnalysisNode, WeeklyReviewCompar
 import type { WeeklyReviewSnapshot } from "../time/weeklyReviewTypes";
 import type { TimeDocumentStats } from "../time/types";
 import { formatDuration } from "../time/timeData";
-import { colorFor, detailDuration, labelReviewChart, timeAxisOptions } from "./weeklyReviewChartStyle";
+import { colorFor, detailDuration, labelReviewChart, observeThemeChanges, timeAxisOptions } from "./weeklyReviewChartStyle";
 import { mutedActivityColor } from "./activityColors";
 import { buildWeeklyReviewInsights } from "../time/weeklyReviewInsights";
 import type { WeeklyReviewInsights } from "../time/weeklyReviewInsights";
@@ -43,7 +43,7 @@ export class WeeklyReviewCharts {
 	private readonly root: HTMLButtonElement;
 	private readonly motion: MediaQueryList;
 	private readonly resizeObserver: ResizeObserver;
-	private readonly themeObserver: MutationObserver;
+	private readonly themeObserver?: MutationObserver;
 	private readonly motionChanged = () => this.paint();
 	private sunburst?: EChartsType;
 	private points?: EChartsType;
@@ -85,8 +85,7 @@ export class WeeklyReviewCharts {
 		this.resizeObserver = new this.win.ResizeObserver(() => this.scheduleResize());
 		this.resizeObserver.observe(this.structure.host);
 		this.resizeObserver.observe(this.comparison.host);
-		this.themeObserver = new this.win.MutationObserver(() => this.paint());
-		for (const target of [owner.documentElement, owner.body]) this.themeObserver.observe(target, {attributes:true, attributeFilter:["class","style"]});
+		this.themeObserver = observeThemeChanges(owner, this.el, () => this.paint());
 	}
 
 	update(snapshot: WeeklyReviewSnapshot, options: {groupingRoot: string; depth: 1 | 2}, insights?:WeeklyReviewInsights): void {
@@ -120,7 +119,7 @@ export class WeeklyReviewCharts {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.resizeObserver.disconnect();
-		this.themeObserver.disconnect();
+		this.themeObserver?.disconnect();
 		this.motion.removeEventListener("change", this.motionChanged);
 		if (this.frame !== undefined) this.win.cancelAnimationFrame(this.frame);
 		this.sunburst?.dispose();
