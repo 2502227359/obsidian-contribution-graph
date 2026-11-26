@@ -172,7 +172,7 @@ export class CalendarGraphRender extends BaseGraphRender {
 			rowContainer?.appendChild(cellEl);
 			cellEl.className = "cell";
 			if (item.date == "$HOLE$") {
-				cellEl.innerText = "···";
+				cellEl.innerText = ""; cellEl.setAttribute("aria-hidden", "true");
 				cellEl.className = "cell";
 				this.applyCellGlobalStylePartial(cellEl, graphConfig, ['minWidth', 'minHeight']);
 			} else if (item.value == 0) {

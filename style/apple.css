@@ -1,66 +1,86 @@
 /*
- * 苹果风格视觉覆盖层。
+ * 苹果风格统一设计系统（Apple Minimalist Design Layer）。
  *
- * 这是独立覆盖层：图表内联热力颜色和用户自定义格子尺寸始终优先。
- * 所有选择器都限定在贡献图表面内，不影响仓库中的其他插件和正文。
+ * 原则：Clarity · Deference · Depth
+ * - 跨表面统一 Token（主图、时长图、编辑器、设置页、周回顾、时间轴）。
+ * - 减少盒子套盒子与硬边框，优先用柔和表面层差、留白与字重建立秩序。
+ * - 图表内联热力颜色和用户自定义格子尺寸始终优先。
  */
 
 .contribution-graph,
 .contribution-graph-settings,
-.contribution-graph-editor-modal {
+.contribution-graph-editor-modal,
+.cg-weekly-review-modal,
+.cg-activity-timeline-modal,
+.cg-activity-timeline {
 	--cg-font-family: var(--font-interface);
 	--cg-blue: #007aff;
+	--cg-blue-hover: #0066d6;
 	--cg-blue-soft: color-mix(in srgb, var(--cg-blue) 12%, transparent);
 	--cg-blue-wash: color-mix(in srgb, var(--cg-blue) 6%, transparent);
 	--cg-surface: var(--background-primary);
+	--cg-surface-subtle: color-mix(in srgb, var(--background-secondary) 52%, var(--background-primary));
 	--cg-surface-raised: var(--background-primary-alt, var(--background-secondary));
-	--cg-surface-grouped: var(--background-secondary);
+	--cg-surface-grouped: color-mix(in srgb, var(--background-secondary) 84%, var(--background-primary));
 	--cg-surface-data: var(--background-primary);
-	--cg-border: color-mix(
-		in srgb,
-		var(--background-modifier-border) 72%,
-		transparent
-	);
-	--cg-border-strong: color-mix(
-		in srgb,
-		var(--background-modifier-border-hover) 78%,
-		transparent
-	);
+	--cg-border: color-mix(in srgb, var(--background-modifier-border) 56%, transparent);
+	--cg-border-strong: color-mix(in srgb, var(--background-modifier-border-hover) 72%, transparent);
+	--cg-empty-cell-fallback: color-mix(in srgb, var(--background-modifier-border) 54%, var(--background-secondary));
 	--cg-text: var(--text-normal);
 	--cg-text-muted: var(--text-muted);
 	--cg-text-faint: var(--text-faint);
+	--cg-radius-modal: 18px;
 	--cg-radius-card: 16px;
-	--cg-radius-control: 8px;
+	--cg-radius-panel: 12px;
 	--cg-radius-small: 10px;
-	--cg-shadow-card: 0 8px 28px rgba(15, 23, 42, 0.07),
-		0 1px 2px rgba(15, 23, 42, 0.04);
-	--cg-shadow-float: 0 14px 38px rgba(15, 23, 42, 0.14),
-		0 2px 8px rgba(15, 23, 42, 0.08);
-	--cg-motion-fast: 140ms ease;
-	--cg-motion: 180ms ease;
+	--cg-radius-control: 8px;
+	--cg-radius-pill: 999px;
+	--cg-shadow-card: 0 2px 12px rgba(15, 23, 42, 0.05),
+		0 0.5px 1.5px rgba(15, 23, 42, 0.06);
+	--cg-shadow-control: 0 1px 2.5px rgba(15, 23, 42, 0.09),
+		0 0.5px 1px rgba(15, 23, 42, 0.05);
+	--cg-shadow-float: 0 16px 40px rgba(15, 23, 42, 0.14),
+		0 2px 10px rgba(15, 23, 42, 0.07);
+	--cg-motion-fast: 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+	--cg-motion: 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 	font-family: var(--cg-font-family);
 }
 
 .theme-dark .contribution-graph,
 .theme-dark .contribution-graph-settings,
-.theme-dark .contribution-graph-editor-modal {
+.theme-dark .contribution-graph-editor-modal,
+.theme-dark .cg-weekly-review-modal,
+.theme-dark .cg-activity-timeline-modal,
+.theme-dark .cg-activity-timeline {
+	--cg-blue: #0a84ff;
+	--cg-blue-hover: #409cff;
+	--cg-blue-soft: color-mix(in srgb, var(--cg-blue) 18%, transparent);
+	--cg-blue-wash: color-mix(in srgb, var(--cg-blue) 10%, transparent);
 	--cg-surface: var(--background-primary);
+	--cg-surface-subtle: color-mix(in srgb, var(--background-secondary) 64%, var(--background-primary));
 	--cg-surface-raised: var(--background-primary-alt, var(--background-secondary));
-	--cg-surface-grouped: var(--background-secondary);
+	--cg-surface-grouped: color-mix(in srgb, var(--background-secondary) 92%, var(--background-primary));
 	--cg-surface-data: var(--background-primary);
-	--cg-shadow-card: 0 8px 28px rgba(0, 0, 0, 0.22),
-		0 1px 2px rgba(0, 0, 0, 0.25);
-	--cg-shadow-float: 0 16px 42px rgba(0, 0, 0, 0.38),
-		0 2px 8px rgba(0, 0, 0, 0.24);
+	--cg-border: color-mix(in srgb, var(--background-modifier-border) 64%, transparent);
+	--cg-border-strong: color-mix(in srgb, var(--background-modifier-border-hover) 78%, transparent);
+	--cg-empty-cell-fallback: color-mix(in srgb, var(--background-modifier-border) 58%, var(--background-secondary));
+	--cg-shadow-card: inset 0 0.5px 0 rgba(255, 255, 255, 0.06),
+		0 6px 24px rgba(0, 0, 0, 0.26),
+		0 1px 2px rgba(0, 0, 0, 0.22);
+	--cg-shadow-control: inset 0 0.5px 0 rgba(255, 255, 255, 0.08),
+		0 1px 3px rgba(0, 0, 0, 0.34);
+	--cg-shadow-float: inset 0 0.5px 0 rgba(255, 255, 255, 0.08),
+		0 18px 46px rgba(0, 0, 0, 0.48),
+		0 3px 10px rgba(0, 0, 0, 0.28);
 }
 
-.theme-light .contribution-graph,
-.theme-light .contribution-graph-settings,
-.theme-light .contribution-graph-editor-modal {
-	--cg-surface-data: var(--background-primary);
+.cg-ui-icon {
+	display: block;
+	flex: 0 0 auto;
+	pointer-events: none;
 }
 
-/* 图表表面 */
+/* ==================== 图表主卡片表面 ==================== */
 
 .contribution-graph {
 	--cg-font-family: var(--font-text);
@@ -68,11 +88,14 @@
 	box-sizing: border-box;
 	color: var(--cg-text);
 	font-size: var(--font-ui-medium);
+	padding: 2px;
 }
 
 .contribution-graph *,
 .contribution-graph-settings *,
-.contribution-graph-editor-modal * {
+.contribution-graph-editor-modal *,
+.cg-weekly-review-modal *,
+.cg-activity-timeline-modal * {
 	box-sizing: border-box;
 }
 
@@ -81,10 +104,10 @@
 	border: 1px solid var(--cg-border);
 	border-radius: var(--cg-radius-card);
 	box-shadow: var(--cg-shadow-card);
-	padding: 20px 18px 16px;
+	padding: 20px 20px 16px;
 	grid-template-columns: minmax(0, 1fr);
 	justify-content: stretch;
-	row-gap: 14px;
+	row-gap: 12px;
 	overflow: hidden;
 }
 
@@ -92,39 +115,41 @@
 	box-shadow: var(--cg-shadow-card);
 }
 
+/* 顶部标题与核心指标：Apple Health 紧凑层次 */
+
 .contribution-graph .main .graph-header {
-	align-items: flex-start;
-	column-gap: 18px;
-	row-gap: 12px;
+	align-items: center;
+	column-gap: 16px;
+	row-gap: 8px;
 	margin: 0;
-	padding: 0 2px;
+	padding: 0;
 }
 
 .contribution-graph .main .graph-heading {
 	min-width: 0;
-	flex: 1 1 240px;
+	flex: 1 1 220px;
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
+	gap: 2px;
 }
 
 .contribution-graph .main .graph-header > .title,
 .contribution-graph .main .graph-heading .title {
 	flex: 0 1 auto;
 	min-width: 0;
-	font-size: var(--font-ui-large);
+	font-size: 15px;
 	font-weight: 650;
-	line-height: 1.2;
-	letter-spacing: -0.01em;
+	line-height: 1.25;
+	letter-spacing: -0.015em;
 	color: var(--cg-text);
 }
 
 .contribution-graph .main .graph-subtitle {
-	font-size: var(--font-ui-small);
+	font-size: var(--font-ui-smaller);
 	line-height: 1.35;
 	color: var(--cg-text-muted);
+	font-variant-numeric: tabular-nums;
 }
-
 
 .contribution-graph .main > .cg-metric {
 	width: 100%;
@@ -132,16 +157,18 @@
 	display: inline-flex;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 2px;
+	gap: 3px;
+	margin-top: -2px;
+	padding-bottom: 4px;
 	font-variant-numeric: tabular-nums;
 	color: var(--cg-text-muted);
 }
 
 .contribution-graph .main .cg-metric-number {
-	font-size: clamp(28px, 3vw, 32px);
-	font-weight: 650;
+	font-size: clamp(26px, 3.2vw, 32px);
+	font-weight: 680;
 	line-height: 1.05;
-	letter-spacing: -0.02em;
+	letter-spacing: -0.025em;
 	color: var(--cg-text);
 }
 
@@ -149,49 +176,89 @@
 	display: inline-flex;
 	align-items: baseline;
 	justify-content: flex-start;
-	gap: 4px;
+	gap: 5px;
 	font-variant-numeric: tabular-nums;
 }
 
 .contribution-graph .main .cg-metric-unit,
 .contribution-graph .main .cg-metric-caption {
 	font-size: var(--font-ui-smaller);
-	line-height: 1.25;
+	line-height: 1.3;
+	color: var(--cg-text-muted);
 }
 
 .contribution-graph .main .cg-metric-unit {
-	color: var(--cg-text-muted);
+	font-weight: 500;
 }
 
-.contribution-graph .main .cg-metric-caption {
-	color: var(--cg-text-muted);
+/* 周回顾入口按钮：柔和胶囊样式 */
+.contribution-graph .cg-weekly-review-entry {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	min-height: 30px;
+	padding: 5px 12px;
+	height: auto;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-pill);
+	box-shadow: none;
+	background: var(--cg-surface-subtle);
+	color: var(--cg-text);
+	font-family: var(--cg-font-family, var(--font-text));
+	font-size: var(--font-ui-smaller);
+	font-weight: 550;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background-color var(--cg-motion-fast), border-color var(--cg-motion-fast),
+		color var(--cg-motion-fast);
 }
 
-/* 内容层使用稳定实底，保持热力颜色和对比度。 */
+.contribution-graph .cg-weekly-review-entry:hover {
+	border-color: color-mix(in srgb, var(--cg-blue) 40%, var(--cg-border));
+	background: var(--cg-blue-wash);
+	color: var(--cg-blue);
+}
 
-.contribution-graph .main .charts,
+.contribution-graph .cg-weekly-review-entry:focus-visible {
+	outline: 2px solid var(--cg-blue);
+	outline-offset: 2px;
+}
+
+/* ==================== 数据图表区（去套框，呼吸感优先） ==================== */
+
 .contribution-graph .main .charts.default,
 .contribution-graph .main .charts.month-track,
 .contribution-graph .main .charts.calendar {
-	background: var(--cg-surface-data);
-	border: 1px solid var(--cg-border);
-	border-radius: var(--cg-radius-small);
+	background: transparent;
+	border: 0;
+	border-radius: 0;
 }
 
 .contribution-graph .main .charts.default {
-	padding: 30px 12px 10px;
+	padding: 22px 4px 6px;
+}
+
+.contribution-graph .main .charts.default .column {
+	margin-top: 0;
+}
+
+.contribution-graph .main .charts.default .month-indicator {
+	top: -20px;
+	background: transparent;
+	cursor: default;
 }
 
 .contribution-graph .main .charts.month-track {
-	padding: 24px 12px 10px;
+	padding: 6px 4px;
 }
 
 .contribution-graph .main .charts.calendar {
-	padding: 12px;
+	padding: 4px 0;
+	gap: 12px;
 }
 
-.contribution-graph .main .charts .column:first-child {
-	background-color: var(--cg-surface-data);
+.contribution-graph .main .charts.default > .column:first-child {
+	background-color: var(--cg-surface);
 	box-shadow: 8px 0 12px -12px var(--cg-border-strong);
 }
 
@@ -203,20 +270,67 @@
 	color: var(--cg-text-muted);
 }
 
-.contribution-graph .main .charts .month-indicator {
-	background: var(--cg-surface-data);
+.contribution-graph .month-track .month-indicator {
+	background: var(--cg-surface);
+	cursor: default;
+	color: var(--cg-text-muted);
+	font-size: 11px;
+	font-weight: 550;
 }
 
+/* 日历视图：柔和卡片表面 + 修复标题白块补丁 */
+.contribution-graph .calendar .month-container {
+	padding: 10px 10px 12px;
+	border-radius: var(--cg-radius-panel);
+	border: 1px solid var(--cg-border);
+	background: var(--cg-surface-subtle);
+	transition: border-color var(--cg-motion-fast), background-color var(--cg-motion-fast);
+}
+
+.contribution-graph .calendar .month-container:hover {
+	border-color: var(--cg-border-strong);
+	background: color-mix(in srgb, var(--cg-surface-subtle) 80%, var(--cg-blue-wash));
+}
+
+.contribution-graph .calendar .month-container .month-indicator {
+	background: transparent;
+	cursor: default;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--cg-text);
+	margin-bottom: 4px;
+}
+
+.contribution-graph .calendar .month-container .month-indicator:hover {
+	color: var(--cg-text);
+}
+
+.contribution-graph .calendar .month-container .week-indicator-container {
+	margin-top: 6px;
+	margin-bottom: 4px;
+}
+
+.contribution-graph .calendar .cell.is-hole {
+	opacity: 0;
+	pointer-events: none;
+	cursor: default;
+}
+
+/* 热力格细节与克制反馈 */
 .contribution-graph .main .charts .cell {
 	border-radius: var(--cg-cell-radius, 3px);
 	transition: box-shadow var(--cg-motion-fast), outline-color var(--cg-motion-fast),
-		background-color var(--cg-motion-fast);
+		background-color var(--cg-motion-fast), opacity var(--cg-motion-fast);
+}
+
+.contribution-graph .cell.empty {
+	background-color: var(--cg-empty-cell-color, var(--cg-empty-cell-fallback));
 }
 
 .contribution-graph .main .charts:not(.hourly-profile) .cell[data-date]:not(.future):hover {
 	z-index: 2;
 	transform: none;
-	box-shadow: 0 0 0 2px color-mix(in srgb, var(--cg-blue) 42%, transparent);
+	box-shadow: 0 0 0 1.5px var(--cg-surface), 0 0 0 3px color-mix(in srgb, var(--cg-blue) 50%, transparent);
 }
 
 .contribution-graph .main .charts .cell[data-date]:focus-visible {
@@ -226,46 +340,106 @@
 }
 
 .contribution-graph .main .charts .cell[data-date].is-today:not(.is-selected) {
-	box-shadow: inset 0 0 0 1px var(--cg-blue);
+	box-shadow: inset 0 0 0 1.5px var(--cg-blue);
 }
 
 .contribution-graph .main .charts:not(.hourly-profile) .cell[data-date].is-selected {
 	z-index: 3;
-	box-shadow: 0 0 0 1px var(--cg-surface-data), 0 0 0 3px var(--cg-blue);
+	box-shadow: 0 0 0 1.5px var(--cg-surface), 0 0 0 3px var(--cg-blue);
+}
+
+/* 周末标记：极克制的右上微小圆点，不破坏小格观感 */
+.contribution-graph .cell[data-date].is-weekend::after {
+	content: "";
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	left: auto;
+	bottom: auto;
+	width: 2.5px;
+	height: 2.5px;
+	border-radius: 50%;
+	background: var(--cg-text-faint);
+	opacity: 0.72;
+	pointer-events: none;
 }
 
 .contribution-graph .main .charts .cell.future {
 	border-color: var(--cg-border-strong);
 	background: transparent;
+	opacity: 0.4;
 }
 
 .contribution-graph .main .charts .cell.untracked {
 	background-color: var(--cg-surface-grouped);
+	background-image: repeating-linear-gradient(
+		135deg,
+		transparent 0,
+		transparent 3px,
+		var(--cg-border) 3px,
+		var(--cg-border) 4px
+	);
 }
 
 .contribution-graph .main .charts .cell.partial {
 	background-blend-mode: normal;
 }
 
-/* 图例作为安静的页脚，可换行但不推动格子布局。 */
+/* 轻量悬浮提示胶囊（Apple Floating Pill Tooltip） */
+.contribution-graph .cg-tooltip {
+	position: absolute;
+	z-index: 20;
+	pointer-events: none;
+	max-width: 260px;
+	padding: 6px 10px;
+	border: 1px solid var(--cg-border-strong);
+	border-radius: var(--cg-radius-control);
+	background: color-mix(in srgb, var(--cg-surface) 94%, var(--cg-surface-grouped));
+	color: var(--cg-text);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.35;
+	font-variant-numeric: tabular-nums;
+	box-shadow: var(--cg-shadow-float);
+	opacity: 0;
+	transform: translate(-50%, calc(-100% - 8px));
+	transition: opacity 120ms ease;
+	white-space: normal;
+	text-align: center;
+}
 
+.contribution-graph .cg-tooltip.is-visible {
+	opacity: 1;
+}
+
+.contribution-graph .cg-tooltip-date {
+	font-weight: 600;
+	color: var(--cg-text);
+}
+
+.contribution-graph .cg-tooltip-value {
+	color: var(--cg-text-muted);
+	margin-left: 6px;
+}
+
+/* 图例：安静的页脚，居中/左对齐克制排布 */
 .contribution-graph .main .graph-legend,
 .contribution-graph .main > .cell-rule-indicator-container {
 	display: flex;
 	flex: 1 1 100%;
 	align-items: center;
 	justify-content: flex-start;
-	gap: 10px 16px;
+	gap: 8px 16px;
 	min-width: 0;
 	margin: 0;
-	padding: 2px 2px 0;
+	padding: 6px 2px 0;
+	border-top: 1px solid var(--cg-border);
 	font-size: var(--font-ui-smaller);
 	color: var(--cg-text-muted);
 }
 
 .contribution-graph .main .graph-legend .cell-rule-indicator-container {
 	flex: 1 1 auto;
-	justify-content: flex-start;
+	justify-content: space-between;
 	gap: 8px 14px;
 }
 
@@ -279,22 +453,23 @@
 }
 
 .contribution-graph .main .cell-rule-indicator-container .cell {
-		box-shadow: none;
-		transform: none;
+	box-shadow: none;
+	transform: none;
+	border-radius: 3px;
 }
 
-/* 详情面板 */
+/* ==================== 详情面板（柔和托盘，减少嵌套框线） ==================== */
 
 .contribution-graph .activity-container {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
 	align-items: start;
 	gap: 16px;
-	margin-top: 14px;
-	padding: 16px;
+	margin-top: 4px;
+	padding: 16px 18px;
 	border: 1px solid var(--cg-border);
-	border-radius: var(--cg-radius-small);
-	background: var(--cg-surface-raised);
+	border-radius: var(--cg-radius-panel);
+	background: var(--cg-surface-subtle);
 }
 
 .contribution-graph .activity-container .activity-summary,
@@ -317,38 +492,39 @@
 .contribution-graph .activity-container .cg-detail-value {
 	display: flex;
 	align-items: baseline;
-	gap: 4px;
+	gap: 5px;
 	margin-top: 8px;
 	font-size: 24px;
-	font-weight: 650;
+	font-weight: 680;
 	line-height: 1.05;
 	font-variant-numeric: tabular-nums;
-	letter-spacing: -0.02em;
+	letter-spacing: -0.025em;
 	color: var(--cg-text);
 }
 
 .contribution-graph .activity-container .cg-detail-meta {
 	display: block;
 	margin-top: 4px;
+	font-size: var(--font-ui-smaller);
 	color: var(--cg-text-muted);
 }
 
 .contribution-graph .activity-container .activity-stats {
 	grid-template-columns: repeat(4, minmax(64px, 1fr));
 	gap: 8px;
-	margin-top: 14px;
+	margin-top: 12px;
 }
 
 .contribution-graph .activity-container .activity-stat {
 	min-width: 0;
-	padding: 10px 11px;
+	padding: 10px 12px;
 	border: 1px solid var(--cg-border);
 	border-radius: var(--cg-radius-small);
-	background: var(--cg-surface-data);
+	background: var(--cg-surface);
 }
 
 .contribution-graph .activity-container .activity-stat.goal {
-	border-color: color-mix(in srgb, var(--cg-blue) 58%, var(--cg-border));
+	border-color: color-mix(in srgb, var(--cg-blue) 42%, var(--cg-border));
 	background: var(--cg-blue-wash);
 }
 
@@ -369,10 +545,10 @@
 	flex-direction: column;
 	gap: 7px;
 	margin-top: 10px;
-	padding: 9px 11px;
+	padding: 10px 12px;
 	border: 1px solid var(--cg-border);
 	border-radius: var(--cg-radius-small);
-	background: var(--cg-surface-data);
+	background: var(--cg-surface);
 }
 
 .contribution-graph .activity-container .cg-edit-origin-bar {
@@ -380,7 +556,7 @@
 	width: 100%;
 	height: 6px;
 	overflow: hidden;
-	border-radius: 999px;
+	border-radius: var(--cg-radius-pill);
 	background: color-mix(in srgb, var(--cg-border) 55%, transparent);
 }
 
@@ -394,7 +570,7 @@
 }
 
 .contribution-graph .activity-container .cg-edit-origin-segment.is-ai {
-	background: color-mix(in srgb, #8b5cf6 78%, var(--cg-text));
+	background: color-mix(in srgb, #af52de 82%, var(--cg-text));
 }
 
 .contribution-graph .activity-container .cg-edit-origin-legend {
@@ -425,18 +601,18 @@
 }
 
 .contribution-graph .activity-container .cg-edit-origin-dot.is-ai {
-	background: color-mix(in srgb, #8b5cf6 78%, var(--cg-text));
+	background: color-mix(in srgb, #af52de 82%, var(--cg-text));
 }
 
 .contribution-graph .activity-container .activity-content {
 	width: 100%;
 	min-width: 0;
 	max-width: none;
-	gap: 8px;
-	padding: 12px;
+	gap: 6px;
+	padding: 8px 10px;
 	border: 1px solid var(--cg-border);
 	border-radius: var(--cg-radius-small);
-	background: var(--cg-surface-data);
+	background: var(--cg-surface);
 }
 
 .contribution-graph .activity-container .activity-content .activity-list {
@@ -451,9 +627,15 @@
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
 	align-items: center;
-	gap: 8px;
-	padding: 9px 4px;
+	gap: 10px;
+	padding: 8px 6px;
 	border-bottom: 1px solid var(--cg-border);
+	border-radius: 6px;
+	transition: background-color var(--cg-motion-fast);
+}
+
+.contribution-graph .activity-container .activity-content .activity-list .activity-item:last-child {
+	border-bottom: 0;
 }
 
 .contribution-graph .activity-container .activity-list .cg-document-main {
@@ -471,6 +653,12 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	color: var(--cg-text);
+	font-weight: 500;
+}
+
+.contribution-graph .activity-container .activity-list .label:hover {
+	background-color: transparent;
+	color: var(--cg-blue);
 }
 
 .contribution-graph .activity-container .activity-list .cg-document-path {
@@ -487,6 +675,7 @@
 	padding: 0;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
+	font-size: var(--font-ui-smaller);
 	color: var(--cg-text-muted);
 }
 
@@ -496,12 +685,12 @@
 
 .contribution-graph .activity-container .activity-warnings {
 	gap: 6px;
-	margin-top: 14px;
-	padding: 10px 12px;
-	border: 1px solid color-mix(in srgb, var(--text-warning) 36%, var(--cg-border));
+	margin-top: 12px;
+	padding: 9px 12px;
+	border: 1px solid color-mix(in srgb, var(--text-warning) 30%, var(--cg-border));
 	border-left-width: 3px;
-	border-radius: var(--cg-radius-small);
-	background: color-mix(in srgb, var(--text-warning) 7%, var(--cg-surface-data));
+	border-radius: var(--cg-radius-control);
+	background: color-mix(in srgb, var(--text-warning) 6%, var(--cg-surface));
 	color: var(--cg-text-muted);
 }
 
@@ -513,8 +702,10 @@
 	min-width: 28px;
 	min-height: 28px;
 	border-radius: 50%;
-	font-size: 20px;
+	border: 0;
+	font-size: 16px;
 	color: var(--cg-text-muted);
+	cursor: pointer;
 	transition: background-color var(--cg-motion-fast), color var(--cg-motion-fast);
 }
 
@@ -525,7 +716,7 @@
 	color: var(--cg-blue);
 }
 
-/* 编辑器弹窗 */
+/* ==================== 图表编辑器弹窗 ==================== */
 
 .contribution-graph-editor-modal {
 	width: min(1120px, calc(100vw - 48px));
@@ -537,7 +728,7 @@
 	box-sizing: border-box;
 	padding: 0;
 	border: 1px solid var(--cg-border);
-	border-radius: var(--cg-radius-card);
+	border-radius: var(--cg-radius-modal);
 	background: var(--cg-surface);
 	box-shadow: var(--cg-shadow-float);
 	overflow: hidden;
@@ -573,6 +764,7 @@
 	flex: 1 1 auto;
 	flex-direction: column;
 	font-family: var(--cg-font-family);
+	container: cg-editor / inline-size;
 }
 
 .contribution-graph-editor-modal .cg-editor-header {
@@ -580,101 +772,146 @@
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 4px;
-	padding: 18px 22px 14px;
+	gap: 3px;
+	padding: 16px 22px 14px;
 	border-bottom: 1px solid var(--cg-border);
-	background: color-mix(in srgb, var(--cg-surface) 86%, var(--cg-surface-grouped));
+	background: var(--cg-surface);
 }
 
 .contribution-graph-editor-modal .cg-editor-header .cg-editor-title {
 	margin: 0;
-	font-size: var(--font-ui-large);
+	font-size: 16px;
 	font-weight: 650;
-	line-height: 1.2;
+	line-height: 1.25;
+	letter-spacing: -0.015em;
 	color: var(--cg-text);
 }
 
 .contribution-graph-editor-modal .cg-editor-header .cg-editor-subtitle {
 	margin: 0;
-	font-size: var(--font-ui-small);
+	font-size: var(--font-ui-smaller);
 	color: var(--cg-text-muted);
 }
 
 .contribution-graph-editor-modal .cg-editor-workspace {
 	display: grid;
-	grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.08fr);
-	gap: 18px;
+	grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+	gap: 0;
 	flex: 1 1 auto;
 	min-width: 0;
 	min-height: 0;
-	padding: 18px 22px;
+	padding: 0;
+	overflow: hidden;
+}
+
+/* 左侧配置栏：干净白底 + 右侧细分割线，避免双层套框 */
+.contribution-graph-editor-modal .cg-editor-settings {
+	min-width: 0;
+	min-height: 0;
+	border: 0;
+	border-right: 1px solid var(--cg-border);
+	border-radius: 0;
+	background: var(--cg-surface);
 	overflow: auto;
 }
 
-.contribution-graph-editor-modal .cg-editor-settings,
+/* 右侧实时预览：柔和工作室画布，衬托悬浮图表卡片 */
 .contribution-graph-editor-modal .cg-editor-preview {
 	min-width: 0;
 	min-height: 0;
-	border: 1px solid var(--cg-border);
-	border-radius: var(--cg-radius-small);
-	background: var(--cg-surface-data);
-}
-
-.contribution-graph-editor-modal .cg-editor-settings {
-	overflow: auto;
-}
-
-.contribution-graph-editor-modal .cg-editor-preview {
 	display: flex;
 	flex-direction: column;
+	border: 0;
+	border-radius: 0;
+	background: var(--cg-surface-grouped);
 	overflow: hidden;
 }
 
 .contribution-graph-editor-modal .cg-preview-heading {
-	padding: 12px 14px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 18px;
 	border-bottom: 1px solid var(--cg-border);
-	font-size: var(--font-ui-small);
-	font-weight: 650;
+	background: color-mix(in srgb, var(--cg-surface) 70%, var(--cg-surface-grouped));
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
 	color: var(--cg-text-muted);
+}
+
+.contribution-graph-editor-modal .cg-preview-live-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-weight: 500;
+	color: var(--cg-text-faint);
+}
+
+.contribution-graph-editor-modal .cg-preview-live-badge::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: #34c759;
 }
 
 .contribution-graph-editor-modal .preview-graph,
 .contribution-graph-editor-modal .preview-content {
 	min-width: 0;
+	flex: 1 1 auto;
 	overflow: auto;
-	padding: 14px;
+	padding: 20px 18px;
 }
 
 .contribution-graph-editor-modal .tab-container {
-	gap: 12px;
+	gap: 14px;
 	min-width: 0;
-	padding: 14px;
+	padding: 16px 18px 20px;
 	overflow: visible;
+}
+
+.contribution-graph-editor-modal .contribution-graph-modal-form .form-group {
+	gap: 4px;
+	margin-bottom: 8px;
 }
 
 .contribution-graph-editor-modal .form-item {
 	flex-direction: column;
 	align-items: stretch;
 	gap: 6px;
+	margin-top: 12px;
+}
+
+.contribution-graph-editor-modal .form-item:first-child {
+	margin-top: 2px;
 }
 
 .contribution-graph-editor-modal .form-item .label {
 	width: 100%;
 	padding: 0;
 	justify-content: flex-start;
-	line-height: 1.5;
+	line-height: 1.4;
 	font-size: var(--font-ui-small);
 	font-weight: 550;
+	color: var(--cg-text);
 }
 
 .contribution-graph-editor-modal .form-item .label:empty {
 	display: none;
 }
 
+.contribution-graph-editor-modal .form-item .form-description {
+	line-height: 1.45;
+	padding: 0;
+	font-size: var(--font-ui-smaller);
+	color: var(--cg-text-muted);
+}
+
 .contribution-graph-editor-modal .form-item .form-content,
 .contribution-graph-editor-modal .form-item .form-vertical-content {
 	min-width: 0;
 	width: 100%;
+	gap: 8px;
 }
 
 .contribution-graph-editor-modal .form-item select,
@@ -683,10 +920,165 @@
 	min-width: 0;
 }
 
-.contribution-graph-editor-modal .tab-container .tab-titles {
-	gap: 2px;
-	padding: 3px;
+/* 修复旧样式 styles.css 底部 1px 下划线冲突，恢复标准 Apple 圆角输入框 */
+.contribution-graph-editor-modal .contribution-graph-modal-form .form-item .form-content input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.contribution-graph-editor-modal .contribution-graph-modal-form .form-item .form-vertical-content input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.contribution-graph-editor-modal .contribution-graph-modal-form .form-item select {
+	min-height: 32px;
+	padding: 5px 10px;
+	border: 1px solid var(--cg-border-strong);
 	border-radius: var(--cg-radius-control);
+	background: var(--cg-surface);
+	color: var(--cg-text);
+	font-size: var(--font-ui-small);
+	box-shadow: none;
+	transition: border-color var(--cg-motion-fast), box-shadow var(--cg-motion-fast),
+		background-color var(--cg-motion-fast);
+}
+
+.contribution-graph-editor-modal .contribution-graph-modal-form .form-item .form-content .number-input {
+	border: 1px solid var(--cg-border-strong);
+	border-radius: var(--cg-radius-control);
+	padding: 5px 10px;
+	text-align: left;
+}
+
+/* 布尔开关行：左右排布更紧凑清爽 */
+.contribution-graph-editor-modal .cg-toggle-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 8px 12px;
+	border-radius: var(--cg-radius-control);
+	background: var(--cg-surface-subtle);
+	margin-top: 6px;
+}
+
+.contribution-graph-editor-modal .cg-toggle-row .label {
+	width: auto;
+	flex: 1 1 auto;
+	font-weight: 500;
+}
+
+.contribution-graph-editor-modal .cg-toggle-row .form-content {
+	width: auto;
+	flex: 0 0 auto;
+}
+
+/* 视觉主题色卡网格 */
+.contribution-graph-editor-modal .cg-theme-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+	gap: 8px;
+	width: 100%;
+}
+
+.contribution-graph-editor-modal .cg-theme-card {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 7px;
+	width: 100%;
+	height: auto;
+	padding: 9px 10px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-subtle);
+	color: var(--cg-text);
+	box-shadow: none;
+	cursor: pointer;
+	text-align: left;
+	transition: border-color var(--cg-motion-fast), background-color var(--cg-motion-fast),
+		box-shadow var(--cg-motion-fast);
+}
+
+.contribution-graph-editor-modal .cg-theme-card:hover {
+	border-color: var(--cg-border-strong);
+	background: var(--cg-surface);
+}
+
+.contribution-graph-editor-modal .cg-theme-card.is-selected {
+	border-color: var(--cg-blue);
+	background: var(--cg-blue-wash);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--cg-blue) 45%, transparent);
+}
+
+.contribution-graph-editor-modal .cg-theme-swatches {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	width: 100%;
+}
+
+.contribution-graph-editor-modal .cg-theme-swatch {
+	flex: 1 1 0;
+	height: 14px;
+	border-radius: 4px;
+	border: 0.5px solid rgba(15, 23, 42, 0.08);
+}
+
+.contribution-graph-editor-modal .cg-theme-name {
+	width: 100%;
+	font-size: var(--font-ui-smaller);
+	font-weight: 550;
+	color: var(--cg-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.contribution-graph-editor-modal .cg-theme-advanced {
+	width: 100%;
+	margin-top: 6px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-subtle);
+	padding: 0;
+	overflow: hidden;
+}
+
+.contribution-graph-editor-modal .cg-theme-advanced > summary {
+	padding: 9px 12px;
+	font-size: var(--font-ui-smaller);
+	font-weight: 550;
+	color: var(--cg-text-muted);
+	cursor: pointer;
+	user-select: none;
+}
+
+.contribution-graph-editor-modal .cg-theme-advanced[open] > summary {
+	border-bottom: 1px solid var(--cg-border);
+	color: var(--cg-text);
+}
+
+.contribution-graph-editor-modal .cg-theme-advanced-body {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px;
+}
+
+.contribution-graph-editor-modal .cg-editor-about {
+	margin-top: 14px;
+	padding: 10px 12px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-subtle);
+	font-size: var(--font-ui-smaller);
+}
+
+.contribution-graph-editor-modal .cg-editor-about > summary {
+	cursor: pointer;
+	font-weight: 550;
+	color: var(--cg-text-muted);
+}
+
+/* Segmented Control（macOS 分段控件） */
+.contribution-graph-editor-modal .tab-container .tab-titles {
+	gap: 3px;
+	padding: 3px;
+	border-radius: 10px;
 	background: var(--cg-surface-grouped);
 }
 
@@ -694,32 +1086,179 @@
 	border: 0;
 	box-shadow: none;
 	background: transparent;
-		min-width: 0;
-		flex: 1 1 0;
-		padding: 7px 10px;
-		border-radius: 6px;
-		font-size: var(--font-ui-small);
-		color: var(--cg-text-muted);
-		transition: background-color var(--cg-motion-fast), color var(--cg-motion-fast),
-			box-shadow var(--cg-motion-fast);
+	min-width: 0;
+	flex: 1 1 0;
+	padding: 7px 10px;
+	border-radius: 7px;
+	font-size: var(--font-ui-small);
+	font-weight: 500;
+	color: var(--cg-text-muted);
+	transition: background-color var(--cg-motion-fast), color var(--cg-motion-fast),
+		box-shadow var(--cg-motion-fast);
 }
 
-.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title.active {
-		background: var(--cg-surface-data);
-		box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
-		color: var(--cg-text);
-		font-weight: 600;
+.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title:not(.active):hover {
+	background: color-mix(in srgb, var(--cg-surface) 45%, transparent);
+	color: var(--cg-text);
 }
 
-.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title:hover {
-		background: var(--cg-blue-wash);
-		color: var(--cg-blue);
+.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title.active,
+.contribution-graph-editor-modal .tab-container .tab-titles .tab-item-title.active:hover {
+	background: var(--cg-surface);
+	box-shadow: var(--cg-shadow-control);
+	color: var(--cg-text);
+	font-weight: 600;
 }
 
 .contribution-graph-editor-modal .tab-container .tab-items .tab-item {
 	padding: 0;
 }
 
+/* 标题对齐分段选择器（Choose） */
+.contribution-graph-choose {
+	display: inline-flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 2px;
+	margin-left: 0;
+	padding: 2px;
+	border-radius: var(--cg-radius-control);
+	border: 1px solid var(--cg-border);
+	background: var(--cg-surface-grouped);
+	height: 32px;
+}
+
+.contribution-graph-choose:first-child {
+	margin-left: 0;
+}
+
+.contribution-graph-choose .item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 26px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--cg-text-muted);
+	box-shadow: none;
+	cursor: pointer;
+	transition: background-color var(--cg-motion-fast), color var(--cg-motion-fast),
+		box-shadow var(--cg-motion-fast);
+}
+
+.contribution-graph-choose .item:hover:not(.choosed) {
+	background: color-mix(in srgb, var(--cg-surface) 55%, transparent);
+	color: var(--cg-text);
+}
+
+.contribution-graph-choose .item.choosed {
+	background: var(--cg-surface);
+	color: var(--cg-text);
+	box-shadow: var(--cg-shadow-control);
+}
+
+.contribution-graph-choose .item .icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ColorPicker 柔和胶囊与暗色适配弹出层 */
+.color-indicator {
+	width: 24px;
+	height: 24px;
+	min-width: 24px;
+	min-height: 24px;
+	border-radius: 50%;
+	border: 1.5px solid var(--cg-border-strong);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+	padding: 0;
+	cursor: pointer;
+	transition: transform var(--cg-motion-fast), border-color var(--cg-motion-fast);
+}
+
+.color-indicator:hover {
+	opacity: 1;
+	border-color: var(--cg-blue);
+	transform: scale(1.06);
+}
+
+.color-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 26px;
+	padding: 2px 6px 2px 9px;
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-pill);
+	background: var(--cg-surface-subtle);
+	color: var(--cg-text-muted);
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	transition: border-color var(--cg-motion-fast), background-color var(--cg-motion-fast);
+}
+
+.color-label:hover {
+	border-color: var(--cg-border-strong);
+	background: var(--cg-surface-grouped);
+	color: var(--cg-text);
+}
+
+.color-reset-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	min-width: 18px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	box-shadow: none;
+	background: transparent;
+	color: var(--cg-text-muted);
+	cursor: pointer;
+}
+
+.color-reset-button:hover {
+	background: var(--cg-border);
+	color: var(--cg-text);
+}
+
+.cg-color-popover {
+	z-index: 1000;
+	border-radius: var(--cg-radius-panel);
+	box-shadow: var(--cg-shadow-float);
+	overflow: hidden;
+}
+
+.theme-dark .cg-color-popover .w-color-chrome {
+	--chrome-background-color: var(--background-primary-alt, #1e1e1e);
+	--chrome-color: var(--text-normal, #f5f5f7);
+	background: var(--background-primary-alt, #1e1e1e) !important;
+	color: var(--text-normal, #f5f5f7) !important;
+}
+
+.contribution-graph-modal-form .style-section-heading {
+	border-bottom: 1px solid var(--cg-border);
+	padding-bottom: 8px;
+	margin: 4px 0 6px;
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--cg-text);
+}
+
+.contribution-graph-modal-form .goal-heat-level-item {
+	border: 1px solid var(--cg-border);
+	border-radius: var(--cg-radius-small);
+	background: var(--cg-surface-subtle);
+	padding: 6px 10px;
+}
+
+/* 编辑器页脚 */
 .contribution-graph-editor-modal .cg-editor-footer {
 	flex: 0 0 auto;
 	display: flex;
@@ -727,25 +1266,28 @@
 	justify-content: space-between;
 	gap: 8px;
 	flex-wrap: wrap;
-	padding: 12px 22px 16px;
+	padding: 12px 22px 14px;
 	border-top: 1px solid var(--cg-border);
-	background: color-mix(in srgb, var(--cg-surface) 90%, var(--cg-surface-grouped));
+	background: var(--cg-surface);
 }
 
 .contribution-graph-editor-modal .cg-editor-footer-secondary,
 .contribution-graph-editor-modal .cg-editor-footer-actions {
 	display: flex;
+	align-items: center;
 	gap: 8px;
 }
 
 .contribution-graph-editor-modal .cg-editor-footer .cg-button,
 .contribution-graph-editor-modal .cg-editor-footer .cg-button-primary {
-	min-height: 34px;
-	padding: 7px 14px;
+	min-height: 32px;
+	padding: 6px 15px;
 	border: 1px solid var(--cg-border-strong);
 	border-radius: var(--cg-radius-control);
 	font-size: var(--font-ui-small);
-	font-weight: 600;
+	font-weight: 550;
+	box-shadow: none;
+	cursor: pointer;
 	transition: background-color var(--cg-motion-fast), border-color var(--cg-motion-fast),
 		color var(--cg-motion-fast);
 }
@@ -753,29 +1295,41 @@
 .contribution-graph-editor-modal .cg-editor-footer .cg-button-primary {
 	border-color: var(--cg-blue);
 	background: var(--cg-blue);
-	color: var(--text-on-accent, #fff);
+	color: #fff;
 }
 
 .contribution-graph-editor-modal .cg-editor-footer .cg-button-primary:hover {
-	filter: brightness(1.06);
+	border-color: var(--cg-blue-hover);
+	background: var(--cg-blue-hover);
 }
 
 .contribution-graph-editor-modal .cg-editor-footer .cg-button:not(.cg-button-primary) {
-	background: transparent;
+	background: var(--cg-surface);
 	color: var(--cg-text);
 }
 
 .contribution-graph-editor-modal .cg-editor-footer .cg-button:not(.cg-button-primary):hover {
-	border-color: var(--cg-blue);
-	background: var(--cg-blue-wash);
-	color: var(--cg-blue);
+	border-color: var(--cg-border-strong);
+	background: var(--cg-surface-subtle);
 }
 
-/* 设置页使用分组列表层级，不再堆叠第二套卡片网格。 */
+.contribution-graph-editor-modal .cg-editor-footer .cg-button-ghost {
+	border-color: transparent;
+	background: transparent;
+	color: var(--cg-text-muted);
+}
+
+.contribution-graph-editor-modal .cg-editor-footer .cg-button-ghost:hover {
+	border-color: transparent;
+	background: var(--cg-surface-subtle);
+	color: var(--cg-text);
+}
+
+/* ==================== 设置页（macOS System Settings 分组列表） ==================== */
 
 .contribution-graph-settings {
 	max-width: 760px;
-	padding: 24px 22px 40px;
+	padding: 24px 22px 44px;
 	font-family: var(--cg-font-family);
 	color: var(--cg-text);
 }
@@ -789,8 +1343,8 @@
 .contribution-graph-settings > h2:first-of-type {
 	margin: 0;
 	font-size: 24px;
-	font-weight: 650;
-	letter-spacing: -0.02em;
+	font-weight: 680;
+	letter-spacing: -0.025em;
 	color: var(--cg-text);
 }
 
@@ -808,20 +1362,21 @@
 
 .contribution-graph-settings .cg-settings-section,
 .contribution-graph-settings .contribution-graph-settings-section {
-	margin: 22px 0 0;
+	margin: 20px 0 0;
 	padding: 0;
 	border: 1px solid var(--cg-border);
 	border-radius: var(--cg-radius-card);
-	background: var(--cg-surface-raised);
+	background: var(--cg-surface-subtle);
 	overflow: hidden;
 }
 
 .contribution-graph-settings .cg-settings-section-head {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
-	padding: 14px 16px 9px;
+	padding: 13px 16px 10px;
+	background: color-mix(in srgb, var(--cg-surface) 40%, var(--cg-surface-subtle));
 }
 
 .contribution-graph-settings .cg-settings-section-head .title,
@@ -830,11 +1385,19 @@
 	margin: 0;
 	font-size: var(--font-ui-medium);
 	font-weight: 650;
+	letter-spacing: -0.01em;
 	color: var(--cg-text);
 }
 
 .contribution-graph-settings .cg-settings-status {
+	display: inline-flex;
+	align-items: center;
+	padding: 3px 9px;
+	border-radius: var(--cg-radius-pill);
+	background: var(--cg-surface);
+	border: 1px solid var(--cg-border);
 	font-size: var(--font-ui-smaller);
+	font-weight: 550;
 	font-variant-numeric: tabular-nums;
 	color: var(--cg-text-muted);
 }
@@ -844,32 +1407,46 @@
 	white-space: pre-line;
 	overflow-wrap: anywhere;
 	font-size: var(--font-ui-smaller);
+	line-height: 1.45;
 	color: var(--cg-text-muted);
 }
 
-[data-cg-time-control] {
-	cursor: pointer;
-	border-radius: var(--radius-s);
+/* 修复原缺失样式的 4 个设置页类名 */
+.contribution-graph-settings .cg-settings-subsection-title {
+	margin: 0;
+	padding: 12px 16px 5px;
+	border-top: 1px solid var(--cg-border);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: var(--cg-text-faint);
+	background: color-mix(in srgb, var(--cg-surface-grouped) 45%, transparent);
 }
 
-[data-cg-time-control]:focus-visible {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: 2px;
+.contribution-graph-settings .cg-settings-save-status {
+	padding: 9px 16px;
+	border-top: 1px solid var(--cg-border);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	color: var(--cg-text-muted);
+	background: color-mix(in srgb, var(--cg-surface) 35%, transparent);
 }
 
 .contribution-graph-settings .setting-item {
 	margin: 0;
-	padding: 12px 16px;
+	padding: 13px 16px;
 	border-top: 1px solid var(--cg-border);
 	background: transparent;
 }
 
-.contribution-graph-settings .setting-item:first-of-type {
+.contribution-graph-settings .cg-settings-subsection-title + .setting-item {
 	border-top: 0;
+	padding-top: 8px;
 }
 
-.contribution-graph-settings .setting-item:hover {
-	background: var(--cg-blue-wash);
+.contribution-graph-settings .setting-item:first-of-type {
+	border-top: 1px solid var(--cg-border);
 }
 
 .contribution-graph-settings .setting-item-name {
@@ -880,17 +1457,17 @@
 
 .contribution-graph-settings .setting-item-description {
 	font-size: var(--font-ui-smaller);
-	line-height: 1.4;
+	line-height: 1.45;
 	color: var(--cg-text-muted);
 }
 
 .contribution-graph-settings .contribution-graph-counting-summary {
 	max-width: none;
-	margin: 12px 16px;
-	padding: 12px;
+	margin: 10px 16px 12px;
+	padding: 11px 13px;
 	border: 1px solid var(--cg-border);
-	border-radius: var(--cg-radius-small);
-	background: var(--cg-surface-data);
+	border-radius: var(--cg-radius-panel);
+	background: var(--cg-surface);
 }
 
 .contribution-graph-settings .contribution-graph-counting-summary-items {
@@ -898,34 +1475,88 @@
 }
 
 .contribution-graph-settings .contribution-graph-counting-summary-items span {
-	padding: 4px 8px;
+	padding: 3px 9px;
 	border: 1px solid var(--cg-border);
-	border-radius: 999px;
-	background: var(--cg-surface-grouped);
+	border-radius: var(--cg-radius-pill);
+	background: var(--cg-surface-subtle);
 	color: var(--cg-text-muted);
+	font-size: 11px;
 }
 
-.contribution-graph-settings .contribution-graph-tracked-folder-item {
-	margin: 0 16px 10px;
-	padding-left: 12px;
-	border-left-color: var(--cg-border-strong);
+.contribution-graph-settings .contribution-graph-tracked-folder-item,
+.contribution-graph-settings .contribution-graph-tracked-file-item {
+	margin: 0 16px 8px;
+	padding: 9px 12px;
+	border: 1px solid var(--cg-border);
+	border-left: 3px solid var(--cg-border-strong);
+	border-radius: var(--cg-radius-control);
+	background: var(--cg-surface);
 }
 
-.contribution-graph-settings .cg-settings-section[data-section="data"] .setting-item:last-child,
-.contribution-graph-settings .cg-settings-section[data-section="data"] .is-danger {
+.contribution-graph-settings .contribution-graph-tracked-folder-item.is-missing,
+.contribution-graph-settings .contribution-graph-tracked-file-item.is-missing {
+	border-left-color: var(--text-warning);
+}
+
+.contribution-graph-settings .contribution-graph-tracked-folder-item.is-missing .setting-item-name,
+.contribution-graph-settings .contribution-graph-tracked-file-item.is-missing .setting-item-name {
+	color: var(--text-warning);
+}
+
+/* 自动保存间隔行：数字输入框 + 胶囊预设排布整齐 */
+.contribution-graph-settings .cg-settings-save-interval .setting-item-control {
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.contribution-graph-settings .cg-settings-save-interval input[type="number"] {
+	width: 72px;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+.contribution-graph-settings .cg-settings-save-interval button {
+	min-height: 28px;
+	padding: 4px 9px;
+	border-radius: var(--cg-radius-pill);
+	font-size: var(--font-ui-smaller);
+	box-shadow: none;
+	border: 1px solid var(--cg-border);
+	background: var(--cg-surface);
+}
+
+.contribution-graph-settings .cg-settings-save-interval button:hover {
+	border-color: var(--cg-blue);
+	color: var(--cg-blue);
+	background: var(--cg-blue-wash);
+}
+
+/* 危险操作项 */
+.contribution-graph-settings .cg-settings-danger .setting-item-name,
+.contribution-graph-settings .cg-settings-section[data-section="data"] .is-danger .setting-item-name {
 	color: var(--text-error);
 }
 
-.contribution-graph-settings .cg-settings-section[data-section="data"] .is-danger:hover {
-	background: color-mix(in srgb, var(--text-error) 7%, transparent);
+.contribution-graph-settings .cg-settings-danger {
+	background: color-mix(in srgb, var(--text-error) 3%, transparent);
 }
 
-/* 原生控件样式只作用于插件拥有的表面。 */
+[data-cg-time-control] {
+	cursor: pointer;
+	border-radius: var(--radius-s);
+}
 
+[data-cg-time-control]:focus-visible {
+	outline: 2px solid var(--cg-blue);
+	outline-offset: 2px;
+}
+
+/* 原生控件统一 Apple 触感（只作用于插件自有表面） */
 .contribution-graph-settings,
 .contribution-graph-editor-modal {
-	--interactive-accent: #007aff;
-	--interactive-accent-hover: #006fe6;
+	--interactive-accent: var(--cg-blue);
+	--interactive-accent-hover: var(--cg-blue-hover);
 	--interactive-accent-hsl: 211, 100%, 50%;
 }
 
@@ -936,16 +1567,16 @@
 	accent-color: var(--cg-blue);
 }
 
-.contribution-graph-editor-modal input:not([type="checkbox"]):not([type="radio"]),
+.contribution-graph-editor-modal input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .contribution-graph-editor-modal select,
 .contribution-graph-editor-modal textarea,
-.contribution-graph-settings input:not([type="checkbox"]):not([type="radio"]),
+.contribution-graph-settings input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .contribution-graph-settings select,
 .contribution-graph-settings textarea {
 	min-height: 32px;
 	border-radius: var(--cg-radius-control);
-	border-color: var(--cg-border-strong);
-	background: var(--cg-surface-data);
+	border: 1px solid var(--cg-border-strong);
+	background: var(--cg-surface);
 	color: var(--cg-text);
 	transition: border-color var(--cg-motion-fast), box-shadow var(--cg-motion-fast),
 		background-color var(--cg-motion-fast);
@@ -959,6 +1590,7 @@
 .contribution-graph-settings textarea:focus {
 	border-color: var(--cg-blue);
 	box-shadow: 0 0 0 3px var(--cg-blue-soft);
+	outline: none;
 }
 
 .contribution-graph-editor-modal button:focus-visible,
@@ -967,7 +1599,7 @@
 	outline-offset: 2px;
 }
 
-/* 优先用容器查询切换布局，媒体查询作为回退。 */
+/* ==================== 响应式与无障碍 ==================== */
 
 @container cg-chart (max-width: 600px) {
 	.contribution-graph .activity-container {
@@ -979,29 +1611,39 @@
 	}
 
 	.contribution-graph .main {
-		padding: 16px 12px 12px;
+		padding: 16px 14px 14px;
 	}
-}
-
-.contribution-graph-editor-modal .cg-editor-shell {
-	container: cg-editor / inline-size;
 }
 
 @container cg-editor (max-width: 860px) {
 	.contribution-graph-editor-modal .cg-editor-workspace {
 		grid-template-columns: 1fr;
+		overflow: auto;
+	}
+
+	.contribution-graph-editor-modal .cg-editor-settings {
+		border-right: 0;
+		border-bottom: 1px solid var(--cg-border);
+		overflow: visible;
 	}
 }
 
 @media (max-width: 860px) {
 	.contribution-graph-editor-modal .cg-editor-workspace {
 		grid-template-columns: 1fr;
+		overflow: auto;
+	}
+
+	.contribution-graph-editor-modal .cg-editor-settings {
+		border-right: 0;
+		border-bottom: 1px solid var(--cg-border);
+		overflow: visible;
 	}
 }
 
 @media (max-width: 720px) {
 	.contribution-graph .main {
-		padding: 16px 12px 12px;
+		padding: 16px 14px 14px;
 	}
 
 	.contribution-graph .main .graph-header {
@@ -1015,7 +1657,7 @@
 	}
 
 	.contribution-graph .main .charts.default {
-		padding-inline: 8px;
+		padding-inline: 2px;
 	}
 
 	.contribution-graph .activity-container {
@@ -1025,23 +1667,19 @@
 
 	.contribution-graph .activity-container .activity-summary,
 	.contribution-graph .activity-container .cg-detail-summary {
-		padding-right: 26px;
+		padding-right: 28px;
 	}
 
 	.contribution-graph .activity-container .activity-stats {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
-	.contribution-graph-editor-modal .cg-editor-workspace {
-		padding: 12px;
-	}
-
 	.contribution-graph-editor-modal .cg-editor-header {
-		padding-inline: 14px;
+		padding-inline: 16px;
 	}
 
 	.contribution-graph-editor-modal .cg-editor-footer {
-		padding-inline: 14px;
+		padding-inline: 16px;
 	}
 
 	.contribution-graph-settings {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function Choose(props: {
 	options: ChooseOption[];
@@ -6,27 +6,36 @@ export function Choose(props: {
 	onChoose: (option: ChooseOption) => void;
 }): JSX.Element {
 	const { onChoose } = props;
-	const [data, setData] = useState(props.options);
-	const [defaultValue, setDefaultValue] = useState(props.defaultValue);
+	const [selectedValue, setSelectedValue] = useState(props.defaultValue);
+
+	useEffect(() => {
+		setSelectedValue(props.defaultValue);
+	}, [props.defaultValue]);
 
 	const choosed = (option: ChooseOption) => {
-		setDefaultValue(option.value);
+		setSelectedValue(option.value);
 		onChoose(option);
 	};
 	return (
-		<div className="contribution-graph-choose">
-			{data.map((option) => (
-				<div
-					key={option.value}
-					className={
-						option.value == defaultValue ? "item choosed" : "item"
-					}
-					ariea-label={option.tip}
-					onClick={(e) => choosed(option)}
-				>
-					<div className="icon">{option.icon}</div>
-				</div>
-			))}
+		<div className="contribution-graph-choose" role="group">
+			{props.options.map((option) => {
+				const selected = option.value == selectedValue;
+				return (
+					<button
+						type="button"
+						key={option.value}
+						className={selected ? "item choosed" : "item"}
+						aria-label={option.tip}
+						aria-pressed={selected}
+						title={option.tip}
+						onClick={() => choosed(option)}
+					>
+						<span className="icon" aria-hidden="true">
+							{option.icon}
+						</span>
+					</button>
+				);
+			})}
 		</div>
 	);
 }

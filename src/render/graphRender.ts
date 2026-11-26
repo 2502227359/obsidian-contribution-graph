@@ -18,6 +18,7 @@ import { resolveCellNavigationIndex } from "./cellKeyboardNavigation";
 import { normalizeGraphAppearance } from "./graphAppearance";
 import { durationParts, getDetailHeading, getDocumentPresentation, getGraphContext, getGraphMetric } from "./graphPresentation";
 import { getEditActivityOriginSplit } from "src/activity/metrics";
+import { createUiIcon, setUiIcon } from "src/view/icon/uiIcons";
 
 export interface GraphRender {
 	render(container: HTMLElement, graphConfig: ContributionGraphConfig): void;
@@ -112,7 +113,9 @@ export abstract class BaseGraphRender implements GraphRender {
 		}
 		createDiv({ cls: "graph-subtitle", parent: heading, text: getGraphContext(graphConfig, contributionData) });
 		if (graphConfig.timeTracking && graphConfig.openWeeklyReview) {
-			const button = header.createEl("button", { cls: "cg-weekly-review-entry", text: "周回顾", attr: {type: "button", "aria-label": "查看周回顾"} });
+			const button = header.createEl("button", { cls: "cg-weekly-review-entry", attr: {type: "button", "aria-label": "查看周回顾"} });
+			button.appendChild(createUiIcon(button.ownerDocument, "calendar", 14));
+			button.createSpan({ text: "周回顾" });
 			button.onclick = () => graphConfig.openWeeklyReview?.(button.ownerDocument);
 		}
 		const metric = getGraphMetric(graphConfig, contributionData);
@@ -267,7 +270,6 @@ export abstract class BaseGraphRender implements GraphRender {
 
 		const closeButton = createEl("button", {
 			cls: "close-button",
-			text: "×",
 			parent: contaienr,
 			attr: {
 				type: "button",
@@ -275,6 +277,7 @@ export abstract class BaseGraphRender implements GraphRender {
 				title: Locals.get().graph_close_details,
 			},
 		});
+		setUiIcon(closeButton, "close", 15);
 
 		closeButton.onclick = () => {
 			const selectedCell = contaienr
@@ -732,7 +735,16 @@ export abstract class BaseGraphRender implements GraphRender {
 	private handleCellClick(cellEl: HTMLElement, binding: CellBinding, event: MouseEvent): void {
 		const {cell, config, activity} = binding;
 		if (cell.future) return;
-		config.selectedActivityDate = this.getCellKey(cell);
+		const key = this.getCellKey(cell);
+		const alreadySelected = cellEl.classList.contains("is-selected") && config.selectedActivityDate === key && Boolean(activity?.childElementCount);
+		if (alreadySelected && activity) {
+			this.clearSelectedCell(cellEl.closest(".main"));
+			activity.empty();
+			config.selectedActivityDate = undefined;
+			config.onActivityClose?.();
+			return;
+		}
+		config.selectedActivityDate = key;
 		config.onCellClick?.(cell, event);
 		this.clearSelectedCell(cellEl.closest(".main"));
 		cellEl.closest(".charts")?.querySelectorAll<HTMLButtonElement>("button.cell").forEach(node => node.tabIndex = -1);
@@ -755,6 +767,8 @@ export abstract class BaseGraphRender implements GraphRender {
 			cells.find((cell) => cell.classList.contains("is-selected")) ||
 			cells[cells.length - 1];
 		cells.forEach((cell) => (cell.tabIndex = cell === initial ? 0 : -1));
+
+		this.bindHoverTooltip(chartsEl);
 
 		chartsEl.addEventListener("keydown", (event: KeyboardEvent) => {
 			const target = event.target;
@@ -780,6 +794,53 @@ export abstract class BaseGraphRender implements GraphRender {
 			});
 			availableCells[targetIndex].focus();
 		});
+	}
+
+	private bindHoverTooltip(chartsEl: HTMLElement): void {
+		if (chartsEl.dataset.cgTooltipBound === "true") return;
+		chartsEl.dataset.cgTooltipBound = "true";
+		const graphRoot = chartsEl.closest<HTMLElement>(".contribution-graph");
+		if (!graphRoot) return;
+		let tooltip: HTMLElement | null = null;
+		const ensureTooltip = () => {
+			if (!tooltip || !tooltip.isConnected) {
+				tooltip = graphRoot.ownerDocument.createElement("div");
+				tooltip.className = "cg-tooltip";
+				tooltip.setAttribute("role", "tooltip");
+				tooltip.hidden = true;
+				graphRoot.appendChild(tooltip);
+			}
+			return tooltip;
+		};
+		const show = (target: HTMLElement) => {
+			const cell = target.closest<HTMLElement>("button.cell[data-date]:not(.future)");
+			if (!cell || !chartsEl.contains(cell)) return;
+			const text = cell.getAttribute("aria-label") || cell.dataset.date || "";
+			if (!text) return;
+			const tip = ensureTooltip();
+			tip.textContent = text;
+			tip.hidden = false;
+			const rootRect = graphRoot.getBoundingClientRect();
+			const cellRect = cell.getBoundingClientRect();
+			if (!rootRect.width || !cellRect.width) return;
+			const center = cellRect.left - rootRect.left + cellRect.width / 2;
+			const halfWidth = Math.min(130, Math.max(48, tip.offsetWidth / 2));
+			const clampedLeft = Math.max(halfWidth + 8, Math.min(rootRect.width - halfWidth - 8, center));
+			tip.style.left = `${clampedLeft}px`;
+			tip.style.top = `${Math.max(8, cellRect.top - rootRect.top)}px`;
+			tip.classList.add("is-visible");
+		};
+		const hide = () => {
+			if (!tooltip) return;
+			tooltip.classList.remove("is-visible");
+			tooltip.hidden = true;
+		};
+		chartsEl.addEventListener("pointerover", event => show(event.target as HTMLElement));
+		chartsEl.addEventListener("pointerout", event => {
+			const next = event.relatedTarget as HTMLElement | null;
+			if (!next || !chartsEl.contains(next) || !next.closest("button.cell[data-date]")) hide();
+		});
+		chartsEl.addEventListener("scroll", hide, { passive: true });
 	}
 
 	private applySelectedCellState(

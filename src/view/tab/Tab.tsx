@@ -1,5 +1,4 @@
 import { ReactNode, forwardRef, useId, useRef, useState } from "react";
-import { Divider } from "../divider/Divider";
 
 export function getTabId(index: number, instanceId: string): string {
 	return `contribution-graph-${instanceId}-tab-${index}`;
@@ -85,7 +84,6 @@ export function Tab(props: {
 					);
 				})}
 			</div>
-			<Divider />
 			<div className="tab-items">
 				{props.tabs.map((tab, index) => (
 					<TabItem

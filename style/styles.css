@@ -1524,7 +1524,7 @@
 	border: 1px solid transparent;
 	border-radius: 6px;
 	background-color: transparent;
-	cursor: help;
+	cursor: pointer;
 }
 
 .contribution-graph .activity-container .close-button:hover {

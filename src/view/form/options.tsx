@@ -14,17 +14,17 @@ import { DateRangeType } from "src/processor/types";
 
 export const titleAlignChooseOptions: ChooseOption[] = [
 	{
-		tip: "left",
+		tip: "左对齐",
 		icon: Icons.ALIGN_LEFT,
 		value: "left",
 	},
 	{
-		tip: "center",
+		tip: "居中对齐",
 		icon: Icons.ALIGN_CENTER,
 		value: "center",
 	},
 	{
-		tip: "right",
+		tip: "右对齐",
 		icon: Icons.ALIGN_RIGHT,
 		value: "right",
 	},

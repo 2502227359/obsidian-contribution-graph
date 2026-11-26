@@ -22,7 +22,7 @@ export function ColorPicker(props: {
 	const { refs, floatingStyles, context } = useFloating({
 		open: showColorPicker,
 		onOpenChange: (open) => setShowColorPicker(open),
-		middleware: [offset(6), flip(), shift(), inline()],
+		middleware: [offset(8), flip(), shift({ padding: 8 }), inline()],
 		whileElementsMounted: autoUpdate,
 	});
 
@@ -32,9 +32,10 @@ export function ColorPicker(props: {
 	return (
 		<>
 			<button
+				ref={refs.setReference}
 				type="button"
 				className="color-indicator"
-				aria-label={props.ariaLabel || "Choose color"}
+				aria-label={props.ariaLabel || "选择颜色"}
 				style={{
 					backgroundColor: props.color,
 				}}
@@ -42,11 +43,12 @@ export function ColorPicker(props: {
 			></button>
 			{props.color && (
 				<div className="color-label">
-					<span>{props.color ?? ""}</span>
+					<span>{props.color}</span>
 					<button
 						type="button"
 						className="color-reset-button"
-						aria-label="Reset color"
+						aria-label="重置颜色"
+						title="重置颜色"
 						onClick={() => {
 							if (props.onReset) {
 								props.onReset(props.defaultColor);
@@ -55,13 +57,26 @@ export function ColorPicker(props: {
 							}
 						}}
 					>
-						x
+						<svg
+							viewBox="0 0 24 24"
+							width="11"
+							height="11"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2.2"
+							strokeLinecap="round"
+							aria-hidden="true"
+						>
+							<path d="M18 6 6 18" />
+							<path d="m6 6 12 12" />
+						</svg>
 					</button>
 				</div>
 			)}
 			{showColorPicker ? (
 				<div
 					ref={refs.setFloating}
+					className="cg-color-popover"
 					style={{
 						...floatingStyles,
 					}}

@@ -8,6 +8,7 @@ import { resolveHourNavigation } from "./hourlyNavigation";
 import { getHourlyCaption, getHourlyViewCells, HourlyViewState } from "./hourlyView";
 import { mountDatePicker, updateDatePicker } from "../view/datePicker/DatePicker";
 import { getGraphMetric } from "./graphPresentation";
+import { setUiIcon } from "../view/icon/uiIcons";
 
 interface HourlyContext {
 	root: HTMLElement;
@@ -338,20 +339,22 @@ export class HourlyGraphRender extends BaseGraphRender {
 		const nav = createDiv({cls: "cg-time-date-nav", parent: toolbar});
 		const step = context.state.view === "week" ? 7 : 1;
 		const index = context.days.findIndex(day => day.date === context.state.date);
-		const previous = this.createDateButton(nav, "‹", context.state.view === "week" ? "前一周" : "前一天");
+		const previous = this.createDateButton(nav, "chevron-left", context.state.view === "week" ? "前一周" : "前一天");
 		previous.disabled = index <= 0;
 		previous.dataset.timeFocus = "previous";
 		previous.onclick = () => this.changeView(context, {...context.state, date: context.days[Math.max(0, index - step)].date}, "previous");
 		mountDatePicker(nav, {value: context.state.date, dates: context.days.map(day => day.date),
 			onSelect: date => this.changeView(context, {...context.state, date}, "date")});
-		const next = this.createDateButton(nav, "›", context.state.view === "week" ? "后一周" : "后一天");
+		const next = this.createDateButton(nav, "chevron-right", context.state.view === "week" ? "后一周" : "后一天");
 		next.dataset.timeFocus = "next";
 		next.disabled = index < 0 || index >= context.days.length - 1;
 		next.onclick = () => this.changeView(context, {...context.state, date: context.days[Math.min(context.days.length - 1, index + step)].date}, "next");
 	}
 
-	private createDateButton(parent: HTMLElement, text: string, label: string): HTMLButtonElement {
-		return createEl("button", {parent, text, attr: {type: "button", "aria-label": label, title: label}});
+	private createDateButton(parent: HTMLElement, icon: "chevron-left" | "chevron-right", label: string): HTMLButtonElement {
+		const button = createEl("button", {parent, attr: {type: "button", "aria-label": label, title: label}});
+		setUiIcon(button, icon, 15);
+		return button;
 	}
 
 	private renderDay(context: HourlyContext): void {
@@ -374,6 +377,10 @@ export class HourlyGraphRender extends BaseGraphRender {
 			const line = createDiv({cls: "cg-hour-gridline", parent: axis});
 			line.style.top = `${top}%`;
 			createSpan({parent: line, text: `${value}${top === 0 ? " 分" : ""}`});
+		}
+		for (const left of [0, 25, 50, 75]) {
+			const vline = createDiv({cls: "cg-hour-vgrid", parent: axis});
+			vline.style.left = `${left}%`;
 		}
 	}
 
@@ -464,7 +471,12 @@ function getDayHour(day: HourlyDataColumn, hour: number): DisplayHour {
 }
 
 function getMinuteCeiling(cells: HourlyCellData[]): number {
-	return Math.max(60, Math.ceil(Math.max(0, ...cells.map(getHourlySeconds)) / 3600) * 60);
+	const maxMinutes = Math.max(0, ...cells.map(getHourlySeconds)) / 60;
+	if (maxMinutes <= 15) return 15;
+	if (maxMinutes <= 30) return 30;
+	if (maxMinutes <= 45) return 45;
+	if (maxMinutes <= 60) return 60;
+	return Math.ceil(maxMinutes / 60) * 60;
 }
 
 function formatWeekday(date: string): string {

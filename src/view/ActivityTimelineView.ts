@@ -5,6 +5,7 @@ import { activityPalette, activitySwatch } from "./activityColors";
 import { ActivityTimelineChart } from "./activityTimelineChart";
 import type { ActivityTimelineChartRow } from "./activityTimelineChart";
 import { ActivityTimelineDetails } from "./activityTimelineDetails";
+import { setUiIcon } from "./icon/uiIcons";
 
 interface TimelineRows { rows: ActivityTimelineChartRow[]; groups: TimelineGroup[]; }
 interface TimelineGroup { id: string; name: string; expanded: boolean; }
@@ -182,15 +183,21 @@ export class ActivityTimelineView {
 		this.fullDayButton = this.addButton(actions, "全天", "显示全天", "full-day", () => this.setWindow([0, 1440]));
 		const zoom = actions.appendChild(this.owner.createElement("div"));
 		zoom.className = "cg-activity-timeline-zoom";
-		this.zoomOutButton = this.addButton(zoom, "−", "缩小时间窗口", "zoom-out", () => this.zoom(2));
-		this.zoomInButton = this.addButton(zoom, "+", "放大时间窗口", "zoom-in", () => this.zoom(.5));
+		this.zoomOutButton = this.addButton(zoom, "", "缩小时间窗口", "zoom-out", () => this.zoom(2));
+		setUiIcon(this.zoomOutButton, "minus", 14);
+		this.zoomInButton = this.addButton(zoom, "", "放大时间窗口", "zoom-in", () => this.zoom(.5));
+		setUiIcon(this.zoomInButton, "plus", 14);
 		this.buildDisplayOptions(actions);
-		if (this.options.onExpand) this.addButton(actions, "↗", "放大查看时间轴", "expand", () => this.options.onExpand?.(this.getState()));
+		if (this.options.onExpand) {
+			const expandBtn = this.addButton(actions, "", "放大查看时间轴", "expand", () => this.options.onExpand?.(this.getState()));
+			setUiIcon(expandBtn, "expand", 14);
+		}
 		this.el.appendChild(toolbar);
 	}
 
 	private buildDateControls(dates: HTMLElement): void {
-		this.previousButton = this.addButton(dates, "‹", "上一天", "previous-date", () => this.shiftDate(-1));
+		this.previousButton = this.addButton(dates, "", "上一天", "previous-date", () => this.shiftDate(-1));
+		setUiIcon(this.previousButton, "chevron-left", 15);
 		this.dateInput = dates.appendChild(this.owner.createElement("input"));
 		this.dateInput.type = "date";
 		this.dateInput.value = this.state.date;
@@ -199,7 +206,8 @@ export class ActivityTimelineView {
 		this.dateInput.setAttribute("aria-label", "选择时间轴日期");
 		this.dateInput.dataset.timelineControl = "date";
 		this.dateInput.onchange = () => this.changeDate(this.dateInput.value);
-		this.nextButton = this.addButton(dates, "›", "下一天", "next-date", () => this.shiftDate(1));
+		this.nextButton = this.addButton(dates, "", "下一天", "next-date", () => this.shiftDate(1));
+		setUiIcon(this.nextButton, "chevron-right", 15);
 		this.todayButton = this.addButton(dates, "今天", "回到今天", "today", () => this.changeDate(todayDate()));
 	}
 

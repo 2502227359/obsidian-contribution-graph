@@ -1,5 +1,6 @@
 import { isValidFormattedDate, toFormattedDate } from "../../util/dateUtils";
 import { getCalendarDates, resolveCalendarKey, shiftCalendarMonth } from "./calendarDates";
+import { setUiIcon } from "../icon/uiIcons";
 
 interface DatePickerOptions {
 	value: string;
@@ -63,10 +64,12 @@ class DatePicker {
 		this.trigger.setAttribute("aria-controls", this.dialog.id);
 		parent.appendChild(this.dialog);
 		const header = makeElement(this.dialog, "div", "cg-date-header");
-		this.previous = makeButton(header, "‹", "cg-date-month-previous", "上个月");
+		this.previous = makeButton(header, "", "cg-date-month-previous", "上个月");
+		setUiIcon(this.previous, "chevron-left", 15);
 		this.label = makeElement(header, "h3", "cg-date-month-label");
 		this.label.setAttribute("aria-live", "polite");
-		this.next = makeButton(header, "›", "cg-date-month-next", "下个月");
+		this.next = makeButton(header, "", "cg-date-month-next", "下个月");
+		setUiIcon(this.next, "chevron-right", 15);
 		const weekdays = makeElement(this.dialog, "div", "cg-date-weekdays");
 		weekdays.setAttribute("aria-hidden", "true");
 		for (const day of "一二三四五六日") makeElement(weekdays, "span", "", day);

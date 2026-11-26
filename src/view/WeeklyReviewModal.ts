@@ -23,6 +23,7 @@ import type { EditActivityService } from "../activity/EditActivityService";
 import { ActivityTimelineView } from "./ActivityTimelineView";
 import { createActivityTimelineOptions, renderTimelineHourlySummary } from "./ActivityTimelineModal";
 import type { TimelineHourlySummary } from "./ActivityTimelineModal";
+import { setUiIcon } from "./icon/uiIcons";
 
 interface WeeklyReviewService {
 	getActivityTimelineDay?:ActivityTimelineService["getActivityTimelineDay"];
@@ -221,7 +222,8 @@ export class WeeklyReviewModal extends Modal {
 		header.createEl("h2", { text: "周回顾" });
 		const actions = header.createDiv({ cls: "cg-weekly-review-header-actions" });
 		if (this.snapshot) actions.createSpan({ cls: "cg-weekly-review-generated", text: `更新于 ${formatTimestamp(this.snapshot.generatedAt)}` });
-		const refresh = actions.createEl("button", { cls: "cg-weekly-review-refresh", text: "↻", attr: {type: "button", "aria-label": "刷新周回顾"} });
+		const refresh = actions.createEl("button", { cls: "cg-weekly-review-refresh", attr: {type: "button", "aria-label": "刷新周回顾", title: "刷新周回顾"} });
+		setUiIcon(refresh, "refresh", 15);
 		refresh.dataset.reviewAction = "refresh";
 		refresh.onclick = () => this.refreshSnapshot();
 	}
@@ -259,7 +261,8 @@ export class WeeklyReviewModal extends Modal {
 
 	private renderWeekNavigation(parent: HTMLElement, snapshot: WeeklyReviewSnapshot): void {
 		const nav = parent.createDiv({ cls: "cg-weekly-review-week-nav" });
-		this.createControlButton(nav, "‹", "上一周", () => this.shiftWeek(-7), {disabled: this.isPreviousDisabled(snapshot), id: "previous-week"});
+		const prevBtn = this.createControlButton(nav, "", "上一周", () => this.shiftWeek(-7), {disabled: this.isPreviousDisabled(snapshot), id: "previous-week"});
+		setUiIcon(prevBtn, "chevron-left", 15);
 		const dateNav = nav.createDiv({ cls: "cg-weekly-review-date-picker" });
 		const dateTrigger = mountDatePicker(dateNav, {
 			value: snapshot.weekStart, dates: reviewCalendarDates(snapshot), onSelect: date => this.selectDate(date),
@@ -267,7 +270,8 @@ export class WeeklyReviewModal extends Modal {
 		dateTrigger.dataset.reviewField = "date";
 		dateTrigger.setAttribute("aria-label", `选择周，当前 ${snapshot.weekStart} 至 ${snapshot.weekEnd}`);
 		dateTrigger.querySelector(".cg-date-trigger-value")!.textContent = `${snapshot.weekStart.slice(5).replace("-", "月")}日 — ${snapshot.weekEnd.slice(5).replace("-", "月")}日`;
-		this.createControlButton(nav, "›", "下一周", () => this.shiftWeek(7), {disabled: snapshot.isCurrentWeek, id: "next-week"});
+		const nextBtn = this.createControlButton(nav, "", "下一周", () => this.shiftWeek(7), {disabled: snapshot.isCurrentWeek, id: "next-week"});
+		setUiIcon(nextBtn, "chevron-right", 15);
 		if (!snapshot.isCurrentWeek) this.createControlButton(nav, "回到本周", "回到本周", () => this.selectCurrentWeek(), {disabled: false, id: "current-week"});
 		nav.createSpan({ cls: "cg-weekly-review-year", text: snapshot.weekStart.slice(0, 4) + "年" });
 	}
@@ -737,11 +741,12 @@ export class WeeklyReviewModal extends Modal {
 		for (const warning of remaining) details.createEl("p", { text: warning });
 	}
 
-	private createControlButton(parent: HTMLElement, text: string, label: string, action: () => void, options: {disabled: boolean; id: string}): void {
+	private createControlButton(parent: HTMLElement, text: string, label: string, action: () => void, options: {disabled: boolean; id: string}): HTMLButtonElement {
 		const button = parent.createEl("button", { cls: "cg-weekly-review-control-button", text, attr: { type: "button", "aria-label": label } });
 		button.dataset.reviewAction = options.id;
 		button.disabled = options.disabled;
 		button.onclick = action;
+		return button;
 	}
 
 	private createOption(select: HTMLSelectElement, value: string, label: string): void {

@@ -5,17 +5,19 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 132px !important;
-	min-width: 0 !important;
+	gap: 6px;
+	width: auto !important;
+	min-width: 118px !important;
 	min-height: 30px;
-	padding: 5px 10px !important;
-	border: 1px solid var(--cg-border-strong, var(--background-modifier-border));
+	padding: 5px 11px !important;
+	border: 1px solid var(--cg-border, var(--background-modifier-border));
 	border-radius: var(--cg-radius-control, var(--radius-s));
-	background: var(--cg-surface-data, var(--background-primary));
+	background: var(--cg-surface-subtle, var(--background-primary));
 	color: var(--cg-text, var(--text-normal));
 	font: inherit;
 	font-family: var(--font-text);
 	font-size: var(--font-ui-small);
+	font-weight: 550;
 	line-height: 1.2;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
@@ -104,6 +106,9 @@
 
 .contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-previous,
 .contribution-graph .cg-time-date-nav dialog.cg-date-picker button.cg-date-month-next {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	width: 32px !important;
 	min-width: 32px !important;
 	min-height: 32px;
@@ -112,7 +117,7 @@
 	border-radius: 8px;
 	background: transparent;
 	color: var(--cg-text-muted, var(--text-muted));
-	font-size: 20px;
+	font-size: 18px;
 	font-weight: 400;
 	line-height: 1;
 	text-align: center;

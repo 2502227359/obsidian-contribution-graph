@@ -93,6 +93,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		this.timeControlButton = undefined;
 		this.saveStatusEl = undefined;
 		const { containerEl } = this;
+		const previousScrollTop = typeof containerEl.scrollTop === "number" ? containerEl.scrollTop : 0;
 		const local = Locals.get();
 		const settings = this.activityService.getSettings();
 		containerEl.empty();
@@ -104,6 +105,9 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		this.createScopeSection(containerEl, settings);
 		this.createDataSection(containerEl, local, settings);
 		this.startServiceListening();
+		if (typeof containerEl.scrollTop === "number" && previousScrollTop > 0) {
+			containerEl.scrollTop = previousScrollTop;
+		}
 	}
 
 	hide(): void {
@@ -581,6 +585,7 @@ export class EditActivitySettingTab extends PluginSettingTab {
 		let saveIntervalText: { setValue(value: string): unknown } | undefined;
 		const setting = new Setting(container)
 			.setName("统计自动保存间隔（秒）")
+			.setClass("cg-settings-save-interval")
 			.setDesc(
 				"默认 60 秒。正常退出或进入后台时会立即保存；异常退出可能丢失尚未落盘的数据。"
 			)

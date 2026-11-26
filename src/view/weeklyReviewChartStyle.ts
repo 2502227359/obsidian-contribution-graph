@@ -1,4 +1,4 @@
-const PALETTE = ["#85a1d5", "#69aca3", "#ae99c9", "#cea477", "#c891a0", "#9caf82", "#89acba", "#bc9b84"];
+const PALETTE = ["#4c8bf5", "#34a89a", "#8e7cc3", "#e68a4d", "#d86b86", "#64a875", "#4ca1bd", "#c68863"];
 const AXIS_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 14400, 21600, 43200, 86400, 172800, 259200, 518400, 604800, 1209600, 2592000, 5184000, 7776000, 10368000, 15552000, 31536000];
 let chartHeadingSequence = 0;
 
@@ -9,7 +9,7 @@ export function labelReviewChart(host:HTMLElement,heading:HTMLElement):void {
 	host.setAttribute("aria-labelledby",heading.id);
 }
 
-export function colorFor(id:string):string {if(id==="notes")return "#85a1d5";if(id==="activity:yolo")return "#69aca3";let hash=0;for(let i=0;i<id.length;i++)hash=(hash*31+id.charCodeAt(i))>>>0;return PALETTE[hash%PALETTE.length];}
+export function colorFor(id:string):string {if(id==="notes")return "#4c8bf5";if(id==="activity:yolo")return "#34a89a";let hash=0;for(let i=0;i<id.length;i++)hash=(hash*31+id.charCodeAt(i))>>>0;return PALETTE[hash%PALETTE.length];}
 export function axisDuration(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) return "0";
 	if (seconds < 1) return "少于1秒";

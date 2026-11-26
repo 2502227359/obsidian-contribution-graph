@@ -10,7 +10,7 @@ export interface Theme {
 	rules: CellStyleRule[];
 }
 
-export const THEMES = [
+export const THEMES: Theme[] = [
 	{
 		id: "custom",
 		name: Locals.get().form_theme_placeholder,
@@ -20,14 +20,14 @@ export const THEMES = [
 	},
 	{
 		id: "default",
-		name: "default",
+		name: "默认蓝",
 		description: "",
 		colors: DEFAULT_RULES.map((rule) => rule.color),
 		rules: DEFAULT_RULES,
 	},
 	{
 		id: "ocean",
-		name: "Ocean",
+		name: "深海青",
 		description: "",
 		colors: ["#8dd1e2", "#63a1be", "#376d93", "#012f60"],
 		rules: buildPureColorTheme(
@@ -40,7 +40,7 @@ export const THEMES = [
 	},
 	{
 		id: "halloween",
-		name: "Halloween",
+		name: "暖橘金",
 		description: "",
 		colors: ["#fdd577", "#faaa53", "#f07c44", "#d94e49"],
 		rules: buildPureColorTheme(
@@ -53,7 +53,7 @@ export const THEMES = [
 	},
 	{
 		id: "lovely",
-		name: "Lovely",
+		name: "樱花粉",
 		description: "",
 		colors: ["#fedcdc", "#fdb8bf", "#f892a9", "#ec6a97"],
 		rules: buildPureColorTheme(
@@ -66,7 +66,7 @@ export const THEMES = [
 	},
 	{
 		id: "wine",
-		name: "Wine",
+		name: "勃艮第",
 		description: "",
 		colors: ["#d8b0b3", "#c78089", "#ac4c61", "#830738"],
 		rules: buildPureColorTheme(
@@ -79,7 +79,7 @@ export const THEMES = [
 	},
 	{
 		id: "colorblind-blue",
-		name: "Colorblind Blue",
+		name: "色觉友好 · 蓝",
 		description: "",
 		colors: ["#dbe9f4", "#91bad6", "#477da7", "#153b5b"],
 		rules: buildPureColorTheme(
@@ -92,7 +92,7 @@ export const THEMES = [
 	},
 	{
 		id: "colorblind-gold",
-		name: "Colorblind Gold",
+		name: "色觉友好 · 金",
 		description: "",
 		colors: ["#fff0c2", "#e5bd62", "#a87921", "#5c3b00"],
 		rules: buildPureColorTheme(
