@@ -1,5 +1,12 @@
 # Development Log
 
+## 2026年11月26日 — 零点三十点一 主题监听防误触发优化
+
+- 在 `src/view/weeklyReviewChartStyle.ts` 提取共用 `observeThemeChanges()` 与 `readThemeSignature()`，统一替换学习时间轴与周回顾 4 处图表视图（`ActivityTimelineView`、`WeeklyReviewCharts`、`WeeklyReviewRankingChart`、`WeeklyReviewTimelineCharts`）中无条件触发 `paint()` 的 `MutationObserver`。
+- 对 `is-grabbing`、`is-dragging`、`is-resizing`、`is-scrolling` 等瞬时交互 class 快速放行（不触发 `getComputedStyle` 样式重算），并对其他 `class`／`style` 变更比对暗亮主题类与核心 CSS 变量／字体签名，仅在主题真正变化时才重绘图表。
+- 彻底消除在关联图谱等视图长按左键拖图（`document.body` 增删 `is-grabbing`）时触发整张学习时间轴同步重绘造成的 3 秒级主线程阻塞（CMBK 实机复测按下耗时由 `3,184 ms` 降至 `0.6 ms`）。
+- 验证：47 个测试文件共 396 项测试通过（含新增主题防误触发单元测试），生产构建、打包与 CMBK 备份部署重载核验通过。
+
 ## 2026年11月18日 — 零点二十九点二 周回顾与时间轴容器打磨
 
 - 周回顾顶部按日期和筛选组织，分组层级收进“显示”，保留原有目录、参考目标和所有分析入口；统一菜单边界、卡片层次、间距和选中状态。
