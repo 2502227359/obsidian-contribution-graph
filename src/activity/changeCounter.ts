@@ -21,6 +21,23 @@ export function isCountedUserEvent(event: string): boolean {
 	);
 }
 
+export function changesOnlyHighlightMarkers(document: Text, changes: ChangeSet): boolean {
+	// 内置高亮命令用 input.type 提交成对标记，保留正文。
+	const markers = /^(?:==[🔴🟠🟡🟢🔵🟣]?)*$/u;
+	let onlyMarkers = true;
+	let removed = 0;
+	let inserted = 0;
+	changes.iterChanges((from, to, _fromB, _toB, text) => {
+		if (!onlyMarkers) return;
+		const before = document.sliceString(from, to);
+		const after = text.toString();
+		onlyMarkers = markers.test(before) && markers.test(after);
+		removed += before.match(/==/g)?.length ?? 0;
+		inserted += after.match(/==/g)?.length ?? 0;
+	});
+	return onlyMarkers && removed + inserted > 0 && removed % 2 === 0 && inserted % 2 === 0;
+}
+
 export function countChangedCharacters(
 	startDocument: Text,
 	changes: ChangeSet,

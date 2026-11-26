@@ -16,6 +16,7 @@ import {
 	TrackingPeriod,
 } from "src/types";
 import {
+	changesOnlyHighlightMarkers,
 	countChangedCharacters,
 	isCountedUserEvent,
 } from "./changeCounter";
@@ -1306,6 +1307,9 @@ export class EditActivityService {
 
 		if (pending && intentMatchesUserEvent(pending.intent, userEvent)) {
 			this.pendingInputIntents.delete(view);
+			return true;
+		}
+		if (userEvent === "input.type" && changesOnlyHighlightMarkers(transaction.startState.doc, transaction.changes)) {
 			return true;
 		}
 		return (

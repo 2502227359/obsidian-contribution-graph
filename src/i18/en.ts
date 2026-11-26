@@ -223,7 +223,7 @@ export class En implements Local {
 	settings_exclude_markdown_formatting = "Ignore Markdown formatting marks";
 	settings_exclude_markdown_formatting_description = "Exclude heading, list, quote, emphasis, link, code-fence, task-box, and table delimiters recognized by the editor. Prose punctuation, link text, and code content are still counted. The current line settles on a line change, navigation, or blur; only future edits are affected.";
 	settings_strict_user_input = "Strictly exclude automated edits";
-	settings_strict_user_input_description = "Only count edits directly triggered by typing, IME, and enabled clipboard or drop actions. Turning this off improves compatibility with editor plugins, but templates and other automated insertions may be counted.";
+	settings_strict_user_input_description = "Count edits from typing, IME, enabled clipboard or drop actions, and edits that only change highlight markers. Turning this off improves compatibility with editor plugins, but templates and other automated insertions may be counted.";
 	settings_count_pasted_text = "Count pasted text";
 	settings_count_pasted_text_description = "Include manually pasted text in edit activity. When disabled, the entire paste replacement is excluded, including characters replaced by the paste.";
 	settings_tracked_folders = "Tracked folders";

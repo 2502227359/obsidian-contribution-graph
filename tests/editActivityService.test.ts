@@ -594,6 +594,38 @@ describe("EditActivityService persistence and lifecycle", () => {
 		await service.unload();
 	});
 
+	it.each([
+		["abc", [[0, "=="], 3, [0, "=="]], 4, 0],
+		["abc", [[0, "==🔴"], 3, [0, "=="]], 5, 0],
+		["==abc==", [[2], 3, [2]], 0, 4],
+		["==🔴abc==", [[4], [0, "==🔵"], 3, [2], [0, "=="]], 5, 5],
+		["abc", [1, [0, "===="], 2], 4, 0],
+		["abc", [[0, "==template=="], 3], 0, 0],
+		["abc", [[0, "=="], 3], 0, 0],
+	] as const)("统计高亮标记且排除普通自动编辑：%s %j", async (doc, changes, addedChars, deletedChars) => {
+		const service = new EditActivityService(createPlugin() as never);
+		await service.initialize();
+		await service.setTrackingEnabled(true);
+		const activity = service as unknown as {
+			getMarkdownFilePath: () => string;
+			handleEditorUpdate: (update: unknown) => void;
+		};
+		activity.getMarkdownFilePath = () => "Notes/Highlight.md";
+		const state = EditorState.create({ doc });
+		const transaction = state.update({
+			changes: ChangeSet.fromJSON(changes),
+			userEvent: "input.type",
+		});
+		activity.handleEditorUpdate({
+			docChanged: true,
+			view: { hasFocus: true, composing: false },
+			transactions: [transaction],
+		});
+		const [stats] = service.getDailyEditStats();
+		expect([stats?.addedChars ?? 0, stats?.deletedChars ?? 0]).toEqual([addedChars, deletedChars]);
+		await service.unload();
+	});
+
 	it("excludes the whole paste replacement when paste counting is disabled", async () => {
 		const plugin = createPlugin();
 		const service = new EditActivityService(

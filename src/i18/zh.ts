@@ -221,7 +221,7 @@ export class Zh implements Local {
 	settings_exclude_markdown_formatting = "忽略 Markdown 格式标记";
 	settings_exclude_markdown_formatting_description = "只排除编辑器已识别的标题、列表、引用、强调、链接、代码围栏、任务框和表格分隔符；正文标点、链接文字和代码内容仍会统计。当前行会在换行、离开或失焦时结算，仅影响之后的编辑。";
 	settings_strict_user_input = "严格排除自动修改";
-	settings_strict_user_input_description = "仅统计由键盘、输入法及已启用的剪贴板或拖放操作直接触发的编辑。关闭后兼容更多编辑插件，但模板等自动插入可能被统计。";
+	settings_strict_user_input_description = "统计键盘、输入法、已启用的剪贴板或拖放操作，以及仅修改高亮标记的操作。关闭后兼容更多编辑插件，但模板等自动插入可能被统计。";
 	settings_count_pasted_text = "统计粘贴内容";
 	settings_count_pasted_text_description = "将用户手动粘贴的文本计入编辑活动。关闭后会排除整笔粘贴替换，包括粘贴时被替换的字符。";
 	settings_tracked_folders = "统计文件夹";
