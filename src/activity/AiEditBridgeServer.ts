@@ -97,7 +97,7 @@ export class AiEditBridgeServer {
 		}
 		this.server = server;
 		this.port = address.port;
-		this.options.spool.writeBridgeInfo({
+		await this.options.spool.writeBridgeInfoAsync({
 			version: 1,
 			protocolVersion: AI_BRIDGE_PROTOCOL_VERSION,
 			port: this.port,

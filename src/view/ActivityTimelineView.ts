@@ -498,27 +498,44 @@ function initialState(options: ActivityTimelineViewOptions): ActivityTimelineVie
 
 function buildRows(blocks: readonly ActivityTimelineBlock[], state: ActivityTimelineViewState): TimelineRows {
 	const groups = [...new Map(blocks.map(block => [block.groupId, {id: block.groupId, name: block.groupName, expanded: state.expanded.includes(block.groupId)}])).values()].sort((left, right) => left.name.localeCompare(right.name));
+	const blocksByGroup = new Map<string, ActivityTimelineBlock[]>();
+	for (const block of blocks) {
+		let list = blocksByGroup.get(block.groupId);
+		if (!list) { list = []; blocksByGroup.set(block.groupId, list); }
+		list.push(block);
+	}
 	const rows: ActivityTimelineChartRow[] = [];
+	const rowById = new Map<string, ActivityTimelineChartRow & { blockIds: string[] }>();
 	for (const group of groups) {
-		const groupBlocks = blocks.filter(block => block.groupId === group.id);
+		const groupBlocks = blocksByGroup.get(group.id) || [];
 		if (group.expanded) {
 			const byPath = new Map<string, ActivityTimelineBlock[]>();
-			for (const block of groupBlocks) byPath.set(block.path, [...(byPath.get(block.path) || []), block]);
-			for (const [path, items] of [...byPath].sort(([left], [right]) => left.localeCompare(right))) appendPacked(rows, items, {baseId:`${group.id}:${path}`,label:blockLabel(items[0]),groupId:group.id,depth:2});
-		} else appendPacked(rows, groupBlocks, {baseId:group.id,label:group.name,groupId:group.id,depth:1});
+			for (const block of groupBlocks) {
+				let list = byPath.get(block.path);
+				if (!list) { list = []; byPath.set(block.path, list); }
+				list.push(block);
+			}
+			for (const [path, items] of [...byPath].sort(([left], [right]) => left.localeCompare(right))) appendPacked(rows, rowById, items, {baseId:`${group.id}:${path}`,label:blockLabel(items[0]),groupId:group.id,depth:2});
+		} else appendPacked(rows, rowById, groupBlocks, {baseId:group.id,label:group.name,groupId:group.id,depth:1});
 	}
 	return {rows, groups};
 }
 
-function appendPacked(rows: ActivityTimelineChartRow[], blocks: readonly ActivityTimelineBlock[], options:{baseId:string;label:string;groupId:string;depth:1|2}): void {
+function appendPacked(
+	rows: ActivityTimelineChartRow[],
+	rowById: Map<string, ActivityTimelineChartRow & { blockIds: string[] }>,
+	blocks: readonly ActivityTimelineBlock[],
+	options:{baseId:string;label:string;groupId:string;depth:1|2}
+): void {
 	const {baseId,label,groupId,depth}=options;
 	const lanes: number[] = [];
 	for (const block of [...blocks].sort(compareBlocks)) {
 		let lane = lanes.findIndex(end => end <= block.startMinute);
 		if (lane < 0) { lane = lanes.length; lanes.push(block.endMinute); } else lanes[lane] = block.endMinute;
-		let row = rows.find(candidate => candidate.id === `${baseId}:${lane}`);
-		if (!row) { row = {id: `${baseId}:${lane}`, label: lane ? `${label} · 并行${lane+1}` : label, groupId, depth, blockIds: []}; rows.push(row); }
-		row.blockIds = [...row.blockIds, block.id];
+		const rowId = `${baseId}:${lane}`;
+		let row = rowById.get(rowId);
+		if (!row) { row = {id: rowId, label: lane ? `${label} · 并行${lane+1}` : label, groupId, depth, blockIds: []}; rowById.set(rowId, row); rows.push(row); }
+		row.blockIds.push(block.id);
 	}
 }
 

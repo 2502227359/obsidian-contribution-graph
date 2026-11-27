@@ -89,6 +89,7 @@ export class WeeklyReviewModal extends Modal {
 	private activitySummary?:TimelineHourlySummary;
 	private activityReturnFocus?:HTMLElement;
 	private activityReturnScroll=0;
+	private goalInputTimer?: ReturnType<typeof setTimeout>;
 
 	constructor(app: App, service: WeeklyReviewService, onClosed: () => void) {
 		super(app);
@@ -116,6 +117,10 @@ export class WeeklyReviewModal extends Modal {
 	onClose(): void {
 		if (this.closed) return;
 		this.closed = true;
+		if (this.goalInputTimer !== undefined) {
+			clearTimeout(this.goalInputTimer);
+			this.goalInputTimer = undefined;
+		}
 		this.activitySummary?.dispose();this.activityView?.dispose();this.activityHost?.remove();
 		this.closeDatePicker();
 		this.charts?.dispose();
@@ -355,15 +360,29 @@ export class WeeklyReviewModal extends Modal {
 		line.createSpan({ cls: "cg-weekly-review-control-hint", text: "分钟 / 天" });
 		const error = group.createDiv({ cls: "cg-weekly-review-control-error", attr: { role: "status" } });
 		error.textContent = this.goalError;
-		const updateGoal = () => {
+		const applyGoal = () => {
+			if (this.goalInputTimer !== undefined) {
+				clearTimeout(this.goalInputTimer);
+				this.goalInputTimer = undefined;
+			}
 			this.goalText = input.value;
 			this.goalError = validateGoalText(this.goalText);
 			error.textContent = this.goalError;
 			input.setAttribute("aria-invalid", String(Boolean(this.goalError)));
 			this.refreshReport();
 		};
-		input.oninput = updateGoal;
-		input.onchange = updateGoal;
+		input.oninput = () => {
+			this.goalText = input.value;
+			this.goalError = validateGoalText(this.goalText);
+			error.textContent = this.goalError;
+			input.setAttribute("aria-invalid", String(Boolean(this.goalError)));
+			if (this.goalInputTimer !== undefined) clearTimeout(this.goalInputTimer);
+			this.goalInputTimer = setTimeout(() => {
+				this.goalInputTimer = undefined;
+				this.refreshReport();
+			}, 180);
+		};
+		input.onchange = applyGoal;
 		const clear = line.createEl("button", { cls: "cg-weekly-review-clear-goal", text: "清空" });
 		clear.type = "button";
 		clear.dataset.reviewAction = "clear-goal";
@@ -571,7 +590,7 @@ export class WeeklyReviewModal extends Modal {
 		const config=new ContributionGraphConfig();
 		Object.assign(config,{title:"学习时间轴",fromDate:this.snapshot.weekStart,toDate:this.snapshot.weekEnd,activityFolders:this.selectedRoot?[this.selectedRoot]:[],timelineDepth:this.depth});
 		const options=createActivityTimelineOptions(this.app,this.service as EditActivityService,config,host.ownerDocument);
-		this.activityView=new ActivityTimelineView(host,{...options,date,groupingRoot:this.getGroupingOptions(this.snapshot).groupingRoot,onExpand:undefined,
+		this.activityView=new ActivityTimelineView(host,{...options,hostOwnsLifecycle:true,date,groupingRoot:this.getGroupingOptions(this.snapshot).groupingRoot,onExpand:undefined,
 			onHourly:(day,folders)=>this.openActivityHours(day,folders),onOpenDocument:(path,event)=>this.openDocument(path,event)});
 		this.modalEl.setAttribute("aria-label","周回顾 · 学习时间轴");back.focus({preventScroll:true});
 	}

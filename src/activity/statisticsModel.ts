@@ -87,6 +87,132 @@ export function mergeStatistics(inputs: readonly StatisticsData[]): StatisticsDa
 	return result;
 }
 
+/**
+ * 将轻量级本机增量叠加到已合并的只读远端基线上：
+ * 未被本机触及的历史日期与历史分桶直接共享基线引用，避免每次按键/查询深拷贝全部历史。
+ */
+export function mergeStatisticsOverlay(
+	base: StatisticsData,
+	local: StatisticsData,
+	baseSegmentIds?: ReadonlySet<string>
+): StatisticsData {
+	const localDailyKeys = Object.keys(local.dailyStats || {});
+	let dailyStats: Record<string, StoredDailyEditStats>;
+	if (localDailyKeys.length === 0) {
+		dailyStats = base.dailyStats;
+	} else {
+		dailyStats = Object.create(null);
+		Object.assign(dailyStats, base.dailyStats);
+		for (const date of localDailyKeys) {
+			if (DANGEROUS_KEYS.has(date)) continue;
+			const localDay = local.dailyStats[date];
+			const existing = base.dailyStats[date];
+			if (!existing) {
+				dailyStats[date] = cloneDailyStatDay(localDay);
+			} else {
+				const cloned = cloneDailyStatDay(existing);
+				mergeSingleDailyStat(cloned, localDay);
+				dailyStats[date] = cloned;
+			}
+		}
+	}
+
+	const localBucketKeys = Object.keys(local.timeActivity?.buckets || {});
+	let buckets: Record<string, TimeBucket>;
+	if (localBucketKeys.length === 0) {
+		buckets = base.timeActivity.buckets;
+	} else {
+		buckets = Object.create(null);
+		Object.assign(buckets, base.timeActivity.buckets);
+		for (const key of localBucketKeys) {
+			if (DANGEROUS_KEYS.has(key)) continue;
+			const localBucket = local.timeActivity.buckets[key];
+			const existing = base.timeActivity.buckets[key];
+			if (!existing) {
+				buckets[key] = cloneBucket(localBucket);
+			} else {
+				const cloned = cloneBucket(existing);
+				for (const [path, seconds] of Object.entries(localBucket.documents || {})) {
+					if (DANGEROUS_KEYS.has(path)) continue;
+					cloned.documents[path] = (cloned.documents[path] || 0) + safeNumber(seconds);
+				}
+				buckets[key] = cloned;
+			}
+		}
+	}
+
+	const periods = local.timeActivity.periods.length === 0
+		? base.timeActivity.periods
+		: dedupeSorted(
+			[...base.timeActivity.periods, ...local.timeActivity.periods].map(cloneCoveragePeriod),
+			period => period.start
+		);
+	const policyChanges = local.timeActivity.policyChanges.length === 0
+		? base.timeActivity.policyChanges
+		: dedupeSorted(
+			[...base.timeActivity.policyChanges, ...local.timeActivity.policyChanges].map(change => ({ ...change })),
+			change => change.at
+		);
+
+	const timeActivity: StoredTimeActivity = { buckets, periods, policyChanges };
+	const baseTimeline = timelineOf(base.timeActivity).timeline;
+	const localTimeline = timelineOf(local.timeActivity).timeline;
+	if (!localTimeline) {
+		if (baseTimeline) timelineOf(timeActivity).timeline = baseTimeline;
+	} else if (!baseTimeline) {
+		timelineOf(timeActivity).timeline = cloneTimeline(localTimeline);
+	} else {
+		const canFastConcat =
+			!(baseTimeline.issues?.length) &&
+			!(localTimeline.issues?.length) &&
+			baseSegmentIds !== undefined &&
+			localTimeline.segments.every(segment => !baseSegmentIds.has(segment.id));
+		if (canFastConcat) {
+			timelineOf(timeActivity).timeline = {
+				formatVersion: 1,
+				segments: [...baseTimeline.segments, ...localTimeline.segments.map(cloneSegment)],
+				recordingPeriods: localTimeline.recordingPeriods.length === 0
+					? baseTimeline.recordingPeriods
+					: dedupeSorted(
+						[...baseTimeline.recordingPeriods, ...localTimeline.recordingPeriods].map(cloneRecordingPeriod),
+						period => period.start
+					),
+			};
+		} else {
+			timelineOf(timeActivity).timeline = cloneTimeline(baseTimeline);
+			mergeTimelines(timeActivity, local.timeActivity);
+		}
+	}
+
+	const trackingPeriods = local.trackingPeriods.length === 0
+		? base.trackingPeriods
+		: dedupeSorted([...base.trackingPeriods, ...local.trackingPeriods], period => period.startDate);
+	const collectionScopePeriods = local.collectionScopePeriods.length === 0
+		? base.collectionScopePeriods
+		: dedupeSorted(
+			[...base.collectionScopePeriods, ...local.collectionScopePeriods],
+			period => period.startDate
+		).map(period => ({
+			...period,
+			folders: [...period.folders],
+			...(period.files ? { files: [...period.files] } : {}),
+		}));
+	const countingPolicyPeriods = local.countingPolicyPeriods.length === 0
+		? base.countingPolicyPeriods
+		: dedupeSorted(
+			[...base.countingPolicyPeriods, ...local.countingPolicyPeriods],
+			period => period.startedAt
+		).map(period => ({ ...period, policy: { ...period.policy } }));
+
+	return {
+		dailyStats,
+		timeActivity,
+		trackingPeriods,
+		collectionScopePeriods,
+		countingPolicyPeriods,
+	};
+}
+
 export function closeStatistics(data: StatisticsData, at: number): StatisticsData {
 	const result = statisticsFrom(data);
 	const closeAt = Number.isFinite(at) ? at : Date.now();
@@ -171,6 +297,35 @@ export function tagAiDailyStats(data: StatisticsData): StatisticsData {
 	return result;
 }
 
+function mergeSingleDailyStat(
+	targetDay: StoredDailyEditStats,
+	sourceDay: StoredDailyEditStats
+): void {
+	targetDay.addedChars += safeNumber(sourceDay.addedChars);
+	targetDay.deletedChars += safeNumber(sourceDay.deletedChars);
+	const dayAiAdded = safeNumber(targetDay.aiAddedChars) + safeNumber(sourceDay.aiAddedChars);
+	const dayAiDeleted = safeNumber(targetDay.aiDeletedChars) + safeNumber(sourceDay.aiDeletedChars);
+	if (dayAiAdded > 0) targetDay.aiAddedChars = dayAiAdded;
+	if (dayAiDeleted > 0) targetDay.aiDeletedChars = dayAiDeleted;
+	for (const [path, sourceDocument] of Object.entries(sourceDay.documents || {})) {
+		if (DANGEROUS_KEYS.has(path)) continue;
+		const existing = targetDay.documents[path];
+		if (!existing) {
+			targetDay.documents[path] = cloneDocument(sourceDocument);
+			continue;
+		}
+		existing.addedChars += safeNumber(sourceDocument.addedChars);
+		existing.deletedChars += safeNumber(sourceDocument.deletedChars);
+		const docAiAdded = safeNumber(existing.aiAddedChars) + safeNumber(sourceDocument.aiAddedChars);
+		const docAiDeleted = safeNumber(existing.aiDeletedChars) + safeNumber(sourceDocument.aiDeletedChars);
+		if (docAiAdded > 0) existing.aiAddedChars = docAiAdded;
+		if (docAiDeleted > 0) existing.aiDeletedChars = docAiDeleted;
+		if (sourceDocument.lastEditPosition) {
+			existing.lastEditPosition = { ...sourceDocument.lastEditPosition };
+		}
+	}
+}
+
 function mergeDailyStats(
 	target: Record<string, StoredDailyEditStats>,
 	source: Record<string, StoredDailyEditStats>
@@ -182,29 +337,7 @@ function mergeDailyStats(
 			deletedChars: 0,
 			documents: Object.create(null),
 		});
-		targetDay.addedChars += safeNumber(sourceDay.addedChars);
-		targetDay.deletedChars += safeNumber(sourceDay.deletedChars);
-		const dayAiAdded = safeNumber(targetDay.aiAddedChars) + safeNumber(sourceDay.aiAddedChars);
-		const dayAiDeleted = safeNumber(targetDay.aiDeletedChars) + safeNumber(sourceDay.aiDeletedChars);
-		if (dayAiAdded > 0) targetDay.aiAddedChars = dayAiAdded;
-		if (dayAiDeleted > 0) targetDay.aiDeletedChars = dayAiDeleted;
-		for (const [path, sourceDocument] of Object.entries(sourceDay.documents || {})) {
-			if (DANGEROUS_KEYS.has(path)) continue;
-			const existing = targetDay.documents[path];
-			if (!existing) {
-				targetDay.documents[path] = cloneDocument(sourceDocument);
-				continue;
-			}
-			existing.addedChars += safeNumber(sourceDocument.addedChars);
-			existing.deletedChars += safeNumber(sourceDocument.deletedChars);
-			const docAiAdded = safeNumber(existing.aiAddedChars) + safeNumber(sourceDocument.aiAddedChars);
-			const docAiDeleted = safeNumber(existing.aiDeletedChars) + safeNumber(sourceDocument.aiDeletedChars);
-			if (docAiAdded > 0) existing.aiAddedChars = docAiAdded;
-			if (docAiDeleted > 0) existing.aiDeletedChars = docAiDeleted;
-			if (sourceDocument.lastEditPosition) {
-				existing.lastEditPosition = { ...sourceDocument.lastEditPosition };
-			}
-		}
+		mergeSingleDailyStat(targetDay, sourceDay);
 	}
 }
 
@@ -231,24 +364,27 @@ function mergeTimeActivity(target: StoredTimeActivity, source: StoredTimeActivit
 	mergeTimelines(target, source);
 }
 
+function cloneDailyStatDay(day: StoredDailyEditStats): StoredDailyEditStats {
+	const documents: Record<string, StoredDocumentEditStats> = Object.create(null);
+	for (const [path, document] of Object.entries(day.documents || {})) {
+		if (!DANGEROUS_KEYS.has(path)) documents[path] = cloneDocument(document);
+	}
+	const aiAdded = safeNumber(day.aiAddedChars);
+	const aiDeleted = safeNumber(day.aiDeletedChars);
+	return {
+		addedChars: safeNumber(day.addedChars),
+		deletedChars: safeNumber(day.deletedChars),
+		...(aiAdded > 0 ? { aiAddedChars: aiAdded } : {}),
+		...(aiDeleted > 0 ? { aiDeletedChars: aiDeleted } : {}),
+		documents,
+	};
+}
+
 function cloneDailyStats(source: Record<string, StoredDailyEditStats>): Record<string, StoredDailyEditStats> {
 	const result: Record<string, StoredDailyEditStats> = Object.create(null);
 	for (const [date, day] of Object.entries(source || {})) {
 		if (DANGEROUS_KEYS.has(date)) continue;
-		const documents: Record<string, StoredDocumentEditStats> = Object.create(null);
-		for (const [path, document] of Object.entries(day.documents || {})) {
-			if (!DANGEROUS_KEYS.has(path)) documents[path] = cloneDocument(document);
-		}
-		const aiAdded = safeNumber(day.aiAddedChars);
-		const aiDeleted = safeNumber(day.aiDeletedChars);
-		const clone: StoredDailyEditStats = {
-			addedChars: safeNumber(day.addedChars),
-			deletedChars: safeNumber(day.deletedChars),
-			...(aiAdded > 0 ? { aiAddedChars: aiAdded } : {}),
-			...(aiDeleted > 0 ? { aiDeletedChars: aiDeleted } : {}),
-			documents,
-		};
-		result[date] = clone;
+		result[date] = cloneDailyStatDay(day);
 	}
 	return result;
 }

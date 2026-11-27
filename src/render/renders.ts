@@ -189,10 +189,27 @@ interface RenderCellSnapshot {
 	data: ContributionCellData;
 }
 
+export function buildCellSignature(data: ContributionCellData, today: string): string {
+	const edit = data.editStats;
+	const time = data.timeStats;
+	const items = data.items;
+	let itemSig = "";
+	if (items && items.length > 0) {
+		const parts: string[] = [];
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i];
+			parts.push(`${item.label}\u001f${item.value ?? ""}\u001f${item.description ?? ""}\u001f${item.link?.href ?? ""}\u001f${item.open ? 1 : 0}`);
+		}
+		itemSig = parts.join("\u001e");
+	}
+	return `${data.date}|${data.hour ?? ""}|${data.value}|${data.tracked ?? ""}|${data.trackingState ?? ""}|${data.future ? 1 : 0}|${data.date === today ? 1 : 0}|${data.summary ?? ""}|${edit ? `${edit.addedChars},${edit.deletedChars},${edit.changedChars},${edit.aiAddedChars ?? 0},${edit.aiDeletedChars ?? 0},${edit.countingPolicyChanged ? 1 : 0}` : ""}|${time ? `${time.seconds},${time.trackingState},${time.policyChanged ? 1 : 0}` : ""}|${itemSig}`;
+}
+
 function snapshotCells(cells: ContributionCellData[]): RenderCellSnapshot[] {
+	const today = toFormattedDate(new Date());
 	return cells.map(data => ({
 		key: data.hour === undefined ? data.date : `${data.date}T${data.hour}`,
-		signature: JSON.stringify({data, isToday: data.date === toFormattedDate(new Date())}),
+		signature: buildCellSignature(data, today),
 		data,
 	}));
 }
@@ -221,6 +238,5 @@ function getStructureKey(config: ContributionGraphConfig): string {
 }
 
 function findContributionNode(container: HTMLElement, date: string): HTMLElement | undefined {
-	return Array.from(container.querySelectorAll<HTMLElement>(".charts .cell[data-date]"))
-		.find(cell => cell.dataset.date === date);
+	return container.querySelector<HTMLElement>(`.charts .cell[data-date="${date}"]`) ?? undefined;
 }

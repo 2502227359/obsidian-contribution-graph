@@ -143,7 +143,9 @@ export class EditActivityService {
 	private manualTimePaused = false;
 	private timeContext: TimeTrackingContext = { reason: "NO_MARKDOWN" };
 	private lastTimeDiscard?: IdleTimeDiscard;
-	private timeTotalCache?: { date: string; local: number; remote: number; seconds: number };
+	private timeTotalCache?: { date: string; local: number; remote: number; scopeKey: string; seconds: number };
+	private remoteTodayTimeCache?: { date: string; remote: number; scopeKey: string; seconds: number };
+	private lastEmittedTimeStatusKey?: string;
 	private pendingSince?: number;
 	private pendingWrites = 0;
 	private saveStatus = "已保存";
@@ -447,23 +449,35 @@ export class EditActivityService {
 	}
 
 	private notifyStatisticsChanges(before: StatisticsData, after: StatisticsData): void {
-		const metadata = (data: StatisticsData) => ({ tracking: data.trackingPeriods, scope: data.collectionScopePeriods, policy: data.countingPolicyPeriods });
-		if (canonicalStatistics(metadata(before)) !== canonicalStatistics(metadata(after))) {
+		const metadataChanged =
+			(before.trackingPeriods !== after.trackingPeriods && canonicalStatistics(before.trackingPeriods) !== canonicalStatistics(after.trackingPeriods)) ||
+			(before.collectionScopePeriods !== after.collectionScopePeriods && canonicalStatistics(before.collectionScopePeriods) !== canonicalStatistics(after.collectionScopePeriods)) ||
+			(before.countingPolicyPeriods !== after.countingPolicyPeriods && canonicalStatistics(before.countingPolicyPeriods) !== canonicalStatistics(after.countingPolicyPeriods));
+		if (metadataChanged) {
 			this.invalidateStatsCache(); this.emitChange({ type: "COVERAGE", source: "EDIT_ACTIVITY" });
 		}
-		for (const date of new Set([...Object.keys(before.dailyStats), ...Object.keys(after.dailyStats)])) {
-			if (canonicalStatistics(before.dailyStats[date]) === canonicalStatistics(after.dailyStats[date])) continue;
-			this.invalidateStatsCache(date); this.emitChange({ type: "STATS", source: "EDIT_ACTIVITY", date });
+		if (before.dailyStats !== after.dailyStats) {
+			for (const date of new Set([...Object.keys(before.dailyStats), ...Object.keys(after.dailyStats)])) {
+				if (before.dailyStats[date] === after.dailyStats[date]) continue;
+				if (canonicalStatistics(before.dailyStats[date]) === canonicalStatistics(after.dailyStats[date])) continue;
+				this.invalidateStatsCache(date); this.emitChange({ type: "STATS", source: "EDIT_ACTIVITY", date });
+			}
 		}
 		const timeKeys: TimeActivityKey[] = [];
-		for (const key of new Set([...Object.keys(before.timeActivity.buckets), ...Object.keys(after.timeActivity.buckets)])) {
-			if (canonicalStatistics(before.timeActivity.buckets[key]) === canonicalStatistics(after.timeActivity.buckets[key])) continue;
-			const bucket = after.timeActivity.buckets[key] || before.timeActivity.buckets[key];
-			timeKeys.push({ date: bucket.date, hour: bucket.hour });
+		if (before.timeActivity.buckets !== after.timeActivity.buckets) {
+			for (const key of new Set([...Object.keys(before.timeActivity.buckets), ...Object.keys(after.timeActivity.buckets)])) {
+				if (before.timeActivity.buckets[key] === after.timeActivity.buckets[key]) continue;
+				if (canonicalStatistics(before.timeActivity.buckets[key]) === canonicalStatistics(after.timeActivity.buckets[key])) continue;
+				const bucket = after.timeActivity.buckets[key] || before.timeActivity.buckets[key];
+				timeKeys.push({ date: bucket.date, hour: bucket.hour });
+			}
 		}
-		const coverageChanged = canonicalStatistics(before.timeActivity.periods) !== canonicalStatistics(after.timeActivity.periods) ||
-			canonicalStatistics(before.timeActivity.policyChanges) !== canonicalStatistics(after.timeActivity.policyChanges);
-		const detailsChanged=canonicalStatistics(before.timeActivity.timeline)!==canonicalStatistics(after.timeActivity.timeline);
+		const coverageChanged =
+			(before.timeActivity.periods !== after.timeActivity.periods && canonicalStatistics(before.timeActivity.periods) !== canonicalStatistics(after.timeActivity.periods)) ||
+			(before.timeActivity.policyChanges !== after.timeActivity.policyChanges && canonicalStatistics(before.timeActivity.policyChanges) !== canonicalStatistics(after.timeActivity.policyChanges));
+		const detailsChanged =
+			before.timeActivity.timeline !== after.timeActivity.timeline &&
+			canonicalStatistics(before.timeActivity.timeline) !== canonicalStatistics(after.timeActivity.timeline);
 		if (timeKeys.length || coverageChanged || detailsChanged) this.emitChange({ type: "TIME_STATS", source: "TIME_ACTIVITY", ...(coverageChanged||detailsChanged ? {} : { timeKeys }) });
 	}
 
@@ -476,12 +490,12 @@ export class EditActivityService {
 			return;
 		}
 		this.timeTracker.activity(path);
-		this.emitTimeStatus();
+		this.emitTimeStatusIfChanged();
 	}
 
 	checkpointTimeActivity(): void {
 		this.timeTracker.checkpoint();
-		this.emitTimeStatus();
+		this.emitTimeStatusIfChanged();
 	}
 
 	pauseTimeActivity(): void {
@@ -530,16 +544,50 @@ export class EditActivityService {
 
 	private getTodayTimeSeconds(date: string): number {
 		const remote = this.statistics?.version || 0;
-		if (this.timeTotalCache?.date === date && this.timeTotalCache.local === this.mutationVersion && this.timeTotalCache.remote === remote) {
+		const scopeKey = `${this.store.settings.trackedFolders.join("\n")}\u0000${this.store.settings.trackedFiles.join("\n")}`;
+		if (
+			this.timeTotalCache?.date === date &&
+			this.timeTotalCache.local === this.mutationVersion &&
+			this.timeTotalCache.remote === remote &&
+			this.timeTotalCache.scopeKey === scopeKey
+		) {
 			return this.timeTotalCache.seconds;
 		}
-		const seconds = queryTimeStats(this.readStatistics().timeActivity,
-			{ fromDate: date, toDate: date }, this.now().getTime(), false)
-			.flatMap(row => row.documents)
-			.filter(item => isTimeActivityInCollectionScope(item.path, this.store.settings.trackedFolders, this.store.settings.trackedFiles))
-			.reduce((sum, item) => sum + item.seconds, 0);
-		this.timeTotalCache = { date, local: this.mutationVersion, remote, seconds };
+		let remoteSeconds = 0;
+		if (this.statistics) {
+			if (
+				this.remoteTodayTimeCache?.date === date &&
+				this.remoteTodayTimeCache.remote === remote &&
+				this.remoteTodayTimeCache.scopeKey === scopeKey
+			) {
+				remoteSeconds = this.remoteTodayTimeCache.seconds;
+			} else {
+				remoteSeconds = this.sumDateTimeSeconds(this.statistics.getRemoteMergedData().timeActivity.buckets, date);
+				this.remoteTodayTimeCache = { date, remote, scopeKey, seconds: remoteSeconds };
+			}
+		}
+		const localSeconds = this.sumDateTimeSeconds(this.store.timeActivity.buckets, date);
+		const seconds = remoteSeconds + localSeconds;
+		this.timeTotalCache = { date, local: this.mutationVersion, remote, scopeKey, seconds };
 		return seconds;
+	}
+
+	private sumDateTimeSeconds(
+		buckets: Record<string, { date: string; documents: Record<string, number> }>,
+		date: string
+	): number {
+		let sum = 0;
+		const folders = this.store.settings.trackedFolders;
+		const files = this.store.settings.trackedFiles;
+		for (const bucket of Object.values(buckets)) {
+			if (bucket.date !== date) continue;
+			for (const [path, seconds] of Object.entries(bucket.documents)) {
+				if (Number.isFinite(seconds) && seconds > 0 && isTimeActivityInCollectionScope(path, folders, files)) {
+					sum += seconds;
+				}
+			}
+		}
+		return sum;
 	}
 
 	private getTimeStatusReason(core: TimeTrackerSnapshot): TimeStatusReason {
@@ -562,7 +610,21 @@ export class EditActivityService {
 		return core.pendingSeconds * overlap / (core.pendingEnd - core.pendingStart);
 	}
 
+	private computeTimeStatusKey(): string {
+		const core = this.timeTracker.getSnapshot();
+		const reason = this.getTimeStatusReason(core);
+		return `${reason}|${this.timeContext.path || core.path || ""}|${this.manualTimePaused ? 1 : 0}|${this.store.settings.timeTrackingEnabled ? 1 : 0}|${core.continuityId || ""}|${core.pendingStart ?? ""}|${core.pendingEnd ?? ""}|${this.lastTimeDiscard?.detectedAt ?? ""}`;
+	}
+
 	private emitTimeStatus(): void {
+		this.lastEmittedTimeStatusKey = this.computeTimeStatusKey();
+		this.emitChange({ type: "TIME_STATUS" });
+	}
+
+	private emitTimeStatusIfChanged(): void {
+		const key = this.computeTimeStatusKey();
+		if (key === this.lastEmittedTimeStatusKey) return;
+		this.lastEmittedTimeStatusKey = key;
 		this.emitChange({ type: "TIME_STATUS" });
 	}
 
@@ -1151,7 +1213,16 @@ export class EditActivityService {
 			return;
 		}
 
-		const snapshot = JSON.parse(JSON.stringify(this.store));
+		const snapshot: EditActivityStore = {
+			schemaVersion: this.store.schemaVersion,
+			settings: {
+				...this.store.settings,
+				trackedFolders: [...this.store.settings.trackedFolders],
+				trackedFiles: [...this.store.settings.trackedFiles],
+			},
+			graphThemes: this.store.graphThemes.map(theme => ({ ...theme, colors: [...theme.colors] })),
+			...statisticsFrom(this.store),
+		};
 		const snapshotVersion = this.mutationVersion;
 		this.pendingSince = undefined;
 		const generation = this.statistics.generationId;
@@ -1652,7 +1723,7 @@ export class EditActivityService {
 		};
 		document.addedChars += addedChars;
 		document.deletedChars += deletedChars;
-		const finalDocument = changes.apply(startDocument);
+		const finalDocument = endState ? endState.doc : changes.apply(startDocument);
 		const safeCursorOffset = Math.max(
 			0,
 			Math.min(cursorOffset, finalDocument.length)

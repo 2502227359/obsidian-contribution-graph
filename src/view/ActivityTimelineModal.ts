@@ -100,7 +100,7 @@ class ActivityTimelineModal extends Modal {
 
  private mountView():void {
   if(!this.mount)return;
-  this.view=new ActivityTimelineView(this.mount,{...this.options,initialState:this.initialState,onExpand:undefined,
+  this.view=new ActivityTimelineView(this.mount,{...this.options,hostOwnsLifecycle:true,initialState:this.initialState,onExpand:undefined,
    onHourly:(date,folders)=>this.showHourly(date,folders),
    onOpenDocument:(path,event)=>{void openTimelineDocument(this.app,path,event).then(close=>{if(close)this.close();});}});
  }

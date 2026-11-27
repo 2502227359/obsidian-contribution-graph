@@ -9,6 +9,7 @@ import { getHourlyCaption, getHourlyViewCells, HourlyViewState } from "./hourlyV
 import { mountDatePicker, updateDatePicker } from "../view/datePicker/DatePicker";
 import { getGraphMetric } from "./graphPresentation";
 import { setUiIcon } from "../view/icon/uiIcons";
+import { buildCellSignature } from "./renders";
 
 interface HourlyContext {
 	root: HTMLElement;
@@ -94,9 +95,10 @@ export class HourlyGraphRender extends BaseGraphRender {
 		const forceAll = Number.isFinite(previousCeiling) && previousCeiling !== ceiling;
 		let cellsChanged = false;
 		let keyboardStateChanged = false;
+		const today = toFormattedDate(new Date());
 		for (const cell of cells) {
 			const key = getHourlyCellKey(cell);
-			const signature = JSON.stringify({data: cell, isToday: cell.date === toFormattedDate(new Date())});
+			const signature = buildCellSignature(cell, today);
 			const previousCell = previousByKey.get(key);
 			if (!forceAll && previousCell?.signature === signature) continue;
 			cellsChanged = true;

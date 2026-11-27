@@ -24,12 +24,23 @@ interface DayGroup {id:string;name:string;activity:boolean;seconds:number;docume
 /** 同一份统计、同一生成时间派生四周及小时数据，不结算或写入。 */
 export function buildWeeklyReviewTimeline(data:StoredTimeActivity, weekly:WeeklyReviewSnapshot, now:number):WeeklyReviewTimeline {
 	const fromDate=shiftReviewDate(weekly.weekStart,-21);
-	const reports=Array.from({length:4},(_,index)=>index===3?weekly:buildWeeklyReview(data,{date:shiftReviewDate(fromDate,index*7),root:weekly.root},now));
+	const windowStart=shiftReviewDate(fromDate,-7);
+	const windowBuckets: StoredTimeActivity["buckets"] = Object.create(null);
+	for (const [key, bucket] of Object.entries(data.buckets)) {
+		if (bucket.date >= windowStart && bucket.date <= weekly.weekEnd) {
+			windowBuckets[key] = bucket;
+		}
+	}
+	const windowedData: StoredTimeActivity = {
+		...data,
+		buckets: windowBuckets,
+	};
+	const reports=Array.from({length:4},(_,index)=>index===3?weekly:buildWeeklyReview(windowedData,{date:shiftReviewDate(fromDate,index*7),root:weekly.root},now));
 	const days=reports.flatMap(report=>report.days);
-	const windows=reports.map(report=>rankingWindow(data,report,{count:weekly.comparison.currentDays.length,now}));
-	const rows=queryTimeStats(data,{fromDate:weekly.weekStart,toDate:weekly.weekEnd,folders:weekly.root?[weekly.root]:[]},now,true);
+	const windows=reports.map(report=>rankingWindow(windowedData,report,{count:weekly.comparison.currentDays.length,now}));
+	const rows=queryTimeStats(windowedData,{fromDate:weekly.weekStart,toDate:weekly.weekEnd,folders:weekly.root?[weekly.root]:[]},now,true);
 	const index=new Map(rows.map(row=>[`${row.date}/${row.hour}`,row]));
-	const hours=weekly.days.flatMap(day=>Array.from({length:24},(_,hour)=>makeHour(data,day,hour,index.get(`${day.date}/${hour}`),{now,root:weekly.root})));
+	const hours=weekly.days.flatMap(day=>Array.from({length:24},(_,hour)=>makeHour(windowedData,day,hour,index.get(`${day.date}/${hour}`),{now,root:weekly.root})));
 	return {fromDate,toDate:weekly.weekEnd,days,hours,windows};
 }
 

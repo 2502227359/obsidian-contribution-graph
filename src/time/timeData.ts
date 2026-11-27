@@ -97,7 +97,14 @@ export function queryTimeStats(
 ): TimeStats[] {
 	const folders = normalizeTrackedFolders(query.folders || []);
 	const grouped = new Map<string, TimeStats>();
-	for (const bucket of Object.values(data.buckets)) {
+	const buckets = Object.values(data.buckets);
+	// 预先建立按日期/小时的索引，避免 getBucketBounds 在循环内反复扫描全量分桶（O(B^2) -> O(B)）。
+	const bucketIndex = new Map<string, TimeBucket>();
+	for (const bucket of buckets) {
+		const indexKey = hourly ? `${bucket.date}/${bucket.hour}` : bucket.date;
+		if (!bucketIndex.has(indexKey)) bucketIndex.set(indexKey, bucket);
+	}
+	for (const bucket of buckets) {
 		if (
 			(query.fromDate && bucket.date < query.fromDate) ||
 			(query.toDate && bucket.date > query.toDate)
@@ -115,7 +122,7 @@ export function queryTimeStats(
 			mergeDocuments(existing.documents, documents);
 			continue;
 		}
-		const bounds = getBucketBounds(data, bucket, hourly);
+		const bounds = getBucketBounds(bucket, hourly, bucketIndex);
 		const start = bounds.start;
 		const end = bounds.end;
 		grouped.set(
@@ -128,6 +135,47 @@ export function queryTimeStats(
 	);
 }
 
+interface SortedPeriodsCache {
+	length: number;
+	lastStart: number | undefined;
+	lastEnd: number | undefined;
+	byFolders: Map<string, TimeCoveragePeriod[]>;
+}
+
+const sortedPeriodsCache = new WeakMap<TimeCoveragePeriod[], SortedPeriodsCache>();
+
+function getRelevantSortedPeriods(
+	periods: TimeCoveragePeriod[],
+	folders: readonly string[]
+): TimeCoveragePeriod[] {
+	const last = periods[periods.length - 1];
+	let entry = sortedPeriodsCache.get(periods);
+	if (
+		!entry ||
+		entry.length !== periods.length ||
+		entry.lastStart !== last?.start ||
+		entry.lastEnd !== last?.end
+	) {
+		entry = {
+			length: periods.length,
+			lastStart: last?.start,
+			lastEnd: last?.end,
+			byFolders: new Map(),
+		};
+		sortedPeriodsCache.set(periods, entry);
+	}
+	const requested = normalizeTrackedFolders(folders);
+	const key = requested.join("\n");
+	let relevant = entry.byFolders.get(key);
+	if (!relevant) {
+		relevant = periods
+			.filter((period) => periodCoversFolders(period, requested))
+			.sort((a, b) => a.start - b.start);
+		entry.byFolders.set(key, relevant);
+	}
+	return relevant;
+}
+
 export function getTimeTrackingState(
 	data: StoredTimeActivity,
 	start: number,
@@ -138,15 +186,18 @@ export function getTimeTrackingState(
 	if (start > now) {
 		return "UNTRACKED";
 	}
-	const requested = normalizeTrackedFolders(folders);
-	const relevant = data.periods.filter((period) =>
-		periodCoversFolders(period, requested)
-	);
+	const relevant = getRelevantSortedPeriods(data.periods, folders);
 	let coveredSeconds = 0;
 	let currentStart = 0;
 	let currentEnd = 0;
-	for (const period of relevant.sort((a, b) => a.start - b.start)) {
+	for (const period of relevant) {
+		if (period.start >= end) {
+			break;
+		}
 		const periodEnd = period.end ?? now;
+		if (periodEnd <= start) {
+			continue;
+		}
 		const overlapStart = Math.max(start, period.start);
 		const overlapEnd = Math.min(end, periodEnd);
 		if (overlapEnd <= overlapStart) {
@@ -431,16 +482,14 @@ function formatDate(date: Date): string {
 }
 
 function getBucketBounds(
-	data: StoredTimeActivity,
 	bucket: TimeBucket,
-	hourly: boolean
+	hourly: boolean,
+	bucketIndex: ReadonlyMap<string, TimeBucket>
 ): { start: number; end: number } {
 	const start = localDateTimeToEpoch(bucket.date, hourly ? bucket.hour : 0, bucket.offsetMinutes);
 	if (hourly) {
 		const next = getNextLocalHour(bucket.date, bucket.hour);
-		const nextBucket = Object.values(data.buckets).find(
-			(candidate) => candidate.date === next.date && candidate.hour === next.hour
-		);
+		const nextBucket = bucketIndex.get(`${next.date}/${next.hour}`);
 		return {
 			start,
 			end: nextBucket
@@ -449,9 +498,7 @@ function getBucketBounds(
 		};
 	}
 	const nextDate = getNextLocalDate(bucket.date);
-	const nextBucket = Object.values(data.buckets).find(
-		(candidate) => candidate.date === nextDate
-	);
+	const nextBucket = bucketIndex.get(nextDate);
 	return {
 		start,
 		end: localDateTimeToEpoch(

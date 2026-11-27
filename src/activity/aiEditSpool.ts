@@ -45,6 +45,14 @@ export class AiEditSpool {
 		this.write(this.bridgeInfoPath(), JSON.stringify(info));
 	}
 
+	async writeBridgeInfoAsync(info: AiBridgeInfo): Promise<void> {
+		if (!this.fs.promises) {
+			this.writeBridgeInfo(info);
+			return;
+		}
+		await this.writeAsync(this.bridgeInfoPath(), JSON.stringify(info));
+	}
+
 	removeBridgeInfo(expectedToken?: string): void {
 		const file = this.bridgeInfoPath();
 		try {

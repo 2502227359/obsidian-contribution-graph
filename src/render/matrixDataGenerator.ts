@@ -1,11 +1,10 @@
-import { diffCalendarDays, parseDate } from "../util/dateUtils";
+import { diffCalendarDays, parseDate, toFormattedDate } from "../util/dateUtils";
 import {
 	Contribution,
 	ContributionCellData,
 	CollectionScopePeriod,
 	TrackingPeriod,
 } from "../types";
-import { DateTime } from "luxon";
 import { areFoldersCoveredByScope } from "../activity/folderScope";
 
 export type TrackingState = "TRACKED" | "PARTIAL" | "UNTRACKED";
@@ -65,17 +64,18 @@ export function generateByFixedDate(
 	const contributionMapByDate = contributionToMap(data);
 
 	const cellData: ContributionCellData[] = [];
-
-	const toDateTime = DateTime.fromJSDate(to);
-	const today = DateTime.local().startOf("day");
-	// fill data
+	const current = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+	const todayIso = toFormattedDate(new Date());
+	// 正序推进 + push，避免每日构造 Luxon DateTime 与数组头部 unshift（O(N^2)）。
 	for (let i = 0; i < days; i++) {
-		const currentDateAtIndex = toDateTime.minus({ days: i });
-		const isoDate = currentDateAtIndex.toFormat('yyyy-MM-dd');
+		const year = current.getFullYear();
+		const month = current.getMonth();
+		const monthDate = current.getDate();
+		const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(monthDate).padStart(2, "0")}`;
 		const contribution = contributionMapByDate.get(isoDate);
 		const future =
 			trackingPeriods !== undefined &&
-			currentDateAtIndex.startOf("day") > today;
+			isoDate > todayIso;
 		const trackingState = trackingPeriods
 			? future
 				? undefined
@@ -90,12 +90,12 @@ export function generateByFixedDate(
 			? trackingState !== "UNTRACKED"
 			: undefined;
 
-		cellData.unshift({
+		cellData.push({
 			date: isoDate,
-			weekDay: currentDateAtIndex.weekday == 7 ? 0 : currentDateAtIndex.weekday,
-			month: currentDateAtIndex.month - 1,
-			monthDate: currentDateAtIndex.day,
-			year: currentDateAtIndex.year,
+			weekDay: current.getDay(),
+			month,
+			monthDate,
+			year,
 			value: contribution ? contribution.value : 0,
 			summary: contribution ? contribution.summary : undefined,
 			items: contribution ? contribution.items || [] : [],
@@ -105,6 +105,7 @@ export function generateByFixedDate(
 			trackingState: contribution?.timeStats?.trackingState || trackingState,
 			future: contribution?.timeStats?.future ?? future,
 		});
+		current.setDate(monthDate + 1);
 	}
 
 	return cellData;
@@ -183,7 +184,7 @@ function contributionToMap(data: Contribution[]) {
 		if (typeof item.date === "string") {
 			key = item.date;
 		} else {
-			key = DateTime.fromJSDate(item.date).toFormat('yyyy-MM-dd');
+			key = toFormattedDate(item.date);
 		}
 		if (map.has(key)) {
 			const newItem = {

@@ -389,10 +389,6 @@ export class EditActivitySettingTab extends PluginSettingTab {
 	): void {
 		const trackedFolders = settings.trackedFolders;
 		const trackedFiles = settings.trackedFiles;
-		const selectableFolders = getSelectableVaultFolders(
-			this.app,
-			trackedFolders
-		);
 		new Setting(container)
 			.setName("采集目录")
 			.setDesc(
@@ -405,8 +401,15 @@ export class EditActivitySettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button
 					.setButtonText(local.settings_tracked_folders_choose)
-					.setDisabled(selectableFolders.length === 0)
 					.onClick(() => {
+						const selectableFolders = getSelectableVaultFolders(
+							this.app,
+							trackedFolders
+						);
+						if (selectableFolders.length === 0) {
+							new Notice("没有可添加的目录。");
+							return;
+						}
 						new VaultFolderSuggestModal(
 							this.app,
 							selectableFolders,
@@ -440,7 +443,6 @@ export class EditActivitySettingTab extends PluginSettingTab {
 	): void {
 		const trackedFolders = settings.trackedFolders;
 		const trackedFiles = settings.trackedFiles;
-		const selectableFiles = getSelectableVaultNotes(this.app, trackedFiles);
 		new Setting(container)
 			.setName("指定笔记")
 			.setDesc(
@@ -453,8 +455,12 @@ export class EditActivitySettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button
 					.setButtonText("选择笔记")
-					.setDisabled(selectableFiles.length === 0)
 					.onClick(() => {
+						const selectableFiles = getSelectableVaultNotes(this.app, trackedFiles);
+						if (selectableFiles.length === 0) {
+							new Notice("没有可添加的 Markdown 笔记。");
+							return;
+						}
 						new VaultNoteSuggestModal(
 							this.app,
 							selectableFiles,

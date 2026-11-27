@@ -50,7 +50,9 @@ export function applyActivityTimelineSpan(
 		data.timeline = createTimeline(data);
 	}
 	const timeline = data.timeline;
-	if (!timeline.recordingPeriods.some(period => period.id === periodId)) {
+	const periods = timeline.recordingPeriods;
+	const lastPeriod = periods[periods.length - 1];
+	if (lastPeriod?.id !== periodId && !periods.some(period => period.id === periodId)) {
 		addIssue(timeline, `缺少记录周期:${periodId}`);
 		return;
 	}
@@ -93,17 +95,27 @@ function addSegment(
 	piece: { bucketKey: string; start: number; end: number; seconds: number },
 	periodId: string
 ): void {
-	const existing = [...timeline.segments].reverse().find(segment =>
-		segment.continuityId === span.continuityId && segment.recordingPeriodId === periodId &&
-		segment.path === span.path && segment.bucketKey === piece.bucketKey &&
-		Math.abs(segment.end - piece.start) <= EPSILON
-	);
+	const segments = timeline.segments;
+	let existing: ActivitySegment | undefined;
+	for (let i = segments.length - 1; i >= 0; i--) {
+		const segment = segments[i];
+		if (
+			segment.continuityId === span.continuityId &&
+			segment.recordingPeriodId === periodId &&
+			segment.path === span.path &&
+			segment.bucketKey === piece.bucketKey &&
+			Math.abs(segment.end - piece.start) <= EPSILON
+		) {
+			existing = segment;
+			break;
+		}
+	}
 	if (existing) {
 		existing.end = piece.end;
 		existing.seconds += piece.seconds;
 		return;
 	}
-	timeline.segments.push({
+	segments.push({
 		id: newId(), continuityId: span.continuityId!, recordingPeriodId: periodId,
 		path: span.path, bucketKey: piece.bucketKey, start: piece.start,
 		end: piece.end, seconds: piece.seconds,
@@ -116,19 +128,30 @@ function removeSegment(
 	piece: { bucketKey: string; start: number; end: number; seconds: number },
 	periodId: string
 ): void {
-	const index = timeline.segments.findIndex(segment =>
-		segment.continuityId === span.continuityId && segment.recordingPeriodId === periodId &&
-		segment.path === span.path && segment.bucketKey === piece.bucketKey &&
-		Math.abs(segment.end - piece.end) <= EPSILON && piece.start >= segment.start - EPSILON
-	);
+	const segments = timeline.segments;
+	let index = -1;
+	for (let i = segments.length - 1; i >= 0; i--) {
+		const segment = segments[i];
+		if (
+			segment.continuityId === span.continuityId &&
+			segment.recordingPeriodId === periodId &&
+			segment.path === span.path &&
+			segment.bucketKey === piece.bucketKey &&
+			Math.abs(segment.end - piece.end) <= EPSILON &&
+			piece.start >= segment.start - EPSILON
+		) {
+			index = i;
+			break;
+		}
+	}
 	if (index < 0) {
 		addIssue(timeline, `未找到可撤回片段:${span.path}:${piece.start}`);
 		return;
 	}
-	const segment = timeline.segments[index];
+	const segment = segments[index];
 	const nextSeconds = segment.seconds - piece.seconds;
 	if (nextSeconds <= EPSILON || piece.start <= segment.start + EPSILON) {
-		timeline.segments.splice(index, 1);
+		segments.splice(index, 1);
 		return;
 	}
 	segment.end = piece.start;

@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026年11月27日 — 零点三十点二 运行期性能优化
+
+- **交互热路径降载**：`TimeActivityObserver` 对 `wheel`／`touchstart`／`touchmove` 启用 `{ capture: true, passive: true }`，对同聚焦视图的高频连打／滚轮交互增加 `500 ms` 节流合并；将 `document.body` 的全子树 `childList` 观察拆分为窄范围直接子节点监听（过滤非弹窗节点）与 `<dialog open>` 属性监听，并补齐 `window-close` 解绑清理；状态栏文本／提示按变化差分写入。
+- **统计存储缓存与去自刷闭环**：`StatisticsRepository` 缓存远端已合并基线并通过 `mergeStatisticsOverlay()` 共享未修改历史引用，避免每次按键或滚轮深拷贝合并全部历史；`VaultStatisticsFiles` 忽略本机自身写入引发的 `vault` 回声事件，`loadRecords()` 改为按 `mtime/size` 增量缓存并并发读取；`EditActivityService` 缓存远端今日时长合计、`TIME_STATUS` 按状态签名去重、`recordChanges()` 直接复用 `endState.doc`。
+- **查询与图表渲染优化**：`queryTimeStats()` 预建分桶索引将 $O(B^2)$ 降至 $O(B)`，`getTimeTrackingState()` 缓存过滤排序后的覆盖区间；`buildWeeklyReviewTimeline()` 按五周窗口预裁剪分桶；`activityTimeline.ts` 改为尾端倒序扫描消除数组拷贝；`matrixDataGenerator.ts` 移除逐日 Luxon 构造与头部 `unshift()`；`Renders`／`HourlyGraphRender` 改用轻量格子签名替代全量 `JSON.stringify`；弹窗内嵌时间轴显式声明 `hostOwnsLifecycle: true`，周回顾目标输入增加 `180 ms` 防抖。
+- **编辑计数、AI 队列与设置页优化**：`characterCounter.ts` 零数组分配迭代字素、`aiNoteDiff.ts` 复用 `Intl.Segmenter` 单例；`AiEditIntake` 在未启用 AI 统计时停止 `1.5 s` 常驻轮询、`AiEditBridgeServer` 启动改为异步写入 `bridge.json`；`EditActivitySettingTab` 将全库目录／笔记扫描延迟到点击选择按钮时执行。
+- 验证：48 个测试文件共 400 项测试通过（含新增性能回归测试 `tests/performanceOptimizations.test.ts`），类型检查、生产构建与打包通过。
+
 ## 2026年11月26日 — 零点三十点一 主题监听防误触发优化
 
 - 在 `src/view/weeklyReviewChartStyle.ts` 提取共用 `observeThemeChanges()` 与 `readThemeSignature()`，统一替换学习时间轴与周回顾 4 处图表视图（`ActivityTimelineView`、`WeeklyReviewCharts`、`WeeklyReviewRankingChart`、`WeeklyReviewTimelineCharts`）中无条件触发 `paint()` 的 `MutationObserver`。

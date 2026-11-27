@@ -298,6 +298,7 @@ describe("时间活动事件策略", () => {
 		}
 	});
 	it("文件后缀为 Markdown 的其他插件视图不计入阅读", () => {
+		FakeMutationObserver.instances.length = 0;
 		const view = createView("思维导图.md");
 		view.view.getViewType = () => "mindmap";
 		const { plugin, documentTarget } = createPlugin([view]);
@@ -307,7 +308,7 @@ describe("时间活动事件策略", () => {
 		observer.start(); documentTarget.dispatch("wheel", view.root);
 		expect(activity).not.toHaveBeenCalled();
 		documentTarget.querySelector = () => ({});
-		FakeMutationObserver.instances[FakeMutationObserver.instances.length - 1].trigger();
+		FakeMutationObserver.instances[0].trigger();
 		expect(context).toHaveBeenLastCalledWith({ reason: "MODAL", path: undefined });
 		observer.stop();
 	});
@@ -467,8 +468,10 @@ describe("时长活动观察器", () => {
 
 		expect(activity).toHaveBeenCalledTimes(3);
 		observer.stop();
-		expect(FakeMutationObserver.instances[0].disconnected).toBe(true);
-		expect(FakeMutationObserver.instances[0].options).toEqual({ childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
+		expect(FakeMutationObserver.instances).toHaveLength(2);
+		expect(FakeMutationObserver.instances.every(item => item.disconnected)).toBe(true);
+		expect(FakeMutationObserver.instances[0].options).toEqual({ childList: true });
+		expect(FakeMutationObserver.instances[1].options).toEqual({ subtree: true, attributes: true, attributeFilter: ["open"] });
 	});
 
 	it("页面内日历打开时暂停计时，关闭后恢复", () => {
@@ -481,10 +484,10 @@ describe("时长活动观察器", () => {
 		observer.start();
 		const mutation = {type: "attributes", target: {nodeName: "DIALOG"}} as unknown as MutationRecord;
 		open = true;
-		FakeMutationObserver.instances[0].trigger([mutation]);
+		FakeMutationObserver.instances[1].trigger([mutation]);
 		expect(pause).toHaveBeenCalledTimes(1);
 		open = false;
-		FakeMutationObserver.instances[0].trigger([mutation]);
+		FakeMutationObserver.instances[1].trigger([mutation]);
 		expect(activity).toHaveBeenCalledTimes(2);
 		observer.stop();
 	});

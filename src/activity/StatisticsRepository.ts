@@ -1,4 +1,4 @@
-import { applyStatisticsRename, closeStatistics, emptyStatistics, mergeStatistics, StatisticsData, statisticsFrom, tagAiDailyStats } from "./statisticsModel";
+import { applyStatisticsRename, closeStatistics, emptyStatistics, mergeStatistics, mergeStatisticsOverlay, StatisticsData, statisticsFrom, tagAiDailyStats } from "./statisticsModel";
 import { AI_EDIT_ID, AiEditEvent } from "./aiEditProtocol";
 import {
 	checkStatisticsSize, isLegacyStatisticsPath, isStatisticsPath, MonthlyFrame, monthlyShard,
@@ -7,10 +7,16 @@ import {
 
 export const DEFAULT_STATISTICS_FOLDER = "Template/数据/学习统计";
 
+export interface StatisticsFileStat {
+	mtime: number;
+	size: number;
+}
+
 export interface StatisticsFiles {
 	list(): Promise<string[]>;
 	read(path: string): Promise<string>;
 	write(path: string, data: string): Promise<void>;
+	stat?(path: string): Promise<StatisticsFileStat | null>;
 	writeSync?(path: string, data: string): boolean;
 }
 
@@ -40,6 +46,21 @@ export function canonicalStatistics(value: unknown): string {
 	return JSON.stringify(value);
 }
 
+interface ParsedStatisticsFile {
+	records: StatisticsRecord[];
+	shard?: string;
+	frame?: MonthlyFrame;
+}
+
+interface CachedStatisticsFile {
+	mtime?: number;
+	size?: number;
+	content?: string;
+	parsed: ParsedStatisticsFile;
+}
+
+const MAX_CONCURRENT_FILE_READS = 8;
+
 export class StatisticsRepository {
 	private records = new Map<string, StatisticsRecord>();
 	private recordId = crypto.randomUUID();
@@ -52,6 +73,9 @@ export class StatisticsRepository {
 	private queue: Promise<void> = Promise.resolve();
 	private readonly monthly: MonthlyStatisticsFiles;
 	private sealed = false;
+	private readonly fileCache = new Map<string, CachedStatisticsFile>();
+	private cachedRemoteSources?: { version: number; sources: readonly StatisticsSource[] };
+	private cachedRemoteMerged?: { version: number; data: StatisticsData; segmentIds: ReadonlySet<string> };
 	version = 0;
 	get generationId(): string { return this.generation; }
 	get hasRecords(): boolean { return this.records.size > 0; }
@@ -78,12 +102,24 @@ export class StatisticsRepository {
 	}
 
 	read(local: StatisticsData): StatisticsData {
-		return mergeStatistics(this.readSources(local).map(source => source.data));
+		const remote = this.getRemoteMerged();
+		return mergeStatisticsOverlay(remote.data, local, remote.segmentIds);
+	}
+
+	getRemoteMergedData(): StatisticsData {
+		return this.getRemoteMerged().data;
 	}
 
 	readSources(local: StatisticsData): readonly StatisticsSource[] {
+		return [...this.getRemoteSources(), { id: this.recordId, data: statisticsFrom(local) }];
+	}
+
+	private getRemoteSources(): readonly StatisticsSource[] {
+		if (this.cachedRemoteSources && this.cachedRemoteSources.version === this.version) {
+			return this.cachedRemoteSources.sources;
+		}
 		const renames = this.orderedRenames();
-		const remote = [...this.records.values()].sort((a, b) => a.updatedAt - b.updatedAt || a.id.localeCompare(b.id))
+		const sources = [...this.records.values()].sort((a, b) => a.updatedAt - b.updatedAt || a.id.localeCompare(b.id))
 			.filter(record => record.kind !== "rename" && record.id !== this.recordId && record.generation === this.generation)
 			.map(record => {
 				let data = closeStatistics(record.data, record.updatedAt);
@@ -93,7 +129,22 @@ export class StatisticsRepository {
 				}
 				return { id: record.id, data };
 			});
-		return [...remote, { id: this.recordId, data: statisticsFrom(local) }];
+		this.cachedRemoteSources = { version: this.version, sources };
+		return sources;
+	}
+
+	private getRemoteMerged(): { data: StatisticsData; segmentIds: ReadonlySet<string> } {
+		if (this.cachedRemoteMerged && this.cachedRemoteMerged.version === this.version) {
+			return this.cachedRemoteMerged;
+		}
+		const data = mergeStatistics(this.getRemoteSources().map(source => source.data));
+		const segmentIds = new Set<string>();
+		const segments = (data.timeActivity as { timeline?: { segments?: { id: string }[] } }).timeline?.segments;
+		if (segments) {
+			for (const segment of segments) segmentIds.add(segment.id);
+		}
+		this.cachedRemoteMerged = { version: this.version, data, segmentIds };
+		return this.cachedRemoteMerged;
 	}
 
 	rename(oldPath: string, newPath: string, isFolder: boolean): boolean {
@@ -124,7 +175,8 @@ export class StatisticsRepository {
 			const record: StatisticsRecord = { formatVersion: 1, kind: "statistics", id,
 				revision: ++this.revision, updatedAt: this.now(), generation, data };
 			const verified = { ...record, data: this.validate(record.data) };
-			await this.monthly.save(verified);
+			const writtenPath = await this.monthly.save(verified);
+			this.fileCache.delete(writtenPath);
 			this.keepRecord(this.records, verified);
 			this.version++;
 			this.saved = serialized;
@@ -139,9 +191,11 @@ export class StatisticsRepository {
 			const record = this.collectAiEdits(events);
 			if (!record) return;
 			try {
-				await this.monthly.save(record);
+				const writtenPath = await this.monthly.save(record);
+				this.fileCache.delete(writtenPath);
 			} catch (error) {
 				// 写入后校验失败时，先从磁盘恢复已实际提交的回执。
+				this.fileCache.clear();
 				this.records = await this.loadRecords().catch(() => this.records);
 				this.version++;
 				throw error;
@@ -208,7 +262,9 @@ export class StatisticsRepository {
 		}
 		const record: StatisticsRecord = {formatVersion: 1, kind: "statistics", id: this.recordId,
 			revision: ++this.revision, updatedAt: this.now(), generation: this.generation, data: this.validate(statisticsFrom(local))};
-		if (!this.monthly.saveSync(record)) return false;
+		const writtenPath = this.monthly.saveSync(record);
+		if (!writtenPath) return false;
+		this.fileCache.delete(writtenPath);
 		// 退出检查点高于已发起写入的版本；排队的旧快照不能再获得更新版本。
 		this.sealed = true;
 		this.records.set(record.id, record);
@@ -261,7 +317,7 @@ export class StatisticsRepository {
 			const own = this.records.get(this.recordId);
 			if (own) next.set(own.id, own);
 		}
-		if (canonicalStatistics([...next]) !== canonicalStatistics([...this.records])) {
+		if (recordsMapChanged(this.records, next)) {
 			this.records = next; this.version++;
 		}
 		this.conflicting = heads.length > 1;
@@ -276,18 +332,28 @@ export class StatisticsRepository {
 		const known = [...next.values()];
 		const confirmed = this.monthly.readSequences();
 		const paths = (await this.files.list()).filter(isStatisticsPath);
+		const pathSet = new Set(paths);
+		for (const cachedPath of this.fileCache.keys()) {
+			if (!pathSet.has(cachedPath)) this.fileCache.delete(cachedPath);
+		}
 		const found = new Set<string>();
 		const observed = new Map<string, MonthlyFrame>();
 		const unreadable = new Map<string, unknown>();
-		for (const path of paths) {
-			const file = await this.readFile(path).catch(error => {
+		const results = await mapWithConcurrency(paths, MAX_CONCURRENT_FILE_READS, async path => {
+			try {
+				return { path, file: await this.readFileCached(path) };
+			} catch (error) {
 				const shard = monthlyShard(path);
 				if (!shard) throw error;
-				unreadable.set(shard, error);
-				return undefined;
-			});
-			if (!file) continue;
-			const { records, shard, frame } = file;
+				return { path, shard, error };
+			}
+		});
+		for (const result of results) {
+			if ("error" in result) {
+				unreadable.set(result.shard!, result.error);
+				continue;
+			}
+			const { records, shard, frame } = result.file;
 			if (shard && frame) observed.set(shard, newestMonthlyFrame(observed.get(shard), frame));
 			for (const record of records) {
 				found.add(record.id);
@@ -301,6 +367,34 @@ export class StatisticsRepository {
 		this.monthly.observe(observed, unreadable, confirmed);
 		for (const record of this.records.values()) this.keepRecord(next, record);
 		return next;
+	}
+
+	private async readFileCached(path: string): Promise<ParsedStatisticsFile> {
+		const cached = this.fileCache.get(path);
+		let stat: StatisticsFileStat | null = null;
+		if (this.files.stat) {
+			stat = await this.files.stat(path).catch(() => null);
+			if (stat && cached && cached.mtime === stat.mtime && cached.size === stat.size) {
+				return cached.parsed;
+			}
+		}
+		const content = await this.files.read(path);
+		if (cached && cached.content !== undefined && cached.content === content) {
+			if (stat) {
+				cached.mtime = stat.mtime;
+				cached.size = stat.size;
+			}
+			return cached.parsed;
+		}
+		const parsed = await readStatisticsFile(path, content, value => this.parse(value));
+		this.fileCache.set(path, {
+			mtime: stat?.mtime,
+			size: stat?.size,
+			// 当文件系统提供 stat 时不再常驻保留完整文本，降低长期内存占用。
+			...(stat ? {} : { content }),
+			parsed,
+		});
+		return parsed;
 	}
 
 	private readFile(path: string) {
@@ -389,7 +483,41 @@ export class StatisticsRepository {
 		await this.files.write(path, content);
 		const { records: [verified] } = await this.readFile(path);
 		if (canonicalStatistics(verified) !== canonicalStatistics(record)) throw new Error("统计记录写入校验失败");
+		this.fileCache.delete(path);
 		this.records.set(record.id, verified);
 		this.version++;
 	}
+}
+
+function recordsMapChanged(
+	previous: ReadonlyMap<string, StatisticsRecord>,
+	next: ReadonlyMap<string, StatisticsRecord>
+): boolean {
+	if (previous.size !== next.size) return true;
+	for (const [id, record] of next) {
+		const existing = previous.get(id);
+		if (existing === record) continue;
+		if (!existing || existing.revision !== record.revision || canonicalStatistics(existing) !== canonicalStatistics(record)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+async function mapWithConcurrency<T, R>(
+	items: readonly T[],
+	concurrency: number,
+	worker: (item: T) => Promise<R>
+): Promise<R[]> {
+	if (items.length === 0) return [];
+	const results = new Array<R>(items.length);
+	let cursor = 0;
+	const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+		while (cursor < items.length) {
+			const index = cursor++;
+			results[index] = await worker(items[index]);
+		}
+	});
+	await Promise.all(runners);
+	return results;
 }

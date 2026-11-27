@@ -287,14 +287,25 @@ function backtrackLineOps(
 	return ops.reverse();
 }
 
-function graphemes(value: string, excludeWhitespace: boolean): string[] {
+const cachedGraphemeSegmenter = (() => {
 	const Segmenter = (Intl as unknown as {
 		Segmenter?: new (locale?: string, options?: { granularity: "grapheme" }) => {
 			segment(input: string): Iterable<{ segment: string }>;
 		};
 	}).Segmenter;
-	const characters = Segmenter
-		? Array.from(new Segmenter(undefined, { granularity: "grapheme" }).segment(value), item => item.segment)
-		: Array.from(value);
-	return excludeWhitespace ? characters.filter(char => char.trim().length > 0) : characters;
+	return Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
+})();
+
+function graphemes(value: string, excludeWhitespace: boolean): string[] {
+	const characters: string[] = [];
+	if (cachedGraphemeSegmenter) {
+		for (const item of cachedGraphemeSegmenter.segment(value)) {
+			if (!excludeWhitespace || item.segment.trim().length > 0) characters.push(item.segment);
+		}
+		return characters;
+	}
+	for (const char of value) {
+		if (!excludeWhitespace || char.trim().length > 0) characters.push(char);
+	}
+	return characters;
 }

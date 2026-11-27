@@ -28,6 +28,8 @@ export function statisticsInstallation(vault: Vault, folder: string): Statistics
 
 export class VaultStatisticsFiles implements StatisticsFiles {
 	private readonly pending: Map<string, Promise<void>>;
+	private readonly activeWrites = new Map<string, number>();
+	private readonly lastSelfWriteStat = new Map<string, { mtime: number; size: number }>();
 
 	constructor(private readonly vault: Vault, readonly folder: string) {
 		if (!folder || folder.split("/").some(part => !part || part.startsWith(".") || part.includes(":")) || folder.includes("\\")) {
@@ -46,10 +48,32 @@ export class VaultStatisticsFiles implements StatisticsFiles {
 		return this.vault.adapter.read(`${this.folder}/${path}`);
 	}
 
+	async stat(path: string): Promise<{ mtime: number; size: number } | null> {
+		const adapter = this.vault.adapter as typeof this.vault.adapter & {
+			stat?: (normalizedPath: string) => Promise<{ mtime: number; size: number } | null>;
+		};
+		if (typeof adapter.stat !== "function") return null;
+		const info = await adapter.stat(`${this.folder}/${path}`);
+		return info && typeof info.mtime === "number" && typeof info.size === "number"
+			? { mtime: info.mtime, size: info.size }
+			: null;
+	}
+
 	async write(path: string, data: string): Promise<void> {
 		const target = `${this.folder}/${path}`;
 		const previous = this.pending.get(target);
-		const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(() => this.writeFile(target, data));
+		const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(async () => {
+			this.activeWrites.set(target, (this.activeWrites.get(target) ?? 0) + 1);
+			try {
+				await this.writeFile(target, data);
+				const writtenStat = await this.stat(path).catch(() => null);
+				if (writtenStat) this.lastSelfWriteStat.set(target, writtenStat);
+			} finally {
+				const remaining = (this.activeWrites.get(target) ?? 1) - 1;
+				if (remaining <= 0) this.activeWrites.delete(target);
+				else this.activeWrites.set(target, remaining);
+			}
+		});
 		this.pending.set(target, write);
 		try { await write; }
 		finally { if (this.pending.get(target) === write) this.pending.delete(target); }
@@ -107,11 +131,36 @@ export class VaultStatisticsFiles implements StatisticsFiles {
 
 	subscribe(listener: () => void): () => void {
 		const matches = (path: string) => path.startsWith(`${this.folder}/`) && isStatisticsPath(path.slice(this.folder.length + 1));
+		const notifyWriteEvent = (path: string) => {
+			if (!matches(path)) return;
+			// 忽略本机正在执行写入时同步派发的 vault 事件，切断自写自刷闭环。
+			if ((this.activeWrites.get(path) ?? 0) > 0) return;
+			const lastStat = this.lastSelfWriteStat.get(path);
+			if (lastStat) {
+				const relative = path.slice(this.folder.length + 1);
+				void this.stat(relative).then(current => {
+					if (current && current.mtime === lastStat.mtime && current.size === lastStat.size) return;
+					this.lastSelfWriteStat.delete(path);
+					listener();
+				}, () => listener());
+				return;
+			}
+			listener();
+		};
 		const refs = [
-			this.vault.on("create", file => { if (matches(file.path)) listener(); }),
-			this.vault.on("modify", file => { if (matches(file.path)) listener(); }),
-			this.vault.on("delete", file => { if (matches(file.path)) listener(); }),
-			this.vault.on("rename", (file, oldPath) => { if (matches(file.path) || matches(oldPath)) listener(); }),
+			this.vault.on("create", file => notifyWriteEvent(file.path)),
+			this.vault.on("modify", file => notifyWriteEvent(file.path)),
+			this.vault.on("delete", file => {
+				if (!matches(file.path)) return;
+				this.lastSelfWriteStat.delete(file.path);
+				listener();
+			}),
+			this.vault.on("rename", (file, oldPath) => {
+				if (!matches(file.path) && !matches(oldPath)) return;
+				this.lastSelfWriteStat.delete(file.path);
+				this.lastSelfWriteStat.delete(oldPath);
+				listener();
+			}),
 		];
 		return () => refs.forEach(ref => this.vault.offref(ref));
 	}

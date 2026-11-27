@@ -1,8 +1,10 @@
 # 项目状态
 
-更新日期：2026年11月26日。
+更新日期：2026年11月27日。
 
 ## 一、架构健康度
+
+零点三十点二运行期性能优化：仍为八个功能目录、无新增源码模块或第三方依赖。优化集中在计时观察器、统计仓储合并缓存、普通目录文件适配、时长查询、图表增量签名、AI 队列轮询与设置页延迟扫描，未新增持久化字段或对外接口契约，本次未发现违规跨模块调用，未重新审计全项目。
 
 零点三十点一主题观察器优化：复用展示层既有 `weeklyReviewChartStyle.ts` 新增共享主题监听助手 `observeThemeChanges()` 与 `readThemeSignature()`，四处图表视图统一接入，无新增目录、文件、依赖或数据契约变更，本次未发现违规跨模块调用。
 
@@ -71,6 +73,8 @@ AI 编辑统计使用统一写入入口、本机队列与现有月度仓储。�
 - 既有配置表单、数据规范化与代码块处理函数仍较长；为保护已有行为，本次只接入必要逻辑，没有整体重构。后续继续扩展这些入口时应优先拆分并验证。
 
 ## 二、本次变更影响范围
+
+零点三十点二（`0.30.2`）围绕打字／滚轮热路径、周期性保存与历史数据查询开展系统性性能优化：1）`TimeActivityObserver` 启用滚轮／触摸 `passive` 监听、同聚焦视图 `500 ms` 节流、拆分 `body` 观察器去除全子树 `childList` 监听、补齐 `window-close` 解绑与状态栏 DOM 差分；2）`StatisticsRepository`／`statisticsModel` 缓存远端已合并基线并采用只读引用共享的 `mergeStatisticsOverlay()`，`VaultStatisticsFiles` 忽略自身写入回声并支持 `stat()` 增量缓存与并发读取；3）`EditActivityService` 缓存远端今日时长合计、`TIME_STATUS` 状态去重、`recordChanges()` 复用 `endState.doc`、`flush()` 去除 `JSON.parse(JSON.stringify)`；4）`timeData.ts` 消除 `queryTimeStats()` 的 $O(B^2)$ 全表扫描并缓存排序覆盖区间，`activityTimeline.ts` 与 `ActivityTimelineView` 消除数组拷贝与冗余 `body` 观察器，`matrixDataGenerator.ts`、`renders.ts`、`hourlyGraphRender.ts`、`weeklyReviewTimeline.ts` 与 `WeeklyReviewModal` 消除逐日 Luxon、`JSON.stringify` 全量签名与无防抖输入重绘；5）`characterCounter.ts`、`aiNoteDiff.ts`、`AiEditIntake`、`AiEditBridgeServer`、`EditActivitySettingTab` 优化字素计数、停用关闭态 `1.5 s` 轮询并延迟全库目录／笔记扫描。共涉及 21 个源码文件、4 份版本清单（同步更新至 `0.30.2`，作者保持 `coolmochi`）、`CHANGELOG.md`、`STATUS.md` 及 2 个测试文件；统计口径、持久化格式与公开接口契约不变。四十八个测试文件共四百项测试通过，构建与打包通过。
 
 零点三十点一（`0.30.1`）修复四处图表主题观察器（`ActivityTimelineView`、`WeeklyReviewCharts`、`WeeklyReviewRankingChart`、`WeeklyReviewTimelineCharts`）无条件监听 `document.body` 的 `class`／`style` 属性变动而触发整图同步重绘的问题：在 [weeklyReviewChartStyle.ts](src/view/weeklyReviewChartStyle.ts) 提取共用 `observeThemeChanges()` 与 `readThemeSignature()`，对 `is-grabbing`／`is-dragging`／`is-resizing` 等瞬时交互 class 快速放行（不触发样式重算），并对其他属性变化比对暗亮主题类与核心 CSS 变量／字体签名，仅在主题确实变化时才执行 `paint()`，消除在关联图谱等视图按住左键拖拽给 `body` 增删 `is-grabbing` 时引发的 3 秒级主线程阻塞。同步更新四处版本文件至 `0.30.1`（作者保持 `coolmochi`），四十七个测试文件共三百九十六项测试（含新增主题防误触发单测）通过，构建、打包、备份安装并无损重载至正式 CMBK 核验通过（不对 CMBK 暂存、提交或推送）。
 
@@ -284,6 +288,8 @@ CMBK 已安装零点十九点零；三十天字数历史、全部时长桶、时
 
 ## 三、已知风险点
 
+零点三十点二：本次已完成 48 个自动化测试文件（含新增 `tests/performanceOptimizations.test.ts`）与构建打包验证，尚未在正式 CMBK 或真机 Obsidian 宿主执行长时压测与独立弹窗实机核验；`VaultStatisticsFiles` 的 `stat()` 增量缓存依赖文件系统 `mtime + size`，若极端情况下外部同步工具在同毫秒内以完全相同字节数覆盖文件，将在下次变更或重启后刷新；`main.js` 生产包仍包含 ECharts 与 React（约 1.50 MB），未拆分按需加载。
+
 开启排除 Markdown 格式时，工具可以写入笔记，AI 字符统计暂不入账。绕过共用入口的外部写入无法归因，YOLO 编辑器内选区重写尚未覆盖。Codex 隔离客户端禁止需审批的 MCP 调用，Antigravity ACP 测试项目没有自动发现 MCP，两个入口均验证了命令备用路径。双端验证采用文件回放，尚未覆盖真实同步服务。
 
 Obsidian 高亮命令与普通输入共用事务标识。生成同样成对高亮标记事务的自动化也可能计入。历史未采集的操作没有原始编辑事件可供补录。
@@ -350,6 +356,8 @@ YOLO 计时只支持 yolo-chat-view 对话面板，不自动放行其他插件�
 - CMBK 创建展示笔记时，既有文件计数插件出现读取根目录统计的类型错误；没有修改范围外插件，时长图显示不受影响。
 
 ## 四、下次最该做的事
+
+`0.30.2` 已完成测试、生产构建与打包（`dist/contribution-graph-local`）并在本地仓库提交；下一步可在确认后备份并部署重载至正式 CMBK，实际体验连续输入、触控板滚动、自动保存及打开周回顾／时间轴的流畅度表现。
 
 `0.30.1` 已部署重载至正式 CMBK（实测关联图谱左键按下耗时由 `3,184 ms` 降至 `0.6 ms`）并同步更新文档、提交推送至插件仓库主分支；后续正常观察暗亮主题切换及日常图谱拖拽表现即可，CMBK 保持不暂存、不提交、不推送。
 

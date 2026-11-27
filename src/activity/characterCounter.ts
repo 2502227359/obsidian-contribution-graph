@@ -34,16 +34,24 @@ export function countCharacters(
 		return 0;
 	}
 
-	const segments = graphemeSegmenter
-		? Array.from(graphemeSegmenter.segment(text), (item) => item.segment)
-		: Array.from(text);
-
-	if (!options.excludeWhitespace) {
-		return segments.length;
+	let count = 0;
+	if (graphemeSegmenter) {
+		if (!options.excludeWhitespace) {
+			for (const _item of graphemeSegmenter.segment(text)) count++;
+			return count;
+		}
+		for (const item of graphemeSegmenter.segment(text)) {
+			if (item.segment.trim().length > 0) count++;
+		}
+		return count;
 	}
 
-	return segments.reduce(
-		(count, segment) => count + (segment.trim().length > 0 ? 1 : 0),
-		0
-	);
+	if (!options.excludeWhitespace) {
+		for (const _char of text) count++;
+		return count;
+	}
+	for (const char of text) {
+		if (char.trim().length > 0) count++;
+	}
+	return count;
 }

@@ -58,20 +58,42 @@ export class AiEditIntake {
 			void this.bridge.start().catch(error => console.warn("本地 AI 写入桥接启动失败，已回退为本机队列模式", error));
 		}
 		if (!this.spool) return;
-		this.timer = window.setInterval(() => { void this.drain(); }, 1500);
+		this.syncDrainTimer(this.policy().enabled);
 		void this.drain();
 	}
 
 	stop(): Promise<void> {
 		this.stopped = true;
-		if (this.timer !== undefined) window.clearInterval(this.timer);
+		this.stopDrainTimer();
 		if (this.vault[AI_EDIT_BRIDGE] === this.receive) delete this.vault[AI_EDIT_BRIDGE];
 		return Promise.all([this.draining, this.directSave, this.bridge?.stop()]).then(() => undefined);
 	}
 
 	publish(): void {
-		try { this.spool?.publish(this.policy()); }
-		catch (error) { this.report(error); }
+		try {
+			const policy = this.policy();
+			this.spool?.publish(policy);
+			this.syncDrainTimer(policy.enabled);
+		} catch (error) {
+			this.report(error);
+		}
+	}
+
+	private syncDrainTimer(enabled: boolean): void {
+		if (this.stopped || !this.spool || !enabled) {
+			this.stopDrainTimer();
+			return;
+		}
+		if (this.timer === undefined) {
+			this.timer = window.setInterval(() => { void this.drain(); }, 1500);
+		}
+	}
+
+	private stopDrainTimer(): void {
+		if (this.timer !== undefined) {
+			window.clearInterval(this.timer);
+			this.timer = undefined;
+		}
 	}
 
 	private async acceptNote(note: AiNoteEdit): Promise<void> {

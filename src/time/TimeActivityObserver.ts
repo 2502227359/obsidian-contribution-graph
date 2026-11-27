@@ -82,6 +82,24 @@ const ACTIVITY_EVENT_TYPES = [
 	"touchmove",
 ] as const;
 
+const PASSIVE_ACTIVITY_EVENT_TYPES = new Set<string>([
+	"wheel",
+	"touchstart",
+	"touchmove",
+]);
+
+const THROTTLED_ACTIVITY_EVENT_TYPES = new Set<string>([
+	"beforeinput",
+	"input",
+	"keydown",
+	"wheel",
+	"touchmove",
+]);
+
+const SAME_VIEW_ACTIVITY_THROTTLE_MS = 500;
+const BLOCKING_MODAL_SELECTOR = ".modal-container, .modal, .prompt, dialog[open]";
+const MODAL_NODE_SELECTOR = ".modal-container, .modal, .prompt, dialog";
+
 export function isTimeActivityEvent(event: Pick<Event, "type">): boolean {
 	return (ACTIVITY_EVENT_TYPES as readonly string[]).includes(event.type);
 }
@@ -127,10 +145,11 @@ function sameView(first: ViewBinding | undefined, second: ViewBinding | undefine
  */
 export class TimeActivityObserver {
 	private readonly bindings: EventBinding[] = [];
+	private readonly documentBindings = new Map<Document, EventBinding[]>();
 	private readonly workspaceRefs: EventRef[] = [];
 	private readonly views: ViewBinding[] = [];
 	private readonly documents = new Set<Document>();
-	private readonly modalObservers = new Map<Document, MutationObserver>();
+	private readonly modalObservers = new Map<Document, MutationObserver[]>();
 	private statusBarItem?: StatusBarItemLike & EventBinding["target"];
 	private checkpointTimer?: ReturnType<typeof setInterval>;
 	private unsubscribe?: () => void;
@@ -139,6 +158,9 @@ export class TimeActivityObserver {
 	private interactionView?: ViewBinding;
 	private currentContext?: TimeTrackingContext;
 	private activitySessionStarted = false;
+	private lastActivityAt?: number;
+	private lastStatusText?: string;
+	private lastStatusDescription?: string;
 
 	constructor(
 		private readonly plugin: PluginLike,
@@ -148,6 +170,9 @@ export class TimeActivityObserver {
 	start(): void {
 		if (this.started) return;
 		this.started = true;
+		this.lastActivityAt = undefined;
+		this.lastStatusText = undefined;
+		this.lastStatusDescription = undefined;
 		this.statusBarItem = this.plugin.addStatusBarItem() as StatusBarItemLike & EventBinding["target"];
 		this.bindStatusBarItem();
 		this.bindDocument(this.statusBarItem.ownerDocument);
@@ -171,6 +196,9 @@ export class TimeActivityObserver {
 		this.started = false;
 		this.callbacks.pause();
 		this.activitySessionStarted = false;
+		this.lastActivityAt = undefined;
+		this.lastStatusText = undefined;
+		this.lastStatusDescription = undefined;
 		this.currentView = undefined;
 		this.interactionView = undefined;
 		this.currentContext = undefined;
@@ -183,15 +211,13 @@ export class TimeActivityObserver {
 		for (const binding of this.bindings.splice(0)) {
 			binding.target.removeEventListener(binding.type, binding.listener, true);
 		}
+		for (const doc of [...this.documents]) {
+			this.unbindDocument(doc);
+		}
 		const workspace = this.plugin.app.workspace;
 		for (const ref of this.workspaceRefs.splice(0)) {
 			workspace.offref(ref);
 		}
-		for (const observer of this.modalObservers.values()) {
-			observer.disconnect();
-		}
-		this.modalObservers.clear();
-		this.documents.clear();
 		this.views.length = 0;
 		this.statusBarItem?.remove?.();
 		this.statusBarItem = undefined;
@@ -201,6 +227,7 @@ export class TimeActivityObserver {
 	refreshCurrentContext(restartSession = false): void {
 		if (!this.started) return;
 		if (restartSession) this.activitySessionStarted = false;
+		this.lastActivityAt = undefined;
 		this.refreshViews();
 		const active = this.getActiveContext();
 		this.emitContext(active.context);
@@ -264,6 +291,13 @@ export class TimeActivityObserver {
 			this.bindDocument(window?.document);
 			this.refreshCurrentContext();
 		});
+		this.bindWorkspaceEvent(workspace, "window-close", (_workspaceWindow, closedWindow) => {
+			const closedDoc = closedWindow?.document;
+			if (closedDoc && closedDoc !== this.statusBarItem?.ownerDocument) {
+				this.unbindDocument(closedDoc);
+				this.refreshCurrentContext();
+			}
+		});
 	}
 
 	private bindWorkspaceEvent(
@@ -292,16 +326,49 @@ export class TimeActivityObserver {
 	private bindDocument(document: Document | undefined): void {
 		if (!document || this.documents.has(document)) return;
 		this.documents.add(document);
+		const docBindings: EventBinding[] = [];
+		this.documentBindings.set(document, docBindings);
 		for (const type of ACTIVITY_EVENT_TYPES) {
-			this.bindEvent(document, type, event => this.handleDocumentEvent(event));
+			this.bindEvent(
+				document,
+				type,
+				event => this.handleDocumentEvent(event),
+				docBindings,
+				PASSIVE_ACTIVITY_EVENT_TYPES.has(type)
+			);
 		}
-		this.bindEvent(document, "visibilitychange", () => this.refreshCurrentContext());
+		this.bindEvent(document, "visibilitychange", () => this.refreshCurrentContext(), docBindings);
 		const window = document.defaultView;
 		if (window) {
-			this.bindEvent(window, "blur", () => this.handleWindowBlur(document));
-			this.bindEvent(window, "focus", () => this.refreshCurrentContext());
+			this.bindEvent(window, "blur", () => this.handleWindowBlur(document), docBindings);
+			this.bindEvent(window, "focus", () => this.refreshCurrentContext(), docBindings);
 		}
 		this.bindModalObserver(document);
+	}
+
+	private unbindDocument(document: Document | undefined): void {
+		if (!document || !this.documents.has(document)) return;
+		this.documents.delete(document);
+		const bindings = this.documentBindings.get(document);
+		if (bindings) {
+			for (const binding of bindings) {
+				binding.target.removeEventListener(binding.type, binding.listener, true);
+			}
+			this.documentBindings.delete(document);
+		}
+		const observers = this.modalObservers.get(document);
+		if (observers) {
+			for (const observer of observers) {
+				observer.disconnect();
+			}
+			this.modalObservers.delete(document);
+		}
+		if (this.currentView?.ownerDocument === document) {
+			this.pauseCurrentActivity();
+		}
+		if (this.interactionView?.ownerDocument === document) {
+			this.interactionView = undefined;
+		}
 	}
 
 	private handleWindowBlur(document: Document): void {
@@ -317,20 +384,24 @@ export class TimeActivityObserver {
 		const body = document.body;
 		const MutationObserverConstructor = document.defaultView?.MutationObserver;
 		if (!body || !MutationObserverConstructor) return;
-		const observer = new MutationObserverConstructor(records => {
-			const modalChanged = records.some(record =>
-				(record.type === "childList" && record.target === body) ||
-				(record.type === "attributes" && (record.target as Element).nodeName === "DIALOG")
-			);
-			if (modalChanged) this.handleModalMutation(document);
+		// 拆分为两个窄范围观察器：避免对 document.body 开启 childList+subtree 导致编辑器每次打字/滚动都触发回调。
+		const bodyObserver = new MutationObserverConstructor(records => {
+			if (records.some(record => record.type === "childList" && record.target === body && isRelevantModalChildMutation(record))) {
+				this.handleModalMutation(document);
+			}
 		});
-		observer.observe(body, {
-			childList: true,
+		bodyObserver.observe(body, { childList: true });
+		const dialogObserver = new MutationObserverConstructor(records => {
+			if (records.some(record => record.type === "attributes" && (record.target as Element).nodeName === "DIALOG")) {
+				this.handleModalMutation(document);
+			}
+		});
+		dialogObserver.observe(body, {
 			subtree: true,
 			attributes: true,
 			attributeFilter: ["open"],
 		});
-		this.modalObservers.set(document, observer);
+		this.modalObservers.set(document, [bodyObserver, dialogObserver]);
 	}
 
 	private handleModalMutation(document: Document): void {
@@ -344,17 +415,36 @@ export class TimeActivityObserver {
 	private bindEvent(
 		target: EventBinding["target"],
 		type: string,
-		listener: EventListener
+		listener: EventListener,
+		bucket: EventBinding[] = this.bindings,
+		passive = false
 	): void {
-		target.addEventListener(type, listener, true);
-		this.bindings.push({ target, type, listener });
+		target.addEventListener(type, listener, passive ? { capture: true, passive: true } : true);
+		bucket.push({ target, type, listener });
 	}
 
 	private handleDocumentEvent(event: Event): void {
 		if (!this.started || !isTimeActivityEvent(event)) return;
 		if ("isTrusted" in event && event.isTrusted === false) return;
 		if (this.isStatusBarTarget(event.target)) return;
-		if(this.handleTimelineControl(event.target))return;
+		if (this.handleTimelineControl(event.target)) return;
+
+		// 高频同视图交互（连打、触控板滚动）节流：仅在当前窗口聚焦可见、视图已就绪且事件命中当前视图时跳过重复查询。
+		if (
+			THROTTLED_ACTIVITY_EVENT_TYPES.has(event.type) &&
+			this.activitySessionStarted &&
+			this.currentView &&
+			this.currentContext?.reason === "READY" &&
+			this.lastActivityAt !== undefined &&
+			isVisibleDocument(this.currentView.ownerDocument) &&
+			isFocusedWindow(this.currentView.ownerDocument) &&
+			this.contains(this.currentView.root, event.target)
+		) {
+			const now = Date.now();
+			if (now - this.lastActivityAt < SAME_VIEW_ACTIVITY_THROTTLE_MS) {
+				return;
+			}
+		}
 
 		const eventView = this.views.find(candidate => this.contains(candidate.root, event.target));
 		this.interactionView = eventView && isYoloChatActivity(eventView.path) ? eventView : undefined;
@@ -377,7 +467,10 @@ export class TimeActivityObserver {
 		}
 
 		this.emitContext(active.context);
-		if (active.view) this.activateView(active.view, true);
+		if (active.view) {
+			this.activateView(active.view, true);
+			if (this.activitySessionStarted) this.lastActivityAt = Date.now();
+		}
 		this.updateStatus();
 	}
 
@@ -444,6 +537,7 @@ export class TimeActivityObserver {
 		this.currentView = undefined;
 		this.interactionView = undefined;
 		this.activitySessionStarted = false;
+		this.lastActivityAt = undefined;
 	}
 
 	private getActiveContext(eventView?: ViewBinding): ActiveContext {
@@ -480,7 +574,7 @@ export class TimeActivityObserver {
 
 	private hasBlockingModal(document: Document | undefined): boolean {
 		if (!document?.querySelector) return false;
-		return Boolean(document.querySelector(".modal-container, .modal, .prompt, dialog[open]"));
+		return Boolean(document.querySelector(BLOCKING_MODAL_SELECTOR));
 	}
 
 	private isCurrentContextUsable(): boolean {
@@ -498,9 +592,34 @@ export class TimeActivityObserver {
 		const item = this.statusBarItem;
 		if (!item) return;
 		const snapshot = this.callbacks.snapshot();
-		item.setText(getTimeTrackingStatusText(snapshot));
+		const text = getTimeTrackingStatusText(snapshot);
+		if (text !== this.lastStatusText) {
+			this.lastStatusText = text;
+			item.setText(text);
+		}
 		const description = getTimeTrackingDescription(snapshot);
-		// 宿主使用 aria-label 生成提示，额外的 title 会再弹出浏览器原生提示。
-		item.setAttribute?.("aria-label", description);
+		if (description !== this.lastStatusDescription) {
+			this.lastStatusDescription = description;
+			// 宿主使用 aria-label 生成提示，额外的 title 会再弹出浏览器原生提示。
+			item.setAttribute?.("aria-label", description);
+		}
 	}
+}
+
+function isRelevantModalChildMutation(record: MutationRecord): boolean {
+	const added = record.addedNodes;
+	const removed = record.removedNodes;
+	if (!added && !removed) return true;
+	const checkList = (nodes: NodeList | undefined): boolean => {
+		if (!nodes) return false;
+		for (let i = 0; i < nodes.length; i++) {
+			const node = nodes[i] as { nodeType?: number; matches?: (s: string) => boolean; querySelector?: (s: string) => unknown };
+			if (node?.nodeType !== 1) continue;
+			if (node.matches?.(MODAL_NODE_SELECTOR) || node.querySelector?.(MODAL_NODE_SELECTOR)) {
+				return true;
+			}
+		}
+		return false;
+	};
+	return checkList(added) || checkList(removed);
 }

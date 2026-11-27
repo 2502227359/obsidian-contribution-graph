@@ -95,23 +95,24 @@ export class MonthlyStatisticsFiles {
 		this.installation.saveSequences?.(current);
 	}
 
-	async save(record: StatisticsRecord): Promise<void> {
+	async save(record: StatisticsRecord): Promise<string> {
 		const { shard, path, frame, content } = this.prepare(record);
 		this.pending = { shard, frame };
 		try {
 			await this.files.write(path, content);
 			if (await this.files.read(path) !== content) throw new Error("月度统计写入校验失败");
 			this.confirm(shard, frame);
+			return path;
 		} finally {
 			this.pending = undefined;
 		}
 	}
 
-	saveSync(record: StatisticsRecord): boolean {
+	saveSync(record: StatisticsRecord): string | undefined {
 		const { shard, path, frame, content } = this.prepare(record, true);
-		if (!this.files.writeSync?.(path, content)) return false;
+		if (!this.files.writeSync?.(path, content)) return undefined;
 		this.confirm(shard, frame);
-		return true;
+		return path;
 	}
 
 	private prepare(record: StatisticsRecord, includePending = false) {
