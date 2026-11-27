@@ -4,6 +4,8 @@
 
 ## 一、架构健康度
 
+零点三十点三冷启动写入修复：仍为八个功能目录、无新增源码模块或第三方依赖。改动仅限 `VaultStatisticsFiles.writeFile()` 补齐未建索引与并发建文件冲突的兜底写盘路径，未改统计口径、持久化格式或公开接口契约。
+
 零点三十点二运行期性能优化：仍为八个功能目录、无新增源码模块或第三方依赖。优化集中在计时观察器、统计仓储合并缓存、普通目录文件适配、时长查询、图表增量签名、AI 队列轮询与设置页延迟扫描，未新增持久化字段或对外接口契约，本次未发现违规跨模块调用，未重新审计全项目。
 
 零点三十点一主题观察器优化：复用展示层既有 `weeklyReviewChartStyle.ts` 新增共享主题监听助手 `observeThemeChanges()` 与 `readThemeSignature()`，四处图表视图统一接入，无新增目录、文件、依赖或数据契约变更，本次未发现违规跨模块调用。
@@ -73,6 +75,8 @@ AI 编辑统计使用统一写入入口、本机队列与现有月度仓储。�
 - 既有配置表单、数据规范化与代码块处理函数仍较长；为保护已有行为，本次只接入必要逻辑，没有整体重构。后续继续扩展这些入口时应优先拆分并验证。
 
 ## 二、本次变更影响范围
+
+零点三十点三（`0.30.3`）修复 Obsidian 冷启动阶段（`Plugin.onload()` 早于 `vault.load()` 建内存索引）首次 `flush()` 覆盖已存在月度统计文件时，`VaultStatisticsFiles.writeFile()` 因 `getAbstractFileByPath()` 返回 `null` 而误走 `vault.create()` 抛出 `File already exists.`、弹出「编辑活动数据保存失败，将自动重试」的问题。在 `VaultStatisticsFiles.writeFile()` 中增加 `vault.adapter.exists()` 命中时改走 `vault.adapter.write()` 及并发建文件冲突兜底（真实写入失败仍向上抛出）；同步更新四处版本清单至 `0.30.3`（作者保持 `coolmochi`），48 个测试文件共 402 项测试通过（含新增冷启动回归与并发冲突测试），生产构建与打包通过。
 
 零点三十点二（`0.30.2`）围绕打字／滚轮热路径、周期性保存与历史数据查询开展系统性性能优化：1）`TimeActivityObserver` 启用滚轮／触摸 `passive` 监听、同聚焦视图 `500 ms` 节流、拆分 `body` 观察器去除全子树 `childList` 监听、补齐 `window-close` 解绑与状态栏 DOM 差分；2）`StatisticsRepository`／`statisticsModel` 缓存远端已合并基线并采用只读引用共享的 `mergeStatisticsOverlay()`，`VaultStatisticsFiles` 忽略自身写入回声并支持 `stat()` 增量缓存与并发读取；3）`EditActivityService` 缓存远端今日时长合计、`TIME_STATUS` 状态去重、`recordChanges()` 复用 `endState.doc`、`flush()` 去除 `JSON.parse(JSON.stringify)`；4）`timeData.ts` 消除 `queryTimeStats()` 的 $O(B^2)$ 全表扫描并缓存排序覆盖区间，`activityTimeline.ts` 与 `ActivityTimelineView` 消除数组拷贝与冗余 `body` 观察器，`matrixDataGenerator.ts`、`renders.ts`、`hourlyGraphRender.ts`、`weeklyReviewTimeline.ts` 与 `WeeklyReviewModal` 消除逐日 Luxon、`JSON.stringify` 全量签名与无防抖输入重绘；5）`characterCounter.ts`、`aiNoteDiff.ts`、`AiEditIntake`、`AiEditBridgeServer`、`EditActivitySettingTab` 优化字素计数、停用关闭态 `1.5 s` 轮询并延迟全库目录／笔记扫描。共涉及 21 个源码文件、4 份版本清单（同步更新至 `0.30.2`，作者保持 `coolmochi`）、`CHANGELOG.md`、`STATUS.md` 及 2 个测试文件；统计口径、持久化格式与公开接口契约不变。四十八个测试文件共四百项测试通过，构建与打包通过。
 

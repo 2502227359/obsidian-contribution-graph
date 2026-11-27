@@ -1,5 +1,11 @@
 # Development Log
 
+## 2026年11月27日 — 零点三十点三 修复冷启动加载插件误报保存失败
+
+- **修复冷启动覆盖已存在月度文件报错**：Obsidian 冷启动时先加载插件 `onload()`、后执行 `vault.load()` 建立内存索引；此前 `VaultStatisticsFiles.writeFile()` 仅凭 `vault.getAbstractFileByPath()` 判空便调用 `vault.create()`，在磁盘已存在复用的月度双文件（`0/1.json`）时必然抛出 `File already exists.` 并触发「编辑活动数据保存失败，将自动重试」弹窗。
+- 现在当 `getAbstractFileByPath()` 未命中但 `vault.adapter.exists()` 确认磁盘已有文件时，直接走 `vault.adapter.write()` 覆盖，并对 `vault.create()` 并发建文件冲突做兜底重试（真实 I/O 失败仍正常抛出）。
+- 验证：48 个测试文件共 402 项测试通过（含新增冷启动空索引与并发冲突回归测试），类型检查、生产构建与打包通过。
+
 ## 2026年11月27日 — 零点三十点二 运行期性能优化
 
 - **交互热路径降载**：`TimeActivityObserver` 对 `wheel`／`touchstart`／`touchmove` 启用 `{ capture: true, passive: true }`，对同聚焦视图的高频连打／滚轮交互增加 `500 ms` 节流合并；将 `document.body` 的全子树 `childList` 观察拆分为窄范围直接子节点监听（过滤非弹窗节点）与 `<dialog open>` 属性监听，并补齐 `window-close` 解绑清理；状态栏文本／提示按变化差分写入。

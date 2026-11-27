@@ -87,8 +87,24 @@ export class VaultStatisticsFiles implements StatisticsFiles {
 	private async writeFile(target: string, data: string): Promise<void> {
 		await this.ensureFolders(target.split("/").slice(0, -1).join("/"));
 		const file = this.vault.getAbstractFileByPath(target);
-		if (file && "extension" in file) await this.vault.process(file as TFile, () => data);
-		else await this.vault.create(target, data);
+		if (file && "extension" in file) {
+			await this.vault.process(file as TFile, () => data);
+			return;
+		}
+		// 冷启动 onload 早于 vault.load() 建索引，磁盘上已存在的月度文件此时查不到 TFile；
+		// 直接改走 adapter.write 避免 vault.create 误报 File already exists。
+		if (await this.vault.adapter.exists(target)) {
+			await this.vault.adapter.write(target, data);
+			return;
+		}
+		try {
+			await this.vault.create(target, data);
+		} catch (error) {
+			if (!await this.vault.adapter.exists(target)) throw error;
+			const existing = this.vault.getAbstractFileByPath(target);
+			if (existing && "extension" in existing) await this.vault.process(existing as TFile, () => data);
+			else await this.vault.adapter.write(target, data);
+		}
 	}
 
 	writeSync(path: string, data: string): boolean {

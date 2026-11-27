@@ -4,6 +4,7 @@ import { EMPTY_EDIT_ACTIVITY_STORE } from "../src/activity/types";
 import { memoryVault, persistedStatistics } from "./helpers/memoryVault";
 import { emptyStatistics } from "../src/activity/statisticsModel";
 import { StatisticsRepository } from "../src/activity/StatisticsRepository";
+import { VaultStatisticsFiles } from "../src/activity/VaultStatisticsFiles";
 
 describe("活动服务普通目录存储", () => {
 	let service: EditActivityService;
@@ -86,5 +87,91 @@ describe("活动服务普通目录存储", () => {
 		const old = persistedStatistics(files.values()).filter(record => record.generation === "initial");
 		const seconds = old.flatMap(record => Object.values(record.data.timeActivity.buckets) as any[]).reduce((sum, bucket) => sum + (bucket.documents["本机.md"] || 0), 0);
 		expect(seconds).toBe(10); expect(plugin.saveData).not.toHaveBeenCalled();
+	});
+	it("冷启动仓库尚未建立 TFile 索引时，覆盖已有月度文件不报保存失败", async () => {
+		const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const installationId = "3d4efae1-e874-4cc0-8ae8-d3d5709a845e";
+		const storage = new Map<string, string>([
+			["language", "zh"],
+			["contribution-graph-local:statistics-installation", installationId],
+		]);
+		Object.defineProperty(globalThis, "localStorage", {
+			configurable: true,
+			value: {
+				getItem: (key: string) => storage.get(key) ?? null,
+				setItem: (key: string, value: string) => { storage.set(key, value); },
+			},
+		});
+		const baseData = emptyStatistics();
+		baseData.dailyStats["2026-11-14"] = {
+			addedChars: 120,
+			deletedChars: 10,
+			documents: { "笔记.md": { addedChars: 120, deletedChars: 10 } },
+		};
+		const prevRecord = {
+			formatVersion: 1 as const,
+			kind: "statistics" as const,
+			id: "11111111-1111-4111-8111-111111111111",
+			revision: 2,
+			updatedAt: new Date(2026, 10, 15, 9).getTime(),
+			generation: "initial",
+			data: baseData,
+		};
+		const frame1 = { formatVersion: 2, kind: "monthly", sequence: 1, records: [{ ...prevRecord, revision: 1 }] };
+		const frame2 = { formatVersion: 2, kind: "monthly", sequence: 2, records: [prevRecord] };
+		const files = new Map<string, string>([
+			[`Template/数据/学习统计/月度/${installationId}/2026-11-1.json`, JSON.stringify(frame1)],
+			[`Template/数据/学习统计/月度/${installationId}/2026-11-0.json`, JSON.stringify(frame2)],
+		]);
+		const vault = memoryVault(files);
+		// 模拟 Obsidian 启动阶段：插件 onload 早于 vault.load()，getAbstractFileByPath 全部返回 null，
+		// 且 vault.create 与真实 Obsidian 一样在磁盘已有文件时抛出 File already exists.
+		vault.getAbstractFileByPath = vi.fn(() => null);
+		const createSpy = vi.fn(async (path: string, content: string) => {
+			if (await vault.adapter.exists(path)) throw new Error("File already exists.");
+			await vault.adapter.write(path, content);
+			return { path, extension: "json" };
+		});
+		vault.create = createSpy;
+		const savedConfig = {
+			schemaVersion: 13,
+			settings: { ...EMPTY_EDIT_ACTIVITY_STORE.settings, trackingEnabled: true, timeTrackingEnabled: true },
+			graphThemes: [],
+			storage: { formatVersion: 1, folder: "Template/数据/学习统计" },
+		};
+		const plugin = {
+			manifest: { dir: ".obsidian/plugins/test", version: "0.30.3" },
+			app: { vault },
+			loadData: vi.fn(async () => savedConfig),
+			saveData: vi.fn(async () => undefined),
+		};
+		const now = new Date(2026, 10, 15, 10);
+		service = new EditActivityService(plugin as never, () => now);
+		await service.initialize();
+		expect(errors).not.toHaveBeenCalled();
+		expect(service.getSaveStatus()).toBe("已保存");
+		expect(createSpy).not.toHaveBeenCalled();
+		const updatedFrame = JSON.parse(files.get(`Template/数据/学习统计/月度/${installationId}/2026-11-1.json`)!);
+		expect(updatedFrame.sequence).toBe(3);
+		expect(service.getDailyEditStats()[0]).toMatchObject({ addedChars: 120, deletedChars: 10 });
+		errors.mockRestore();
+	});
+	it("VaultStatisticsFiles 在并发建文件冲突时兜底覆盖，真实写入错误仍向上抛出", async () => {
+		const files = new Map<string, string>();
+		const vault = memoryVault(files);
+		vault.getAbstractFileByPath = () => null;
+		vault.create = vi.fn(async (path: string) => {
+			// 模拟并发：adapter.exists 检查时尚未出现，create 瞬间远端同步已先落盘
+			files.set(path, "remote-first");
+			throw new Error("File already exists.");
+		});
+		const statsFiles = new VaultStatisticsFiles(vault as never, "Template/数据/学习统计");
+		await statsFiles.write("月度/test/2026-11-0.json", "local-win");
+		expect(files.get("Template/数据/学习统计/月度/test/2026-11-0.json")).toBe("local-win");
+
+		vault.create = vi.fn(async () => {
+			throw new Error("ENOSPC: no space left on device");
+		});
+		await expect(statsFiles.write("月度/test/2026-11-1.json", "fail-me")).rejects.toThrow("ENOSPC");
 	});
 });
